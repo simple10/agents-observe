@@ -14,68 +14,33 @@ default:
 
 # ─── System ──────────────────────────────────────────────
 
-# Start server + client (foreground, Ctrl+C to stop)
+# Start the system (detached)
 start:
-    ./scripts/start-system.sh
+    mkdir -p {{project_root}}/data
+    cd {{project_root}} && SERVER_PORT={{server_port}} CLIENT_PORT={{client_port}} docker compose up -d --build
 
-# Stop all processes and clean up
+# Stop the system and reset the database
 stop:
-    ./scripts/reset-system.sh
+    cd {{project_root}} && docker compose down
+    just db-reset
 
-# Stop then start
+# Restart the system
 restart: stop start
 
-# ─── Server (Docker, port 4000) ─────────────────────────
-
-# Build the server container image
-server-install:
-    cd {{project_root}} && docker compose build server
-
-# Start server in Docker (attached)
-server:
-    cd {{project_root}} && SERVER_PORT={{server_port}} docker compose up --build server
-
-# Start server in Docker (detached)
-server-prod:
-    cd {{project_root}} && SERVER_PORT={{server_port}} docker compose up -d --build server
-
-# Typecheck server inside the container
-server-typecheck:
-    cd {{project_root}} && docker compose run --rm server bun run typecheck
-
-# ─── Client (Vue + Vite, port 5173) ─────────────────────
-
-# Install client dependencies
-client-install:
-    cd {{project_root}}/apps/client && bun install
-
-# Start client dev server
-client:
-    cd {{project_root}}/apps/client && VITE_PORT={{client_port}} bun run dev
-
-# Build client for production
-client-build:
-    cd {{project_root}}/apps/client && bun run build
-
-# Preview production build
-client-preview:
-    cd {{project_root}}/apps/client && bun run preview
-
-# ─── Install ─────────────────────────────────────────────
-
-# Install all dependencies (server + client)
-install: server-install client-install
+# View container logs (follow)
+logs:
+    cd {{project_root}} && docker compose logs -f
 
 # ─── Database ────────────────────────────────────────────
 
 # Clear SQLite WAL files
 db-clean-wal:
-    rm -f {{project_root}}/apps/server/events.db-wal {{project_root}}/apps/server/events.db-shm
+    rm -f {{project_root}}/data/events.db-wal {{project_root}}/data/events.db-shm
     @echo "WAL files removed"
 
 # Delete the entire events database
 db-reset:
-    rm -f {{project_root}}/apps/server/events.db {{project_root}}/apps/server/events.db-wal {{project_root}}/apps/server/events.db-shm
+    rm -f {{project_root}}/data/events.db {{project_root}}/data/events.db-wal {{project_root}}/data/events.db-shm
     @echo "Database reset"
 
 # ─── Testing ─────────────────────────────────────────────
@@ -88,7 +53,7 @@ test-event:
       | head -c 200
     @echo ""
 
-# Check server health
+# Check server and client health
 health:
     @curl -sf http://localhost:{{server_port}}/health > /dev/null 2>&1 \
       && echo "Server: UP (port {{server_port}})" \
