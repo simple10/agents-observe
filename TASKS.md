@@ -19,6 +19,12 @@
 - [x] Order agent chips: Main first, then by most recent activity
 - [x] Auto scroll to bottom on session select
 - [x] Add bottom padding to event stream
+- [x] Chat thread deduping (Pre/PostToolUse merged client-side)
+- [x] Stop event shows user prompt above Final message
+- [x] SubAgentStop expanded summary with Agent command and results
+- [x] Replace CLAUDE_OBSERVE_PORT with CLAUDE_OBSERVE_EVENTS_ENDPOINT
+- [x] Auto-follow toggle + clear session button in nav
+- [x] DELETE /api/sessions/:id/events endpoint (removed insecure DELETE /api/data)
 
 ---
 
