@@ -10,6 +10,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "latest",
+    "@types/node": "^25.5.0",
     "bun-types": "latest"
   },
   "dependencies": {
