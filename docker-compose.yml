@@ -4,17 +4,16 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      SERVER_PORT: "4000"
-      VITE_PORT: "5173"
+      SERVER_PORT: "4001"
       DB_PATH: /data/events.db
     ports:
-      - "${SERVER_PORT:-4000}:4000"
-      - "${CLIENT_PORT:-5173}:5173"
+      - "${SERVER_PORT:-4001}:4001"
+      - "${CLIENT_PORT:-5174}:5174"
     volumes:
-      - ./apps/server:/app/apps/server
-      - ./apps/client:/app/apps/client
-      - server_node_modules:/app/apps/server/node_modules
-      - client_node_modules:/app/apps/client/node_modules
+      - ./app/server:/app/app/server
+      - ./app/client:/app/app/client
+      - server_node_modules:/app/app/server/node_modules
+      - client_node_modules:/app/app/client/node_modules
       - ./data:/data
 
 volumes:

@@ -4,8 +4,8 @@
 set dotenv-load
 set quiet
 
-server_port := env("SERVER_PORT", "4000")
-client_port := env("CLIENT_PORT", "5173")
+server_port := env("SERVER_PORT", "4001")
+client_port := env("CLIENT_PORT", "5174")
 project_root := justfile_directory()
 
 # List available recipes
@@ -17,8 +17,6 @@ default:
 # Start the system (detached)
 start:
     ./scripts/start-system.sh
-    # mkdir -p {{project_root}}/data
-    # cd {{project_root}} && SERVER_PORT={{server_port}} CLIENT_PORT={{client_port}} docker compose up -d --build
 
 # Stop the system and reset the database
 stop:
@@ -32,46 +30,59 @@ restart: stop start
 logs:
     cd {{project_root}} && docker compose logs -f
 
+# ─── Development (local, no Docker) ─────────────────────
+
+# Start server locally
+dev-server:
+    cd {{project_root}}/app/server && bun src/index.ts
+
+# Start client locally
+dev-client:
+    cd {{project_root}}/app/client && npm run dev
+
+# Start both server and client locally
+dev:
+    @echo "Starting server and client..."
+    cd {{project_root}}/app/server && bun src/index.ts &
+    cd {{project_root}}/app/client && npm run dev &
+    @echo "Server: http://localhost:{{server_port}}"
+    @echo "Client: http://localhost:{{client_port}}"
+    wait
+
+# Run server tests
+test:
+    cd {{project_root}}/app/server && bun test
+
 # ─── Database ────────────────────────────────────────────
 
 # Clear SQLite WAL files
 db-clean-wal:
     rm -f {{project_root}}/data/events.db-wal {{project_root}}/data/events.db-shm
+    rm -f {{project_root}}/app/server/app2.db-wal {{project_root}}/app/server/app2.db-shm
     @echo "WAL files removed"
 
 # Delete the entire events database
 db-reset:
     rm -f {{project_root}}/data/events.db {{project_root}}/data/events.db-wal {{project_root}}/data/events.db-shm
+    rm -f {{project_root}}/app/server/app2.db {{project_root}}/app/server/app2.db-wal {{project_root}}/app/server/app2.db-shm
     @echo "Database reset"
 
 # ─── Testing ─────────────────────────────────────────────
 
 # Send a test event to the server
 test-event:
-    curl -s -X POST http://localhost:{{server_port}}/events \
-      -H "Content-Type: application/json" \
-      -d '{"source_app":"test","session_id":"test-1234","hook_event_type":"PreToolUse","payload":{"tool_name":"Bash","tool_input":{"command":"echo hello"}}}' \
-      | head -c 200
-    @echo ""
+    echo '{"sessionId":"test-1234","slug":"test-dragon","type":"user","message":{"role":"user","content":"hello world"},"timestamp":"2026-01-01T00:00:00Z"}' \
+      | CLAUDE_OBSERVE_PROJECT_NAME=test-project CLAUDE_OBSERVE_PORT={{server_port}} node {{project_root}}/app/hooks/send_event.mjs
+    @echo "Event sent"
 
 # Check server and client health
 health:
-    @curl -sf http://localhost:{{server_port}}/health > /dev/null 2>&1 \
+    @curl -sf http://localhost:{{server_port}}/api/projects > /dev/null 2>&1 \
       && echo "Server: UP (port {{server_port}})" \
       || echo "Server: DOWN (port {{server_port}})"
     @curl -sf http://localhost:{{client_port}} > /dev/null 2>&1 \
       && echo "Client: UP (port {{client_port}})" \
       || echo "Client: DOWN (port {{client_port}})"
-
-# ─── Hooks ───────────────────────────────────────────────
-
-# Test a hook script directly (e.g. just hook-test pre_tool_use)
-hook-test name:
-    echo '{"session_id":"test-hook","tool_name":"Bash"}' | uv run {{project_root}}/.claude/hooks/{{name}}.py
-
-# List all hook scripts
-hooks:
-    @ls -1 {{project_root}}/.claude/hooks/*.py | xargs -I{} basename {} .py
 
 # ─── Open ────────────────────────────────────────────────
 

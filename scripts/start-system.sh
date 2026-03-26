@@ -16,8 +16,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # Read ports from environment variables or use defaults
-SERVER_PORT=${SERVER_PORT:-4000}
-CLIENT_PORT=${CLIENT_PORT:-5173}
+SERVER_PORT=${SERVER_PORT:-4001}
+CLIENT_PORT=${CLIENT_PORT:-5174}
 
 echo -e "${BLUE}Configuration:${NC}"
 echo -e "  Server Port: ${GREEN}$SERVER_PORT${NC}"
@@ -39,7 +39,7 @@ SERVER_PORT=$SERVER_PORT CLIENT_PORT=$CLIENT_PORT docker compose up -d --build
 # Wait for server to be ready
 echo -e "${YELLOW}Waiting for server to start...${NC}"
 for i in {1..15}; do
-    if curl -s http://localhost:$SERVER_PORT/health >/dev/null 2>&1 || curl -s http://localhost:$SERVER_PORT/events/filter-options >/dev/null 2>&1; then
+    if curl -s http://localhost:$SERVER_PORT/api/projects >/dev/null 2>&1; then
         echo -e "${GREEN}Server is ready!${NC}"
         break
     fi
@@ -62,9 +62,9 @@ echo -e "${GREEN}Multi-Agent Observability System Started${NC}"
 echo -e "${BLUE}============================================${NC}"
 echo
 echo -e "Dashboard URL: ${GREEN}http://localhost:$CLIENT_PORT${NC}"
-echo -e "Server API: ${GREEN}http://localhost:$SERVER_PORT${NC}"
-echo -e "WebSocket:  ${GREEN}ws://localhost:$SERVER_PORT/stream${NC}"
-echo -e "Data dir:   ${GREEN}$PROJECT_ROOT/data${NC}"
+echo -e "Server API:    ${GREEN}http://localhost:$SERVER_PORT${NC}"
+echo -e "WebSocket:     ${GREEN}ws://localhost:$SERVER_PORT/api/events/stream${NC}"
+echo -e "Data dir:      ${GREEN}$PROJECT_ROOT/data${NC}"
 echo
 echo -e "To view logs:        ${YELLOW}just logs${NC}"
 echo -e "To stop the system:  ${YELLOW}just stop${NC}"

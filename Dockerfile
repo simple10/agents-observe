@@ -3,15 +3,15 @@ FROM oven/bun:1.2.17
 WORKDIR /app
 
 # Install server dependencies
-COPY apps/server/package.json apps/server/bun.lock apps/server/
-RUN cd apps/server && bun install --frozen-lockfile
+COPY app/server/package.json app/server/bun.lock* app/server/
+RUN cd app/server && bun install
 
 # Install client dependencies
-COPY apps/client/package.json apps/client/bun.lock apps/client/
-RUN cd apps/client && bun install --frozen-lockfile
+COPY app/client/package.json app/client/package-lock.json* app/client/
+RUN cd app/client && bun install
 
 COPY . .
 
-EXPOSE 4000 5173
+EXPOSE 4001 5174
 
-CMD ["sh", "-c", "cd /app/apps/server && bun run dev & cd /app/apps/client && bun run dev -- --host 0.0.0.0 & wait"]
+CMD ["sh", "-c", "cd /app/app/server && bun src/index.ts & cd /app/app/client && bunx vite --host 0.0.0.0 --port 5174 & wait"]
