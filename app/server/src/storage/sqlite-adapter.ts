@@ -340,20 +340,20 @@ export class SqliteAdapter implements EventStore {
 
     const startTs = prevPrompt ? prevPrompt.timestamp : 0
 
-    // Find the next UserPromptSubmit after this event's prompt (to bound the thread)
-    const nextPrompt = this.db
+    // Find the end boundary: the first Stop OR next UserPromptSubmit after startTs
+    const nextBoundary = this.db
       .prepare(
         `
       SELECT timestamp FROM events
-      WHERE session_id = ? AND subtype = 'UserPromptSubmit' AND timestamp > ?
+      WHERE session_id = ? AND timestamp > ? AND (subtype = 'UserPromptSubmit' OR subtype = 'Stop')
       ORDER BY timestamp ASC LIMIT 1
     `,
       )
       .get(sessionId, startTs) as { timestamp: number } | undefined
 
-    const endTs = nextPrompt ? nextPrompt.timestamp : Infinity
+    // Include the boundary event itself (use <= for Stop events)
+    const endTs = nextBoundary ? nextBoundary.timestamp : Infinity
 
-    // Get all events in the thread window
     if (endTs === Infinity) {
       return this.db
         .prepare(
@@ -370,7 +370,7 @@ export class SqliteAdapter implements EventStore {
       .prepare(
         `
       SELECT * FROM events
-      WHERE session_id = ? AND timestamp >= ? AND timestamp < ?
+      WHERE session_id = ? AND timestamp >= ? AND timestamp <= ?
       ORDER BY timestamp ASC
     `,
       )
