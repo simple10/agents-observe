@@ -57,7 +57,7 @@ export function EventDetail({ event }: EventDetailProps) {
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           </Button>
         </div>
-        <pre className="max-h-60 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed">
+        <pre className="overflow-x-auto rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed">
           {payloadStr}
         </pre>
       </div>

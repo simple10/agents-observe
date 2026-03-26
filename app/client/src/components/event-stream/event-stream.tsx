@@ -4,7 +4,6 @@ import { useAgents } from '@/hooks/use-agents';
 import { useUIStore } from '@/stores/ui-store';
 import { useSessions } from '@/hooks/use-sessions';
 import { EventRow } from './event-row';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Agent } from '@/types';
 
 export function EventStream() {
@@ -67,7 +66,7 @@ export function EventStream() {
   }
 
   return (
-    <ScrollArea className="flex-1">
+    <div className="flex-1 overflow-y-auto">
       <div className="divide-y divide-border/50">
         {filteredEvents.map((event) => (
           <EventRow
@@ -78,6 +77,6 @@ export function EventStream() {
           />
         ))}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
