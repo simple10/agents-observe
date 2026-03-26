@@ -31,6 +31,7 @@ export function ScopeBar() {
   const {
     selectedProjectId,
     selectedSessionId,
+    setSelectedSessionId,
     selectedAgentIds,
     removeAgentId,
     toggleAgentId,
@@ -151,17 +152,16 @@ export function ScopeBar() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              title="Clear session events"
+              title="Delete or clear session"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Clear session events?</AlertDialogTitle>
+              <AlertDialogTitle>Delete or clear session?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will delete all events for the current session. The session itself will remain.
-                This action cannot be undone.
+                Choose an action for this session. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -174,7 +174,20 @@ export function ScopeBar() {
                   }
                 }}
               >
-                Clear events
+                Clear logs
+              </AlertDialogAction>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={async () => {
+                  if (selectedSessionId) {
+                    await api.deleteSession(selectedSessionId)
+                    setSelectedSessionId(null)
+                    queryClient.invalidateQueries({ queryKey: ['sessions'] })
+                    queryClient.invalidateQueries({ queryKey: ['events'] })
+                  }
+                }}
+              >
+                Delete session
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

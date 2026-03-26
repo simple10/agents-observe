@@ -61,10 +61,12 @@ export interface EventStore {
   getProjects(): Promise<any[]>
   getSessionsForProject(projectId: string): Promise<any[]>
   getSessionById(sessionId: string): Promise<any | null>
+  getAgentById(agentId: string): Promise<any | null>
   getAgentsForSession(sessionId: string): Promise<any[]>
   getEventsForSession(sessionId: string, filters?: EventFilters): Promise<StoredEvent[]>
   getEventsForAgent(agentId: string): Promise<StoredEvent[]>
   getThreadForEvent(eventId: number): Promise<StoredEvent[]>
   getEventsSince(sessionId: string, sinceTimestamp: number): Promise<StoredEvent[]>
+  deleteSession(sessionId: string): Promise<void>
   clearSessionEvents(sessionId: string): Promise<void>
 }

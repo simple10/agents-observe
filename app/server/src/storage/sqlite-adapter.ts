@@ -222,6 +222,7 @@ export class SqliteAdapter implements EventStore {
         `
       SELECT s.*,
         COUNT(DISTINCT a.id) as agent_count,
+        COUNT(DISTINCT CASE WHEN a.status = 'active' THEN a.id END) as active_agent_count,
         COUNT(DISTINCT e.id) as event_count
       FROM sessions s
       LEFT JOIN agents a ON a.session_id = s.id
@@ -241,6 +242,7 @@ export class SqliteAdapter implements EventStore {
           `
       SELECT s.*,
         COUNT(DISTINCT a.id) as agent_count,
+        COUNT(DISTINCT CASE WHEN a.status = 'active' THEN a.id END) as active_agent_count,
         COUNT(DISTINCT e.id) as event_count
       FROM sessions s
       LEFT JOIN agents a ON a.session_id = s.id
@@ -251,6 +253,10 @@ export class SqliteAdapter implements EventStore {
         )
         .get(sessionId) || null
     )
+  }
+
+  async getAgentById(agentId: string): Promise<any | null> {
+    return this.db.prepare(`SELECT * FROM agents WHERE id = ?`).get(agentId) || null
   }
 
   async getAgentsForSession(sessionId: string): Promise<any[]> {
@@ -383,6 +389,12 @@ export class SqliteAdapter implements EventStore {
     `,
       )
       .all(sessionId, sinceTimestamp) as StoredEvent[]
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId)
+    this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(sessionId)
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
   }
 
   async clearSessionEvents(sessionId: string): Promise<void> {

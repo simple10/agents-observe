@@ -15,6 +15,7 @@ export interface Session {
   stoppedAt: number | null
   metadata: Record<string, unknown> | null
   agentCount?: number
+  activeAgentCount?: number
   eventCount?: number
 }
 

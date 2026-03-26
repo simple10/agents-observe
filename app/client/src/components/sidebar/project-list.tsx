@@ -112,40 +112,54 @@ function SessionList({ projectId }: { projectId: string }) {
         const isSelected = selectedSessionId === session.id
         const label = session.slug || session.id.slice(0, 8)
         const cwd = typeof session.metadata?.cwd === 'string' ? session.metadata.cwd : null
+        const activeAgents = session.activeAgentCount ?? 0
+
+        const tooltipLines = [cwd, activeAgents > 0 ? `${activeAgents} active agent${activeAgents !== 1 ? 's' : ''}` : null].filter(Boolean)
 
         return (
-          <div key={session.id}>
-            <button
-              className={cn(
-                'flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs transition-colors',
-                isSelected
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-              )}
-              onClick={() => setSelectedSessionId(isSelected ? null : session.id)}
-            >
-              <span
-                className={cn(
-                  'h-2 w-2 shrink-0 rounded-full',
-                  session.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground/40',
+          <Tooltip key={session.id}>
+            <TooltipTrigger asChild>
+              <div>
+                <button
+                  className={cn(
+                    'flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-xs transition-colors',
+                    isSelected
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                  )}
+                  onClick={() => setSelectedSessionId(isSelected ? null : session.id)}
+                >
+                  <span
+                    className={cn(
+                      'h-2 w-2 shrink-0 rounded-full',
+                      session.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground/40',
+                    )}
+                  />
+                  <span className="truncate">{label}</span>
+                  <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
+                    {formatRelativeTime(session.startedAt)}
+                  </span>
+                  {session.eventCount != null && (
+                    <Badge variant="outline" className="text-[9px] h-3.5 px-1 shrink-0">
+                      {session.eventCount}
+                    </Badge>
+                  )}
+                </button>
+                {cwd && (
+                  <div className="px-2 pb-0.5 text-[10px] text-muted-foreground/50 truncate">
+                    {shortenCwd(cwd)}
+                  </div>
                 )}
-              />
-              <span className="truncate">{label}</span>
-              <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0">
-                {formatRelativeTime(session.startedAt)}
-              </span>
-              {session.eventCount != null && (
-                <Badge variant="outline" className="text-[9px] h-3.5 px-1 shrink-0">
-                  {session.eventCount}
-                </Badge>
-              )}
-            </button>
-            {cwd && (
-              <div className="px-2 pb-0.5 text-[10px] text-muted-foreground/50 truncate">
-                {shortenCwd(cwd)}
               </div>
+            </TooltipTrigger>
+            {tooltipLines.length > 0 && (
+              <TooltipContent side="right" className="text-xs">
+                {tooltipLines.map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </TooltipContent>
             )}
-          </div>
+          </Tooltip>
         )
       })}
     </div>

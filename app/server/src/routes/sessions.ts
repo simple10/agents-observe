@@ -29,6 +29,7 @@ router.get('/sessions/:id', async (c) => {
     stoppedAt: row.stopped_at,
     metadata: row.metadata ? JSON.parse(row.metadata) : null,
     agentCount: row.agent_count,
+    activeAgentCount: row.active_agent_count,
     eventCount: row.event_count,
   })
 })
