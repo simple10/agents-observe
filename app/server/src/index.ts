@@ -1,6 +1,7 @@
 // app/server/src/index.ts
 import {
   initDatabase,
+  getDb,
   upsertProject,
   upsertSession,
   upsertAgent,
@@ -151,9 +152,48 @@ const server = Bun.serve({
         }
 
         broadcast({ type: 'event', data: event })
-        return json(event, 201)
+
+        // Build response — may include requests for local data
+        const requests: Array<{ cmd: string; args: Record<string, unknown>; callback: string }> = []
+
+        // On SessionStart, request the slug if we don't have it
+        if (parsed.subtype === 'SessionStart' && parsed.raw.transcript_path) {
+          requests.push({
+            cmd: 'getSessionSlug',
+            args: { transcript_path: parsed.raw.transcript_path },
+            callback: `/api/sessions/${encodeURIComponent(parsed.sessionId)}/metadata`,
+          })
+        }
+
+        return json({ ok: true, id: eventId, ...(requests.length > 0 ? { requests } : {}) }, 201)
       } catch (error) {
         console.error('Error processing event:', error)
+        return json({ error: 'Invalid request' }, 400)
+      }
+    }
+
+    // POST /api/sessions/:id/metadata — callback from hook with local data
+    const metadataMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/metadata$/)
+    if (metadataMatch && req.method === 'POST') {
+      try {
+        const sessionId = decodeURIComponent(metadataMatch[1])
+        const data = await req.json() as Record<string, unknown>
+
+        if (data.slug && typeof data.slug === 'string') {
+          // Update session and root agent slug
+          getDb().prepare('UPDATE sessions SET slug = ? WHERE id = ?').run(data.slug, sessionId)
+          getDb().prepare('UPDATE agents SET slug = ? WHERE id = ? AND parent_agent_id IS NULL').run(data.slug, sessionId)
+
+          if (LOG_LEVEL === 'debug') {
+            console.log(`[METADATA] Session ${sessionId.slice(0, 8)} slug: ${data.slug}`)
+          }
+
+          // Notify clients
+          broadcast({ type: 'session_update', data: { id: sessionId, slug: data.slug } as any })
+        }
+
+        return json({ ok: true })
+      } catch {
         return json({ error: 'Invalid request' }, 400)
       }
     }
