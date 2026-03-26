@@ -8,7 +8,11 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "latest",
     "bun-types": "latest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0"
   }
 }
