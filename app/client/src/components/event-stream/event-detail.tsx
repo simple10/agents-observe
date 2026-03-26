@@ -11,7 +11,7 @@ interface EventDetailProps {
   event: ParsedEvent
 }
 
-const THREAD_SUBTYPES = ['UserPromptSubmit', 'Stop']
+const THREAD_SUBTYPES = ['UserPromptSubmit', 'Stop', 'SubagentStop']
 
 export function EventDetail({ event }: EventDetailProps) {
   const [copied, setCopied] = useState(false)
