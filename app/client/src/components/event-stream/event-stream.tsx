@@ -73,6 +73,14 @@ export function EventStream() {
   }, [deduped, activeEventTypes])
 
   const showAgentLabel = agentMap.size > 1
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when session changes or first load
+  useEffect(() => {
+    if (scrollRef.current && filteredEvents.length > 0) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [effectiveSessionId])
 
   if (!effectiveSessionId) {
     return (
@@ -89,15 +97,6 @@ export function EventStream() {
       </div>
     )
   }
-
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Auto-scroll to bottom when session changes or first load
-  useEffect(() => {
-    if (scrollRef.current && filteredEvents.length > 0) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [effectiveSessionId])
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto">
