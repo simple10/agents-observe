@@ -12,6 +12,7 @@ export function ScopeBar() {
     selectedSessionId,
     selectedAgentIds,
     removeAgentId,
+    toggleAgentId,
   } = useUIStore();
   const { data: agents } = useAgents(selectedSessionId);
 
@@ -38,14 +39,17 @@ export function ScopeBar() {
       <div className="flex items-center gap-1 flex-wrap">
         {visibleAgents.map((agent) => {
           const isSubagent = agent.parentAgentId !== null;
+          const isSelected = selectedAgentIds.includes(agent.id);
           return (
             <Badge
               key={agent.id}
               variant="secondary"
               className={cn(
-                'gap-1 text-xs cursor-default',
-                agent.status === 'active' ? 'border-green-500/30' : ''
+                'gap-1 text-xs cursor-pointer select-none',
+                agent.status === 'active' ? 'border-green-500/30' : '',
+                isSelected ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/40' : ''
               )}
+              onClick={() => toggleAgentId(agent.id)}
             >
               {isSubagent && <CornerDownRight className="h-2.5 w-2.5" />}
               <span
@@ -58,7 +62,7 @@ export function ScopeBar() {
               {selectedAgentIds.length > 0 && (
                 <button
                   className="ml-0.5 hover:text-foreground"
-                  onClick={() => removeAgentId(agent.id)}
+                  onClick={(e) => { e.stopPropagation(); removeAgentId(agent.id); }}
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
