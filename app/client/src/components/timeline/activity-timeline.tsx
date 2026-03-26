@@ -116,7 +116,7 @@ export function ActivityTimeline() {
           </div>
         </div>
 
-        <div className="overflow-y-auto" style={{ height: timelineHeight - 28 }}>
+        <div className="overflow-y-auto" style={{ height: timelineHeight - 32 }}>
           {flatAgents.map(({ agent, isSubagent }, idx) => (
             <AgentLane
               key={agent.id}
