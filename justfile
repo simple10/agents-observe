@@ -78,7 +78,7 @@ test-watch:
 # Send a test event to the server
 test-event:
     @echo '{"session_id":"test-1234","hook_event_name":"SessionStart","cwd":"/tmp","source":"new"}' \
-      | CLAUDE_OBSERVE_PROJECT_NAME=test-project CLAUDE_OBSERVE_PORT={{port}} node {{project_root}}/app/hooks/send_event.mjs
+      | CLAUDE_OBSERVE_PROJECT_NAME=test-project CLAUDE_OBSERVE_EVENTS_ENDPOINT=http://127.0.0.1:{{port}}/api/events node {{project_root}}/app/hooks/send_event.mjs
     @echo "Event sent"
 
 # ─── Database ────────────────────────────────────────────
@@ -86,7 +86,6 @@ test-event:
 # Delete the events database
 db-reset:
     rm -f {{project_root}}/data/observe.db {{project_root}}/data/observe.db-wal {{project_root}}/data/observe.db-shm
-    rm -f {{server}}/observe.db {{server}}/observe.db-wal {{server}}/observe.db-shm
     @echo "Database reset"
 
 # ─── Utilities ───────────────────────────────────────────

@@ -2,7 +2,7 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_OBSERVE_PROJECT_NAME": "claude-observe",
-    "CLAUDE_OBSERVE_PORT": "4001"
+    "CLAUDE_OBSERVE_EVENTS_ENDPOINT": "http://127.0.0.1:4001/api/events"
   },
   "hooks": {
     "PreToolUse": [

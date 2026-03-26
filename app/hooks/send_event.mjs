@@ -10,18 +10,22 @@ if (!projectName) {
   process.exit(0)
 }
 
-const port = parseInt(process.env.CLAUDE_OBSERVE_PORT || '4001', 10)
+const eventsEndpoint =
+  process.env.CLAUDE_OBSERVE_EVENTS_ENDPOINT || 'http://127.0.0.1:4001/api/events'
+const endpointUrl = new URL(eventsEndpoint)
+const baseUrl = endpointUrl.origin // e.g. http://127.0.0.1:4001
 
 // ── HTTP helpers ──────────────────────────────────────────
 
-function postJson(path, data) {
+function postJson(url, data) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data)
+    const parsed = new URL(url)
     const req = request(
       {
-        hostname: '127.0.0.1',
-        port,
-        path,
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.pathname + parsed.search,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -92,7 +96,7 @@ async function handleRequests(requests) {
     if (!handler) continue
     const result = handler(req.args || {})
     if (result && req.callback) {
-      await postJson(req.callback, result)
+      await postJson(`${baseUrl}${req.callback}`, result)
     }
   }
 }
@@ -116,7 +120,7 @@ process.stdin.on('end', async () => {
 
   payload.project_name = projectName
 
-  const response = await postJson('/api/events', payload)
+  const response = await postJson(eventsEndpoint, payload)
 
   // Handle server requests for local data
   if (response?.requests) {

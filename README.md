@@ -68,7 +68,7 @@ Add the following to your settings file:
 {
   "env": {
     "CLAUDE_OBSERVE_PROJECT_NAME": "my-project",
-    "CLAUDE_OBSERVE_PORT": "4001"
+    "CLAUDE_OBSERVE_EVENTS_ENDPOINT": "http://127.0.0.1:4001/api/events"
   },
   "hooks": {
     "PreToolUse": [
@@ -100,7 +100,7 @@ Replace `/path/to/claude-observe` with the absolute path to where you cloned thi
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CLAUDE_OBSERVE_PROJECT_NAME` | (required) | Name shown in the dashboard for this project |
-| `CLAUDE_OBSERVE_PORT` | `4001` | Server port |
+| `CLAUDE_OBSERVE_EVENTS_ENDPOINT` | `http://127.0.0.1:4001/api/events` | Full URL for the events endpoint |
 
 ### 3. Start the dashboard
 
