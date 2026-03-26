@@ -8,6 +8,7 @@ import projectsRouter from './routes/projects'
 import sessionsRouter from './routes/sessions'
 import agentsRouter from './routes/agents'
 import adminRouter from './routes/admin'
+import pollRouter from './routes/poll'
 
 type Env = { Variables: { store: EventStore; broadcast: (msg: object) => void } }
 
@@ -28,6 +29,7 @@ export function createApp(store: EventStore, broadcast: (msg: object) => void) {
   app.route('/api', sessionsRouter)
   app.route('/api', agentsRouter)
   app.route('/api', adminRouter)
+  app.route('/api', pollRouter)
 
   return app
 }
