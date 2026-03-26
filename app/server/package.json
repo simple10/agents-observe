@@ -3,17 +3,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
-    "test": "bun test"
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/bun": "latest",
     "@types/node": "^25.5.0",
-    "bun-types": "latest"
+    "tsx": "^4.21.0"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0"
+    "@hono/node-server": "^1.19.11",
+    "better-sqlite3": "^12.8.0",
+    "hono": "^4.12.9"
   }
 }
