@@ -17,7 +17,9 @@ export const STATIC_FILTERS: StaticFilter[] = [
     subtypes: ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'],
     // Exclude MCP tools — those are covered by the MCP filter
     match: (e) =>
-      (e.subtype === 'PreToolUse' || e.subtype === 'PostToolUse' || e.subtype === 'PostToolUseFailure') &&
+      (e.subtype === 'PreToolUse' ||
+        e.subtype === 'PostToolUse' ||
+        e.subtype === 'PostToolUseFailure') &&
       !!e.toolName &&
       !e.toolName.startsWith('mcp__'),
   },
@@ -27,7 +29,7 @@ export const STATIC_FILTERS: StaticFilter[] = [
     match: (e) => e.toolName === 'Agent',
   },
   { label: 'Tasks', subtypes: ['TaskCreated', 'TaskCompleted'] },
-  { label: 'Sessions', subtypes: ['SessionStart', 'SessionEnd'] },
+  { label: 'Session', subtypes: ['SessionStart', 'SessionEnd'] },
   {
     label: 'MCP',
     subtypes: ['Elicitation', 'ElicitationResult'],
@@ -52,11 +54,7 @@ export const STATIC_FILTERS: StaticFilter[] = [
 ]
 
 // Subtypes that produce dynamic (row 2) tool-name filters.
-const DYNAMIC_SUBTYPES = new Set([
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-])
+const DYNAMIC_SUBTYPES = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'])
 
 // Normalize MCP tool names: mcp__chrome-devtools__click → mcp__chrome-devtools
 function normalizeMcpName(name: string): string {
@@ -69,9 +67,7 @@ export function getDynamicFilterNames(events: ParsedEvent[]): string[] {
   const names = new Set<string>()
   for (const e of events) {
     if (e.subtype && DYNAMIC_SUBTYPES.has(e.subtype) && e.toolName) {
-      const name = e.toolName.startsWith('mcp__')
-        ? normalizeMcpName(e.toolName)
-        : e.toolName
+      const name = e.toolName.startsWith('mcp__') ? normalizeMcpName(e.toolName) : e.toolName
       names.add(name)
     }
   }
@@ -84,12 +80,21 @@ export function getFiltersWithMatches(events: ParsedEvent[]): Set<string> {
   for (const filter of STATIC_FILTERS) {
     if (matched.has(filter.label)) continue
     for (const e of events) {
-      if (filter.match && filter.match(e)) { matched.add(filter.label); break }
-      if (filter.subtypes && e.subtype && filter.subtypes.includes(e.subtype)) { matched.add(filter.label); break }
+      if (filter.match && filter.match(e)) {
+        matched.add(filter.label)
+        break
+      }
+      if (filter.subtypes && e.subtype && filter.subtypes.includes(e.subtype)) {
+        matched.add(filter.label)
+        break
+      }
     }
   }
   return matched
 }
+
+// Pre-built lookup map for O(1) filter access by label
+const FILTER_BY_LABEL = new Map(STATIC_FILTERS.map((f) => [f.label, f]))
 
 // Check if an event matches any of the given active filters.
 export function eventMatchesFilters(
@@ -100,22 +105,24 @@ export function eventMatchesFilters(
   const hasStaticFilters = activeStaticLabels.length > 0
   const hasToolFilters = activeToolNames.length > 0
 
-  const matchesStatic = hasStaticFilters && activeStaticLabels.some((label) => {
-    const filter = STATIC_FILTERS.find((f) => f.label === label)
-    if (!filter) return false
-    // If filter has a match function, use it
-    if (filter.match && filter.match(event)) return true
-    // If filter has subtypes, check subtype membership
-    if (filter.subtypes && event.subtype && filter.subtypes.includes(event.subtype)) return true
-    return false
-  })
+  const matchesStatic =
+    hasStaticFilters &&
+    activeStaticLabels.some((label) => {
+      const filter = FILTER_BY_LABEL.get(label)
+      if (!filter) return false
+      if (filter.match && filter.match(event)) return true
+      if (filter.subtypes && event.subtype && filter.subtypes.includes(event.subtype)) return true
+      return false
+    })
 
-  const matchesTool = hasToolFilters && event.toolName != null && activeToolNames.some((t) => {
-    if (event.toolName === t) return true
-    // MCP prefix match
-    if (event.toolName?.startsWith(t + '__')) return true
-    return false
-  })
+  const matchesTool =
+    hasToolFilters &&
+    event.toolName != null &&
+    activeToolNames.some((t) => {
+      if (event.toolName === t) return true
+      if (event.toolName?.startsWith(t + '__')) return true
+      return false
+    })
 
   if (hasStaticFilters && hasToolFilters) return matchesStatic || matchesTool
   if (hasStaticFilters) return matchesStatic

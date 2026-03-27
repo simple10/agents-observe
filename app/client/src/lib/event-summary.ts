@@ -3,9 +3,7 @@
 
 import type { ParsedEvent } from '@/types';
 
-// allEvents is optional — pass it when the full event list is available
-// so Stop events can look up the preceding prompt.
-export function getEventSummary(event: ParsedEvent, allEvents?: ParsedEvent[]): string {
+export function getEventSummary(event: ParsedEvent): string {
   const p = event.payload as Record<string, any>;
   const cwd = p.cwd as string | undefined;
 
@@ -20,7 +18,7 @@ export function getEventSummary(event: ParsedEvent, allEvents?: ParsedEvent[]): 
       return 'Session ended';
 
     case 'Stop':
-      return getStopSummary(event, allEvents);
+      return getStopSummary(event);
 
     case 'StopFailure':
       return p.error_type ? `Error: ${p.error_type}` : 'Turn failed';
@@ -136,30 +134,11 @@ function getToolSummary(
   }
 }
 
-function getStopSummary(event: ParsedEvent, allEvents?: ParsedEvent[]): string {
+function getStopSummary(event: ParsedEvent): string {
   const p = event.payload as Record<string, any>;
   const lastMsg = p.last_assistant_message as string | undefined;
 
-  // Find the preceding UserPromptSubmit
-  let prompt: string | undefined;
-  if (allEvents) {
-    const idx = allEvents.findIndex((e) => e.id === event.id);
-    if (idx > 0) {
-      for (let i = idx - 1; i >= 0; i--) {
-        if (allEvents[i].subtype === 'UserPromptSubmit') {
-          const pp = allEvents[i].payload as Record<string, any>;
-          prompt = pp.prompt || pp.message?.content;
-          break;
-        }
-      }
-    }
-  }
-
-  const parts: string[] = [];
-  if (prompt) parts.push(`Prompt: "${oneLine(prompt)}"`);
-  if (lastMsg) parts.push(`Final: "${oneLine(lastMsg)}"`);
-
-  if (parts.length > 0) return parts.join('\n');
+  if (lastMsg) return `Final: "${oneLine(lastMsg)}"`;
   return 'Session stopped';
 }
 

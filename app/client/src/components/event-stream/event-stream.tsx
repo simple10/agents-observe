@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useDeferredValue } from 'react'
 import { useEvents } from '@/hooks/use-events'
 import { useAgents } from '@/hooks/use-agents'
 import { useUIStore } from '@/stores/ui-store'
@@ -18,6 +18,10 @@ export function EventStream() {
     expandAllCounter,
     expandAllEvents,
   } = useUIStore()
+
+  // Defer filter values so the UI stays responsive during filter changes
+  const deferredStaticFilters = useDeferredValue(activeStaticFilters)
+  const deferredToolFilters = useDeferredValue(activeToolFilters)
 
   const { data: events } = useEvents(selectedSessionId, {
     agentIds: selectedAgentIds.length > 0 ? selectedAgentIds : undefined,
@@ -60,9 +64,9 @@ export function EventStream() {
   }, [events])
 
   const filteredEvents = useMemo(() => {
-    if (activeStaticFilters.length === 0 && activeToolFilters.length === 0) return deduped
-    return deduped.filter((e) => eventMatchesFilters(e, activeStaticFilters, activeToolFilters))
-  }, [deduped, activeStaticFilters, activeToolFilters])
+    if (deferredStaticFilters.length === 0 && deferredToolFilters.length === 0) return deduped
+    return deduped.filter((e) => eventMatchesFilters(e, deferredStaticFilters, deferredToolFilters))
+  }, [deduped, deferredStaticFilters, deferredToolFilters])
 
   const showAgentLabel = agentMap.size > 1
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -123,7 +127,6 @@ export function EventStream() {
             <EventRow
               key={event.id}
               event={event}
-              allEvents={filteredEvents}
               agentMap={agentMap}
               showAgentLabel={showAgentLabel}
             />

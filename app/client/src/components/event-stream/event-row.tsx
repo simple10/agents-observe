@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { memo, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon } from '@/config/event-icons'
 import { getEventSummary } from '@/lib/event-summary'
@@ -9,7 +9,6 @@ import type { ParsedEvent, Agent } from '@/types'
 
 interface EventRowProps {
   event: ParsedEvent
-  allEvents: ParsedEvent[]
   agentMap: Map<string, Agent>
   showAgentLabel: boolean
 }
@@ -42,7 +41,33 @@ function getAgentColor(agentId: string): string {
   return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length]
 }
 
-export function EventRow({ event, allEvents, agentMap, showAgentLabel }: EventRowProps) {
+// Friendly display labels for subtypes
+const LABEL_MAP: Record<string, string> = {
+  UserPromptSubmit: 'Prompt',
+  stop_hook_summary: 'Stop',
+  StopFailure: 'Error',
+  SubagentStart: 'SubStart',
+  SubagentStop: 'SubStop',
+  SessionStart: 'Session',
+  SessionEnd: 'Session',
+  PostToolUseFailure: 'ToolErr',
+  PermissionRequest: 'Permit',
+  TaskCreated: 'Task',
+  TaskCompleted: 'Task',
+  TeammateIdle: 'Team',
+  InstructionsLoaded: 'Config',
+  ConfigChange: 'Config',
+  CwdChanged: 'CwdChg',
+  FileChanged: 'FileChg',
+  PreCompact: 'Compact',
+  PostCompact: 'Compact',
+  Elicitation: 'MCP',
+  ElicitationResult: 'MCP',
+  WorktreeCreate: 'Worktree',
+  WorktreeRemove: 'Worktree',
+}
+
+export const EventRow = memo(function EventRow({ event, agentMap, showAgentLabel }: EventRowProps) {
   const { expandedEventIds, toggleExpandedEvent, scrollToEventId, setScrollToEventId } =
     useUIStore()
   const isExpanded = expandedEventIds.has(event.id)
@@ -58,34 +83,9 @@ export function EventRow({ event, allEvents, agentMap, showAgentLabel }: EventRo
   const isFailure = event.subtype === 'PostToolUseFailure'
   const isCompleted = event.status === 'completed'
 
-  // Friendly display labels for subtypes
-  const LABEL_MAP: Record<string, string> = {
-    UserPromptSubmit: 'Prompt',
-    stop_hook_summary: 'Stop',
-    StopFailure: 'Error',
-    SubagentStart: 'SubStart',
-    SubagentStop: 'SubStop',
-    SessionStart: 'Session',
-    SessionEnd: 'Session',
-    PostToolUseFailure: 'ToolErr',
-    PermissionRequest: 'Permit',
-    TaskCreated: 'Task',
-    TaskCompleted: 'Task',
-    TeammateIdle: 'Team',
-    InstructionsLoaded: 'Config',
-    ConfigChange: 'Config',
-    CwdChanged: 'CwdChg',
-    FileChanged: 'FileChg',
-    PreCompact: 'Compact',
-    PostCompact: 'Compact',
-    Elicitation: 'MCP',
-    ElicitationResult: 'MCP',
-    WorktreeCreate: 'Worktree',
-    WorktreeRemove: 'Worktree',
-  }
   const rawLabel = isTool ? 'Tool' : event.subtype || event.type
   const displayLabel = LABEL_MAP[rawLabel] || rawLabel
-  const displaySummary = getEventSummary(event, allEvents)
+  const displaySummary = getEventSummary(event)
 
   useEffect(() => {
     if (scrollToEventId === event.id && rowRef.current) {
@@ -160,4 +160,4 @@ export function EventRow({ event, allEvents, agentMap, showAgentLabel }: EventRo
       {isExpanded && <EventDetail event={event} />}
     </div>
   )
-}
+})
