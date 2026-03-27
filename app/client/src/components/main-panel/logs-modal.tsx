@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useEvents } from '@/hooks/use-events'
 import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogTrigger, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { ScrollText, Copy, Check } from 'lucide-react'
+import { Dialog, DialogTrigger, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
+import { ScrollText, Copy, Check, ArrowDownToLine, ClipboardCopy, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function LogsModal() {
   const { selectedSessionId } = useUIStore()
   const { data: events } = useEvents(selectedSessionId)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [copiedAll, setCopiedAll] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   if (!selectedSessionId) return null
 
@@ -17,6 +19,18 @@ export function LogsModal() {
     navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handleCopyAll = () => {
+    if (!events?.length) return
+    const allLogs = events.map((e) => JSON.stringify(e.payload)).join('\n')
+    navigator.clipboard.writeText(allLogs)
+    setCopiedAll(true)
+    setTimeout(() => setCopiedAll(false), 2000)
+  }
+
+  const scrollToBottom = () => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }
 
   return (
@@ -37,8 +51,34 @@ export function LogsModal() {
           <span className="text-xs text-muted-foreground">
             {events?.length ?? 0} events
           </span>
+          <div className="flex items-center gap-1 ml-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={handleCopyAll}
+              title="Copy all logs"
+            >
+              {copiedAll ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardCopy className="h-3 w-3" />}
+              {copiedAll ? 'Copied' : 'Copy all'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={scrollToBottom}
+              title="Jump to bottom"
+            >
+              <ArrowDownToLine className="h-3.5 w-3.5" />
+            </Button>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogClose>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {events && events.length > 0 ? (
             <div className="divide-y divide-border/30">
               {events.map((event) => {

@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { cn } from '@/lib/utils'
-import { X } from 'lucide-react'
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root {...props} />
@@ -9,6 +8,10 @@ function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>)
 
 function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
   return <DialogPrimitive.Trigger {...props} />
+}
+
+function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
+  return <DialogPrimitive.Close {...props} />
 }
 
 function DialogContent({
@@ -27,9 +30,6 @@ function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100">
-          <X className="h-4 w-4" />
-        </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   )
@@ -47,4 +47,4 @@ function DialogTitle({
   )
 }
 
-export { Dialog, DialogTrigger, DialogContent, DialogTitle }
+export { Dialog, DialogTrigger, DialogClose, DialogContent, DialogTitle }
