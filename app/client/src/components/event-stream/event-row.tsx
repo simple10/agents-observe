@@ -75,7 +75,7 @@ export const EventRow = memo(function EventRow({ event, agentMap, agentColorMap,
   const isSubagent = agent?.parentAgentId != null
   const agentColors = getAgentColorById(event.agentId, agentColorMap)
   const Icon = getEventIcon(event.subtype, event.toolName)
-  const { iconColor } = getEventColor(event.subtype, event.toolName)
+  const { iconColor, customHex } = getEventColor(event.subtype, event.toolName)
 
   const isTool = event.subtype === 'PreToolUse' || event.subtype === 'PostToolUse' || event.subtype === 'PostToolUseFailure'
   const isFailure = event.subtype === 'PostToolUseFailure'
@@ -142,7 +142,7 @@ export const EventRow = memo(function EventRow({ event, agentMap, agentColorMap,
         )}
 
         <div className="flex items-center gap-2 w-full min-w-0">
-          <span className={cn('shrink-0', iconColor)} title={event.subtype || event.type}>
+          <span className={cn('shrink-0', !customHex && iconColor)} style={customHex ? { color: customHex } : undefined} title={event.subtype || event.type}>
             <Icon className="h-4 w-4" />
           </span>
           <span

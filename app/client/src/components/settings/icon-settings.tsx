@@ -110,7 +110,7 @@ export function IconSettings() {
   }, [filter])
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex flex-col gap-3 h-full max-h-full">
       <div className="flex items-center gap-2">
         <Input
           placeholder="Filter event types..."
@@ -132,7 +132,7 @@ export function IconSettings() {
         )}
       </div>
 
-      <ScrollArea className="flex-1 -mx-1">
+      <ScrollArea className="-mx-1" style={{ height: 'calc(80vh - 220px)' }}>
         <div className="space-y-0.5 px-1">
           {filteredEvents.map((entry) => (
             <EventRow
@@ -140,7 +140,7 @@ export function IconSettings() {
               entry={entry}
               customization={customizations[entry.key]}
               onChangeIcon={(iconName) => setCustomization(entry.key, { iconName })}
-              onChangeColor={(colorName) => setCustomization(entry.key, { colorName })}
+              onChangeColor={(colorName, customHex) => setCustomization(entry.key, { colorName, customHex })}
               onReset={() => resetCustomization(entry.key)}
             />
           ))}
@@ -157,9 +157,9 @@ export function IconSettings() {
 
 interface EventRowProps {
   entry: EventEntry
-  customization: { iconName?: string; colorName?: string } | undefined
+  customization: { iconName?: string; colorName?: string; customHex?: string } | undefined
   onChangeIcon: (iconName: string) => void
-  onChangeColor: (colorName: string) => void
+  onChangeColor: (colorName: string, customHex?: string) => void
   onReset: () => void
 }
 
@@ -167,14 +167,18 @@ function EventRow({ entry, customization, onChangeIcon, onChangeColor, onReset }
   const hasCustom = !!customization
   const activeIconName = customization?.iconName || entry.defaultIconName
   const activeColorKey = customization?.colorName || entry.defaultColorKey
+  const activeCustomHex = customization?.customHex
 
   // Resolve actual icon component for preview
   const Icon = (allLucideIcons as Record<string, LucideIcon>)[activeIconName] || defaultEventIcon
 
-  // Resolve active color class
-  const activeIconColorClass = activeColorKey && COLOR_PRESETS[activeColorKey]
-    ? COLOR_PRESETS[activeColorKey].iconColor
-    : entry.defaultIconColorClass
+  // Resolve active color class or custom hex
+  const isCustomColor = activeColorKey === 'custom' && activeCustomHex
+  const activeIconColorClass = isCustomColor
+    ? ''
+    : activeColorKey && COLOR_PRESETS[activeColorKey]
+      ? COLOR_PRESETS[activeColorKey].iconColor
+      : entry.defaultIconColorClass
 
   // Default swatch for color picker
   const defaultSwatch = entry.defaultColorKey
@@ -189,37 +193,42 @@ function EventRow({ entry, customization, onChangeIcon, onChangeColor, onReset }
       )}
     >
       {/* Preview icon */}
-      <Icon className={cn('h-4 w-4 shrink-0', activeIconColorClass)} />
+      <Icon
+        className={cn('h-4 w-4 shrink-0', !isCustomColor && activeIconColorClass)}
+        style={isCustomColor ? { color: activeCustomHex } : undefined}
+      />
 
       {/* Event name */}
       <span className="flex-1 truncate font-mono text-xs">{entry.key}</span>
 
+      {/* Reset button to the left of icon/color pickers */}
+      {hasCustom && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onReset}
+          className="h-5 w-5 shrink-0 text-muted-foreground"
+          title="Reset to default"
+        >
+          <RotateCcw className="h-3 w-3" />
+        </Button>
+      )}
+
       {/* Icon picker */}
       <IconPicker
         currentIconName={activeIconName}
-        iconColorClass={activeIconColorClass}
+        iconColorClass={isCustomColor ? '' : activeIconColorClass}
+        iconStyle={isCustomColor ? { color: activeCustomHex } : undefined}
         onSelect={onChangeIcon}
       />
 
       {/* Color picker */}
       <ColorPicker
         currentColor={activeColorKey}
+        customHex={activeCustomHex}
         onSelect={onChangeColor}
         defaultSwatch={defaultSwatch}
       />
-
-      {/* Reset button (only visible when customized) */}
-      {hasCustom && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onReset}
-          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Reset to default"
-        >
-          <RotateCcw className="h-3 w-3" />
-        </Button>
-      )}
     </div>
   )
 }

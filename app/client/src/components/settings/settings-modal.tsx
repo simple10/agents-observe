@@ -28,7 +28,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           <TabsContent value="projects" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
             <ProjectsTab />
           </TabsContent>
-          <TabsContent value="icons" className="flex-1 min-h-0 overflow-hidden px-6 pb-6 pt-4">
+          <TabsContent value="icons" className="flex-1 min-h-0 px-6 pb-6 pt-4" style={{ maxHeight: 'calc(80vh - 140px)' }}>
             <IconSettings />
           </TabsContent>
         </Tabs>

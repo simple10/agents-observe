@@ -4,7 +4,8 @@ const STORAGE_KEY = 'observe-icon-customizations'
 
 export interface IconCustomization {
   iconName?: string // lucide-react PascalCase icon name
-  colorName?: string // color preset key (e.g. "blue", "red", "green")
+  colorName?: string // color preset key (e.g. "blue", "red", "green") or "custom"
+  customHex?: string // hex color when colorName is "custom" (e.g. "#ff5500")
 }
 
 export type IconCustomizations = Record<string, IconCustomization>

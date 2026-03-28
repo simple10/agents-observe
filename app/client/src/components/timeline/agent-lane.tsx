@@ -29,7 +29,7 @@ function DotContainer({
 
         const remainingMs = Math.max(0, rangeMs - age)
         const Icon = getEventIcon(event.subtype, event.toolName)
-        const { dotColor } = getEventColor(event.subtype, event.toolName)
+        const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
         const summary = getEventSummary(event)
 
         return (
@@ -48,7 +48,7 @@ function DotContainer({
                 }}
                 onClick={() => setScrollToEventId(event.id)}
               >
-                <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', dotColor)}>
+                <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', !customHex && dotColor)} style={customHex ? { backgroundColor: customHex } : undefined}>
                   <Icon className="h-3 w-3 text-white" />
                 </span>
               </button>

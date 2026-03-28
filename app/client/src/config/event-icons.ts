@@ -179,17 +179,17 @@ const eventColors: Record<string, [string, string]> = {
 
 const defaultEventColor: [string, string] = ['text-muted-foreground', 'bg-muted-foreground dark:bg-muted-foreground']
 
-export function getEventColor(subtype: string | null, toolName?: string | null): { iconColor: string; dotColor: string } {
+export function getEventColor(subtype: string | null, toolName?: string | null): { iconColor: string; dotColor: string; customHex?: string } {
   // Check user customizations first
-  if (subtype && toolName) {
-    const custom = getIconCustomization(`${subtype}:${toolName}`)
-    if (custom?.colorName && COLOR_PRESETS[custom.colorName]) {
-      const preset = COLOR_PRESETS[custom.colorName]
-      return { iconColor: preset.iconColor, dotColor: preset.dotColor }
+  const keys: string[] = []
+  if (subtype && toolName) keys.push(`${subtype}:${toolName}`)
+  if (subtype) keys.push(subtype)
+
+  for (const key of keys) {
+    const custom = getIconCustomization(key)
+    if (custom?.colorName === 'custom' && custom.customHex) {
+      return { iconColor: '', dotColor: '', customHex: custom.customHex }
     }
-  }
-  if (subtype) {
-    const custom = getIconCustomization(subtype)
     if (custom?.colorName && COLOR_PRESETS[custom.colorName]) {
       const preset = COLOR_PRESETS[custom.colorName]
       return { iconColor: preset.iconColor, dotColor: preset.dotColor }
