@@ -1,84 +1,83 @@
 {
   "env": {
-    "CLAUDE_OBSERVE_PROJECT_NAME": "__PROJECT_NAME__",
-    "CLAUDE_OBSERVE_EVENTS_ENDPOINT": "__EVENTS_ENDPOINT__",
-    "CLAUDE_OBSERVE_HOOK_SCRIPT": "__HOOK_SCRIPT__"
+    "CLAUDE_OBSERVE_PROJECT_SLUG": "__PROJECT_SLUG__",
+    "CLAUDE_OBSERVE_EVENTS_ENDPOINT": "__EVENTS_ENDPOINT__"
   },
   "hooks": {
     "SessionStart": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "SessionEnd": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PreToolUse": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PostToolUse": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PostToolUseFailure": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PermissionRequest": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "StopFailure": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "SubagentStart": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "SubagentStop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "TeammateIdle": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "TaskCreated": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "TaskCompleted": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "Notification": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "InstructionsLoaded": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "ConfigChange": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "CwdChanged": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "FileChanged": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PreCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "PostCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "Elicitation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "ElicitationResult": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "WorktreeCreate": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ],
     "WorktreeRemove": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "node $CLAUDE_OBSERVE_HOOK_SCRIPT" }] }
+      { "matcher": "", "hooks": [{ "type": "command", "command": "node __HOOK_SCRIPT__ hook" }] }
     ]
   }
 }

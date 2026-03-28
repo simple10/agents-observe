@@ -16,6 +16,10 @@ Check the Claude Observe server status.
    docker ps -a --filter name=claude-observe --format "Name: {{.Names}}\nStatus: {{.Status}}\nPorts: {{.Ports}}"
    echo ""
    echo "=== Health Check ==="
+   node ${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(dirname "$0")")")}/hooks/scripts/send_event.mjs health 2>&1 || true
+   ```
+   If `CLAUDE_PLUGIN_ROOT` is not set, fall back to:
+   ```bash
    curl -sf http://127.0.0.1:4981/api/health && echo "Server: healthy" || echo "Server: not responding"
    ```
 
