@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import { useAgents } from '@/hooks/use-agents'
 import { useUIStore } from '@/stores/ui-store'
-import { getAgentDisplayName } from '@/lib/agent-utils'
+import { getAgentDisplayName, buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -75,6 +75,8 @@ export function AgentCombobox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, allAgents])
 
+  const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
+
   const activeCount = allAgents.filter((a) => a.status === 'active').length
   const selectedAgents = allAgents.filter((a) => selectedAgentIds.includes(a.id))
 
@@ -135,6 +137,7 @@ export function AgentCombobox() {
                   const isSelected = selectedAgentIds.includes(agent.id)
                   const displayName = getAgentDisplayName(agent)
                   const isMain = !agent.parentAgentId
+                  const agentColor = getAgentColorById(agent.id, agentColorMap)
 
                   return (
                     <CommandItem
@@ -154,11 +157,12 @@ export function AgentCombobox() {
                       <span
                         className={cn(
                           'h-2 w-2 shrink-0 rounded-full',
-                          agent.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground/40',
+                          agentColor.dot,
+                          agent.status !== 'active' && 'opacity-40',
                         )}
                       />
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className={cn('truncate', isMain && 'font-medium')}>
+                        <span className={cn('truncate', isMain && 'font-medium', agentColor.textOnly)}>
                           {displayName}
                         </span>
                         {!isMain && (
@@ -187,7 +191,9 @@ export function AgentCombobox() {
       </Popover>
 
       {/* Selected agent chips (shown inline when filtering) */}
-      {selectedAgents.map((agent) => (
+      {selectedAgents.map((agent) => {
+        const chipColor = getAgentColorById(agent.id, agentColorMap)
+        return (
         <Badge
           key={agent.id}
           variant="secondary"
@@ -197,10 +203,11 @@ export function AgentCombobox() {
           <span
             className={cn(
               'h-1.5 w-1.5 rounded-full',
-              agent.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground/40',
+              chipColor.dot,
+              agent.status !== 'active' && 'opacity-40',
             )}
           />
-          {getAgentDisplayName(agent)}
+          <span className={chipColor.textOnly}>{getAgentDisplayName(agent)}</span>
           <button
             className="ml-0.5 hover:text-foreground"
             onClick={(e) => {
@@ -211,7 +218,8 @@ export function AgentCombobox() {
             <X className="h-2.5 w-2.5" />
           </button>
         </Badge>
-      ))}
+        )
+      })}
     </div>
   )
 }

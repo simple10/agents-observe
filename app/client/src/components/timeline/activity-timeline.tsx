@@ -1,28 +1,13 @@
-import { useCallback, useRef, useMemo } from 'react'
+import { useCallback, useRef, useMemo, useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/ui-store'
 import { useEvents } from '@/hooks/use-events'
 import { useAgents } from '@/hooks/use-agents'
 import { useSessions } from '@/hooks/use-sessions'
-import { getAgentDisplayName } from '@/lib/agent-utils'
+import { getAgentDisplayName, buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
 import { AgentLane } from './agent-lane'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Agent, ParsedEvent } from '@/types'
-
-const AGENT_COLORS = [
-  'text-green-700 dark:text-green-400',
-  'text-blue-700 dark:text-blue-400',
-  'text-purple-700 dark:text-purple-400',
-  'text-amber-700 dark:text-amber-400',
-  'text-cyan-700 dark:text-cyan-400',
-  'text-rose-700 dark:text-rose-400',
-  'text-emerald-700 dark:text-emerald-400',
-  'text-orange-700 dark:text-orange-400',
-]
-
-function getColor(idx: number): string {
-  return AGENT_COLORS[idx % AGENT_COLORS.length]
-}
 
 export function ActivityTimeline() {
   const {
@@ -43,19 +28,40 @@ export function ActivityTimeline() {
   const startY = useRef(0)
   const startHeight = useRef(0)
 
+  // Periodic cleanup tick: forces re-render so expired dots are removed from DOM.
+  // Also triggers when new events arrive.
+  const [, setCleanupTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setCleanupTick((t) => t + 1), 5_000)
+    return () => clearInterval(id)
+  }, [])
+  const eventsLength = events?.length ?? 0
+  useEffect(() => {
+    setCleanupTick((t) => t + 1)
+  }, [eventsLength])
+
   const flatAgents = useMemo(() => {
-    const result: { agent: Agent; isSubagent: boolean }[] = []
+    const mainAgents: { agent: Agent; isSubagent: boolean }[] = []
+    const nonMainAgents: { agent: Agent; isSubagent: boolean }[] = []
     function collect(list: Agent[] | undefined, isSub: boolean) {
       list?.forEach((a) => {
         if (selectedAgentIds.length === 0 || selectedAgentIds.includes(a.id)) {
-          result.push({ agent: a, isSubagent: isSub })
+          if (!isSub) {
+            mainAgents.push({ agent: a, isSubagent: false })
+          } else {
+            nonMainAgents.push({ agent: a, isSubagent: true })
+          }
         }
         if (a.children) collect(a.children, true)
       })
     }
     collect(agents, false)
-    return result
+    // Reverse non-main agents so newest appear right after Main
+    nonMainAgents.reverse()
+    return [...mainAgents, ...nonMainAgents]
   }, [agents, selectedAgentIds])
+
+  const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
 
   const eventsByAgent = useMemo(() => {
     const map = new Map<string, ParsedEvent[]>()
@@ -120,10 +126,12 @@ export function ActivityTimeline() {
           {flatAgents.map(({ agent, isSubagent }, idx) => (
             <AgentLane
               key={agent.id}
+              agentId={agent.id}
               agentName={getAgentDisplayName(agent)}
               events={eventsByAgent.get(agent.id) || []}
+              allEvents={events || []}
               isSubagent={isSubagent}
-              color={getColor(idx)}
+              color={getAgentColorById(agent.id, agentColorMap).textOnly}
             />
           ))}
           {flatAgents.length === 0 && (

@@ -56,19 +56,44 @@ export const STATIC_FILTERS: StaticFilter[] = [
 // Subtypes that produce dynamic (row 2) tool-name filters.
 const DYNAMIC_SUBTYPES = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'])
 
+// All subtypes explicitly covered by at least one static filter.
+// Events with subtypes NOT in this set will appear as dynamic catchall pills.
+const STATIC_COVERED_SUBTYPES = new Set(
+  STATIC_FILTERS.flatMap((f) => f.subtypes ?? []),
+)
+
+// Display-name overrides for dynamic catchall subtypes.
+// Add entries here to give hook subtypes friendlier pill labels.
+const DYNAMIC_DISPLAY_NAMES: Record<string, string> = {
+  CwdChanged: 'CWD',
+  FileChanged: 'File',
+}
+
+/** Return a human-friendly label for a dynamic filter key. */
+export function getDynamicDisplayName(key: string): string {
+  return DYNAMIC_DISPLAY_NAMES[key] ?? key
+}
+
 // Normalize MCP tool names: mcp__chrome-devtools__click → mcp__chrome-devtools
 function normalizeMcpName(name: string): string {
   const match = name.match(/^(mcp__[^_]+(?:_[^_]+)*?)__/)
   return match ? match[1] : name
 }
 
-// Extract dynamic filter names from events (tool names, etc.)
+// Extract dynamic filter names from events (tool names + uncovered hook subtypes).
+// This is the catchall: anything not represented in the static row gets a pill here.
 export function getDynamicFilterNames(events: ParsedEvent[]): string[] {
   const names = new Set<string>()
   for (const e of events) {
+    // 1. Tool-name pills (existing behavior)
     if (e.subtype && DYNAMIC_SUBTYPES.has(e.subtype) && e.toolName) {
       const name = e.toolName.startsWith('mcp__') ? normalizeMcpName(e.toolName) : e.toolName
       names.add(name)
+      continue
+    }
+    // 2. Catchall: any hook subtype not covered by a static filter
+    if (e.subtype && !STATIC_COVERED_SUBTYPES.has(e.subtype)) {
+      names.add(e.subtype)
     }
   }
   return Array.from(names).sort()
@@ -117,10 +142,14 @@ export function eventMatchesFilters(
 
   const matchesTool =
     hasToolFilters &&
-    event.toolName != null &&
     activeToolNames.some((t) => {
-      if (event.toolName === t) return true
-      if (event.toolName?.startsWith(t + '__')) return true
+      // Tool-name match (e.g. "Read", "mcp__chrome-devtools")
+      if (event.toolName != null) {
+        if (event.toolName === t) return true
+        if (event.toolName.startsWith(t + '__')) return true
+      }
+      // Catchall subtype match (e.g. "CwdChanged", "FileChanged")
+      if (event.subtype === t) return true
       return false
     })
 

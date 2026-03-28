@@ -79,3 +79,8 @@
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
 }
+
+@keyframes flash-ring {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 0 2px oklch(0.6 0.15 250 / 0.6); }
+}

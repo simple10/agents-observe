@@ -1,8 +1,8 @@
-import { memo, useRef, useEffect } from 'react'
+import { memo, useRef, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
 import { getEventSummary } from '@/lib/event-summary'
-import { getAgentDisplayName } from '@/lib/agent-utils'
+import { getAgentDisplayName, getAgentColorById } from '@/lib/agent-utils'
 import { useUIStore } from '@/stores/ui-store'
 import { EventDetail } from './event-detail'
 import { Check, X, Loader } from 'lucide-react'
@@ -16,8 +16,10 @@ export interface SpawnInfo {
 interface EventRowProps {
   event: ParsedEvent
   agentMap: Map<string, Agent>
+  agentColorMap: Map<string, number>
   showAgentLabel: boolean
   spawnInfo?: SpawnInfo
+  onRowRef?: (id: number, el: HTMLDivElement | null) => void
 }
 
 function formatTime(ts: number): string {
@@ -27,25 +29,6 @@ function formatTime(ts: number): string {
     minute: '2-digit',
     second: '2-digit',
   })
-}
-
-const AGENT_COLORS = [
-  'text-green-700 dark:text-green-400 border-green-600/50 dark:border-green-500/50',
-  'text-blue-700 dark:text-blue-400 border-blue-600/50 dark:border-blue-500/50',
-  'text-purple-700 dark:text-purple-400 border-purple-600/50 dark:border-purple-500/50',
-  'text-amber-700 dark:text-amber-400 border-amber-600/50 dark:border-amber-500/50',
-  'text-cyan-700 dark:text-cyan-400 border-cyan-600/50 dark:border-cyan-500/50',
-  'text-rose-700 dark:text-rose-400 border-rose-600/50 dark:border-rose-500/50',
-  'text-emerald-700 dark:text-emerald-400 border-emerald-600/50 dark:border-emerald-500/50',
-  'text-orange-700 dark:text-orange-400 border-orange-600/50 dark:border-orange-500/50',
-]
-
-function getAgentColor(agentId: string): string {
-  let hash = 0
-  for (let i = 0; i < agentId.length; i++) {
-    hash = ((hash << 5) - hash + agentId.charCodeAt(i)) | 0
-  }
-  return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length]
 }
 
 // Friendly display labels for subtypes
@@ -74,16 +57,23 @@ const LABEL_MAP: Record<string, string> = {
   WorktreeRemove: 'Worktree',
 }
 
-export const EventRow = memo(function EventRow({ event, agentMap, showAgentLabel, spawnInfo }: EventRowProps) {
-  const { expandedEventIds, toggleExpandedEvent, scrollToEventId, setScrollToEventId } =
+export const EventRow = memo(function EventRow({ event, agentMap, agentColorMap, showAgentLabel, spawnInfo, onRowRef }: EventRowProps) {
+  const { expandedEventIds, toggleExpandedEvent, scrollToEventId, setScrollToEventId, selectedEventId, setSelectedEventId } =
     useUIStore()
   const isExpanded = expandedEventIds.has(event.id)
+  const isSelected = selectedEventId === event.id
   const rowRef = useRef<HTMLDivElement>(null)
+
+  // Register this row's DOM element with the parent for scroll-to-selected
+  const combinedRef = useCallback((el: HTMLDivElement | null) => {
+    (rowRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+    onRowRef?.(event.id, el)
+  }, [event.id, onRowRef])
 
   const agent = agentMap.get(event.agentId)
   const agentName = agent ? getAgentDisplayName(agent) : event.agentId.slice(0, 8)
   const isSubagent = agent?.parentAgentId != null
-  const colorClass = getAgentColor(event.agentId)
+  const agentColors = getAgentColorById(event.agentId, agentColorMap)
   const Icon = getEventIcon(event.subtype, event.toolName)
   const { iconColor } = getEventColor(event.subtype, event.toolName)
 
@@ -97,27 +87,55 @@ export const EventRow = memo(function EventRow({ event, agentMap, showAgentLabel
 
   useEffect(() => {
     if (scrollToEventId === event.id && rowRef.current) {
-      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      rowRef.current.classList.add('ring-2', 'ring-primary/50')
-      setTimeout(() => {
-        rowRef.current?.classList.remove('ring-2', 'ring-primary/50')
-      }, 2000)
+      const el = rowRef.current
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       setScrollToEventId(null)
+
+      // Flash after scroll completes — use IntersectionObserver to detect visibility
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            observer.disconnect()
+            el.classList.add('animate-[flash-ring_0.4s_ease-in-out_3]')
+            el.addEventListener('animationend', () => {
+              el.classList.remove('animate-[flash-ring_0.4s_ease-in-out_3]')
+            }, { once: true })
+          }
+        },
+        { threshold: 0.5 },
+      )
+      observer.observe(el)
+      // Fallback: disconnect after 5s in case scroll never brings it into view
+      setTimeout(() => observer.disconnect(), 5000)
     }
   }, [scrollToEventId, event.id, setScrollToEventId])
 
+  const handleRowClick = (e: React.MouseEvent) => {
+    // Middle-click or ctrl/meta+click: select/deselect the row
+    if (e.button === 1 || e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      setSelectedEventId(isSelected ? null : event.id)
+      return
+    }
+    // Normal click: toggle expand
+    toggleExpandedEvent(event.id)
+  }
+
   return (
-    <div ref={rowRef} className="transition-shadow">
+    <div ref={combinedRef} className={cn('transition-shadow', isSelected && 'ring-1 ring-primary/40')}>
       <button
         className={cn(
           'flex flex-col w-full text-left px-3 py-1.5 border-l-2 transition-colors hover:bg-accent/50 overflow-hidden',
           isSubagent ? 'bg-muted/20' : '',
-          colorClass.split(' ')[1],
+          isSelected
+            ? 'border-l-primary bg-primary/[0.07] dark:bg-primary/[0.12]'
+            : agentColors.border,
         )}
-        onClick={() => toggleExpandedEvent(event.id)}
+        onClick={handleRowClick}
+        onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
       >
         {showAgentLabel && (
-          <div className={cn('text-[10px] opacity-90 dark:opacity-60 leading-tight', colorClass.split(' ')[0])}>
+          <div className={cn('text-[10px] opacity-90 dark:opacity-60 leading-tight', agentColors.textOnly)}>
             {isSubagent ? '↳ ' : ''}
             {agentName}
           </div>

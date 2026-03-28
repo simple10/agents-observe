@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useMemo, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
 import { getEventSummary } from '@/lib/event-summary'
@@ -6,9 +6,69 @@ import { useUIStore } from '@/stores/ui-store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ParsedEvent } from '@/types'
 
+// Renders event dots with CSS-driven drift animation.
+// Each dot mounts at its current position and CSS-transitions to -5% (off-screen).
+// On scale change, all dots are unmounted and remounted via a key change.
+function DotContainer({
+  events,
+  rangeMs,
+  generation,
+  setScrollToEventId,
+}: {
+  events: ParsedEvent[]
+  rangeMs: number
+  generation: number
+  setScrollToEventId: (id: number | null) => void
+}) {
+  return (
+    <>
+      {events.map((event) => {
+        const age = Date.now() - event.timestamp
+        const position = 100 - (age / rangeMs) * 100
+        if (position < -10 || position > 100) return null
+
+        const remainingMs = Math.max(0, rangeMs - age)
+        const Icon = getEventIcon(event.subtype, event.toolName)
+        const { dotColor } = getEventColor(event.subtype, event.toolName)
+        const summary = getEventSummary(event)
+
+        return (
+          <Tooltip key={`${event.id}-${generation}`}>
+            <TooltipTrigger asChild>
+              <button
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-pointer hover:scale-125"
+                style={{ left: `${position}%` }}
+                ref={(el) => {
+                  if (!el) return
+                  // Start drift: set position without transition, then animate to off-screen
+                  requestAnimationFrame(() => {
+                    el.style.transition = `left ${remainingMs}ms linear`
+                    el.style.left = '-5%'
+                  })
+                }}
+                onClick={() => setScrollToEventId(event.id)}
+              >
+                <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', dotColor)}>
+                  <Icon className="h-3 w-3 text-white" />
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs max-w-64">
+              <div className="font-medium">{tooltipLabel(event)}</div>
+              {summary && <div className="opacity-80 truncate">{summary}</div>}
+            </TooltipContent>
+          </Tooltip>
+        )
+      })}
+    </>
+  )
+}
+
 interface AgentLaneProps {
+  agentId: string
   agentName: string
   events: ParsedEvent[]
+  allEvents: ParsedEvent[]
   isSubagent: boolean
   color: string
 }
@@ -26,20 +86,27 @@ function tooltipLabel(event: ParsedEvent): string {
   return map[event.subtype || ''] || event.subtype || event.type
 }
 
-export function AgentLane({ agentName, events, isSubagent, color }: AgentLaneProps) {
+export function AgentLane({ agentId, agentName, events, allEvents, isSubagent, color }: AgentLaneProps) {
   const { timeRange, setScrollToEventId } = useUIStore()
-  const containerRef = useRef<HTMLDivElement>(null)
 
   const rangeMs = useMemo(() => {
     const ranges = { '1m': 60_000, '5m': 300_000, '10m': 600_000, '60m': 3_600_000 }
     return ranges[timeRange]
   }, [timeRange])
 
-  const now = Date.now()
+  // Increment generation on scale change to force all dots to remount
+  const generationRef = useRef(0)
+  const prevRangeRef = useRef(rangeMs)
+  if (prevRangeRef.current !== rangeMs) {
+    prevRangeRef.current = rangeMs
+    generationRef.current++
+  }
+  const generation = generationRef.current
 
   const visibleEvents = useMemo(
-    () => events.filter((e) => now - e.timestamp < rangeMs),
-    [events, now, rangeMs],
+    () => events.filter((e) => Date.now() - e.timestamp < rangeMs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [events, rangeMs],
   )
 
   // Tick marks based on time range
@@ -60,59 +127,34 @@ export function AgentLane({ agentName, events, isSubagent, color }: AgentLanePro
     return result
   }, [timeRange, rangeMs])
 
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    let animFrame: number
-    function tick() {
-      container!.style.setProperty('--now', String(Date.now()))
-      animFrame = requestAnimationFrame(tick)
+  const handleAgentNameClick = useCallback(() => {
+    // Find the first event from this agent across all events (sorted by id ascending)
+    const agentEvents = allEvents.filter((e) => e.agentId === agentId)
+    if (agentEvents.length > 0) {
+      // Events are ordered by id; the first one is the earliest
+      const first = agentEvents.reduce((a, b) => (a.id < b.id ? a : b))
+      setScrollToEventId(first.id)
     }
-    animFrame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(animFrame)
-  }, [])
+  }, [allEvents, agentId, setScrollToEventId])
 
   return (
     <div className="flex items-center h-8 border-b border-border/30">
-      <div
-        className={cn('w-28 shrink-0 text-[10px] truncate px-2', color, isSubagent ? 'opacity-80 dark:opacity-50' : 'opacity-100 dark:opacity-70')}
+      <button
+        className={cn('w-40 shrink-0 text-[10px] truncate px-2 text-left cursor-pointer hover:underline', color, isSubagent ? 'opacity-80 dark:opacity-50' : 'opacity-100 dark:opacity-70')}
         title={agentName}
+        onClick={handleAgentNameClick}
       >
         {isSubagent ? '↳ ' : ''}
         {agentName}
-      </div>
+      </button>
 
-      <div ref={containerRef} className="flex-1 relative h-full overflow-hidden">
-        {visibleEvents.map((event) => {
-          const age = Date.now() - event.timestamp
-          const position = 100 - (age / rangeMs) * 100
-          if (position < 0 || position > 100) return null
-
-          const Icon = getEventIcon(event.subtype, event.toolName)
-          const { dotColor } = getEventColor(event.subtype, event.toolName)
-          const summary = getEventSummary(event)
-
-          return (
-            <Tooltip key={event.id}>
-              <TooltipTrigger asChild>
-                <button
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-pointer hover:scale-125 transition-transform"
-                  style={{ left: `${position}%` }}
-                  onClick={() => setScrollToEventId(event.id)}
-                >
-                  <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', dotColor)}>
-                    <Icon className="h-3 w-3 text-white" />
-                  </span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs max-w-64">
-                <div className="font-medium">{tooltipLabel(event)}</div>
-                {summary && <div className="opacity-80 truncate">{summary}</div>}
-              </TooltipContent>
-            </Tooltip>
-          )
-        })}
+      <div className="flex-1 relative h-full overflow-hidden">
+        <DotContainer
+          events={visibleEvents}
+          rangeMs={rangeMs}
+          generation={generation}
+          setScrollToEventId={setScrollToEventId}
+        />
 
         {/* Time tick marks */}
         {ticks.map(({ pct, label }) => (

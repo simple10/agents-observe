@@ -70,6 +70,10 @@ interface UIState {
   expandAllEvents: (ids: number[]) => void
   setScrollToEventId: (id: number | null) => void
 
+  // Selected event (highlighted row)
+  selectedEventId: number | null
+  setSelectedEventId: (id: number | null) => void
+
   // Auto-follow
   autoFollow: boolean
   setAutoFollow: (enabled: boolean) => void
@@ -187,6 +191,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     set((s) => ({ expandAllCounter: s.expandAllCounter + 1, autoFollow: false })),
   expandAllEvents: (ids: number[]) => set({ expandedEventIds: new Set(ids), autoFollow: false }),
   setScrollToEventId: (id) => set({ scrollToEventId: id }),
+
+  selectedEventId: null,
+  setSelectedEventId: (id) => set({ selectedEventId: id }),
 
   autoFollow: true,
   setAutoFollow: (enabled) => set({ autoFollow: enabled }),

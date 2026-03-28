@@ -403,6 +403,19 @@ export class SqliteAdapter implements EventStore {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
   }
 
+  async deleteProject(projectId: string): Promise<void> {
+    // Get all session IDs for this project
+    const sessions = this.db
+      .prepare('SELECT id FROM sessions WHERE project_id = ?')
+      .all(projectId) as { id: string }[]
+    for (const session of sessions) {
+      this.db.prepare('DELETE FROM events WHERE session_id = ?').run(session.id)
+      this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(session.id)
+    }
+    this.db.prepare('DELETE FROM sessions WHERE project_id = ?').run(projectId)
+    this.db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+  }
+
   async clearAllData(): Promise<void> {
     this.db.prepare('DELETE FROM events WHERE 1=1').run()
     this.db.prepare('DELETE FROM agents WHERE 1=1').run()

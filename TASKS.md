@@ -2,6 +2,7 @@
 
 ## QUEUED TASKS
 
+- [ ] Update the Activity Timeline on a 10 second interval - the activity should keep moving to the left on a schedule, not just on event triggering
 - [ ] Sync the agent colors in Activity, agent dropdown, and event stream
   - Use an ordered list of agent colors and then cycle through them as new agents are created, looping back to first color
 - [ ] In Activity Timeline:
@@ -34,6 +35,11 @@
   - Show list event icons
   - Allow user to change the icon & color
   - For changing the icon, maybe use a modal that shows all the lucide icons to search & select?
+
+- [ ] Fix Icons modal in Settings - needs to be scrollable
+- [ ] Add a color wheel picker option to the color pallette - shadcn probably has one?
+  - user should be able to select color from the pallette (current behavior) or select custom
+  - custom should show a color wheel and option for hex value
 
 ## COMPLETED TASKS
 

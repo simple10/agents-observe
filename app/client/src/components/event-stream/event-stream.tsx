@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useDeferredValue } from 'react'
+import { useMemo, useRef, useEffect, useDeferredValue, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEvents } from '@/hooks/use-events'
 import { useAgents } from '@/hooks/use-agents'
@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/ui-store'
 import { EventRow } from './event-row'
 import { eventMatchesFilters } from '@/config/filters'
 import { format } from 'timeago.js'
+import { buildAgentColorMap } from '@/lib/agent-utils'
 import type { Agent, ParsedEvent } from '@/types'
 
 export function EventStream() {
@@ -18,6 +19,7 @@ export function EventStream() {
     autoFollow,
     expandAllCounter,
     expandAllEvents,
+    selectedEventId,
   } = useUIStore()
 
   // Defer filter values so the UI stays responsive during filter changes
@@ -53,27 +55,34 @@ export function EventStream() {
     return map
   }, [agents])
 
+  const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
+
   // Dedupe tool events + build spawn map (subagentId → toolUseId of Agent call)
   // spawnInfo: subagentId → { description, prompt } from the Tool:Agent call
-  const { deduped, spawnToolUseIds, spawnInfo } = useMemo(() => {
+  const { deduped, spawnToolUseIds, spawnInfo, mergedIdMap } = useMemo(() => {
     if (!events) return {
       deduped: [],
       spawnToolUseIds: new Map<string, string>(),
       spawnInfo: new Map<string, { description?: string; prompt?: string }>(),
+      mergedIdMap: new Map<number, number>(),
     }
     const result: ParsedEvent[] = []
     const toolUseMap = new Map<string, number>() // toolUseId -> index in result
     const spawns = new Map<string, string>() // subagentId -> toolUseId
     const info = new Map<string, { description?: string; prompt?: string }>()
+    const idMap = new Map<number, number>() // merged event ID -> displayed row event ID
 
     for (const e of events) {
       if (e.subtype === 'PreToolUse' && e.toolUseId) {
         toolUseMap.set(e.toolUseId, result.length)
         result.push({ ...e }) // copy so we can mutate status
-      } else if (e.subtype === 'PostToolUse' && e.toolUseId && toolUseMap.has(e.toolUseId)) {
+      } else if ((e.subtype === 'PostToolUse' || e.subtype === 'PostToolUseFailure') && e.toolUseId && toolUseMap.has(e.toolUseId)) {
         const idx = toolUseMap.get(e.toolUseId)!
-        const prePayload = result[idx].payload as any
-        result[idx] = { ...result[idx], status: 'completed', payload: e.payload }
+        const preEvent = result[idx]
+        const prePayload = preEvent.payload as any
+        result[idx] = { ...preEvent, status: e.subtype === 'PostToolUseFailure' ? 'failed' : 'completed', payload: e.payload }
+        // Map the PostToolUse ID to the PreToolUse row ID so scroll-to works
+        idMap.set(e.id, preEvent.id)
         // Track Agent tool spawns + capture prompt from PreToolUse input
         if (e.toolName === 'Agent') {
           const agentId = (e.payload as any)?.tool_response?.agentId
@@ -92,7 +101,7 @@ export function EventStream() {
         result.push(e)
       }
     }
-    return { deduped: result, spawnToolUseIds: spawns, spawnInfo: info }
+    return { deduped: result, spawnToolUseIds: spawns, spawnInfo: info, mergedIdMap: idMap }
   }, [events])
 
   // Apply all client-side filters: agent selection + static/tool filters
@@ -120,9 +129,27 @@ export function EventStream() {
     return filtered
   }, [deduped, selectedAgentIds, spawnToolUseIds, deferredStaticFilters, deferredToolFilters])
 
+  // Resolve scroll targets for merged events (PostToolUse → PreToolUse row)
+  const { scrollToEventId, setScrollToEventId } = useUIStore()
+  useEffect(() => {
+    if (scrollToEventId != null && mergedIdMap.has(scrollToEventId)) {
+      setScrollToEventId(mergedIdMap.get(scrollToEventId)!)
+    }
+  }, [scrollToEventId, mergedIdMap, setScrollToEventId])
+
   const showAgentLabel = agentMap.size > 1
   const scrollRef = useRef<HTMLDivElement>(null)
   const hasInitiallyScrolled = useRef(false)
+
+  // Track refs for each event row so we can scroll to the selected one
+  const eventRowRefs = useRef(new Map<number, HTMLDivElement>())
+  const setEventRowRef = useCallback((id: number, el: HTMLDivElement | null) => {
+    if (el) {
+      eventRowRefs.current.set(id, el)
+    } else {
+      eventRowRefs.current.delete(id)
+    }
+  }, [])
 
   // Auto-scroll to bottom on first load of a session
   useEffect(() => {
@@ -149,6 +176,21 @@ export function EventStream() {
       expandAllEvents(filteredEvents.map((e) => e.id))
     }
   }, [expandAllCounter])
+
+  // Auto-scroll to the selected event when filteredEvents change (i.e. filters change)
+  const prevFilteredRef = useRef(filteredEvents)
+  useEffect(() => {
+    if (selectedEventId != null && filteredEvents !== prevFilteredRef.current) {
+      // Use rAF to let React render the new list before scrolling
+      requestAnimationFrame(() => {
+        const el = eventRowRefs.current.get(selectedEventId)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      })
+    }
+    prevFilteredRef.current = filteredEvents
+  }, [filteredEvents, selectedEventId])
 
   if (!selectedSessionId) {
     return (
@@ -193,8 +235,10 @@ export function EventStream() {
               key={event.id}
               event={event}
               agentMap={agentMap}
+              agentColorMap={agentColorMap}
               showAgentLabel={showAgentLabel}
               spawnInfo={spawnInfo.get(event.agentId)}
+              onRowRef={setEventRowRef}
             />
           ))}
           <div className="h-8" />

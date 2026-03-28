@@ -1,11 +1,12 @@
-import { useCallback, useRef } from 'react'
-import { PanelLeftClose, PanelLeftOpen, Moon, Sun, Wifi, WifiOff } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+import { PanelLeftClose, PanelLeftOpen, Moon, Sun, Wifi, WifiOff, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 import { useTheme } from '@/components/theme-provider'
 import { ProjectList } from './project-list'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { SettingsModal } from '@/components/settings/settings-modal'
 
 interface SidebarProps {
   connected: boolean
@@ -15,6 +16,7 @@ export function Sidebar({ connected }: SidebarProps) {
   const { sidebarCollapsed, sidebarWidth, setSidebarCollapsed, setSidebarWidth } = useUIStore()
   const { theme, toggleTheme } = useTheme()
   const resizing = useRef(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -95,6 +97,9 @@ export function Sidebar({ connected }: SidebarProps) {
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleTheme}>
           {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSettingsOpen(true)}>
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
         {!sidebarCollapsed && (
           <div className="flex items-center gap-1.5 ml-auto text-xs text-muted-foreground">
             {connected ? (
@@ -111,6 +116,8 @@ export function Sidebar({ connected }: SidebarProps) {
           </div>
         )}
       </div>
+
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* Resize handle */}
       {!sidebarCollapsed && (

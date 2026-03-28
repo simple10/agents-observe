@@ -69,6 +69,7 @@ export interface EventStore {
   getThreadForEvent(eventId: number): Promise<StoredEvent[]>
   getEventsSince(sessionId: string, sinceTimestamp: number): Promise<StoredEvent[]>
   deleteSession(sessionId: string): Promise<void>
+  deleteProject(projectId: string): Promise<void>
   clearAllData(): Promise<void>
   clearSessionEvents(sessionId: string): Promise<void>
   getRecentSessions(limit?: number): Promise<any[]>

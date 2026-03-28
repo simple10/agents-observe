@@ -4,7 +4,7 @@ import { useEvents } from '@/hooks/use-events'
 import { cn } from '@/lib/utils'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { STATIC_FILTERS, getDynamicFilterNames, getFiltersWithMatches } from '@/config/filters'
+import { STATIC_FILTERS, getDynamicFilterNames, getDynamicDisplayName, getFiltersWithMatches } from '@/config/filters'
 
 export function EventFilterBar() {
   const {
@@ -99,7 +99,7 @@ export function EventFilterBar() {
               )}
               onClick={() => toggleToolFilter(name)}
             >
-              {name}
+              {getDynamicDisplayName(name)}
             </button>
           ))}
         </div>

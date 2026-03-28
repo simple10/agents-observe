@@ -32,6 +32,8 @@ import {
   User,
   Pin,
 } from 'lucide-react'
+import { icons as allLucideIcons } from 'lucide-react'
+import { getIconCustomization, COLOR_PRESETS } from '@/hooks/use-icon-customizations'
 
 export const eventIcons: Record<string, LucideIcon> = {
   // Session lifecycle
@@ -178,6 +180,23 @@ const eventColors: Record<string, [string, string]> = {
 const defaultEventColor: [string, string] = ['text-muted-foreground', 'bg-muted-foreground dark:bg-muted-foreground']
 
 export function getEventColor(subtype: string | null, toolName?: string | null): { iconColor: string; dotColor: string } {
+  // Check user customizations first
+  if (subtype && toolName) {
+    const custom = getIconCustomization(`${subtype}:${toolName}`)
+    if (custom?.colorName && COLOR_PRESETS[custom.colorName]) {
+      const preset = COLOR_PRESETS[custom.colorName]
+      return { iconColor: preset.iconColor, dotColor: preset.dotColor }
+    }
+  }
+  if (subtype) {
+    const custom = getIconCustomization(subtype)
+    if (custom?.colorName && COLOR_PRESETS[custom.colorName]) {
+      const preset = COLOR_PRESETS[custom.colorName]
+      return { iconColor: preset.iconColor, dotColor: preset.dotColor }
+    }
+  }
+
+  // Fall back to defaults
   let color: [string, string] | undefined
   if (subtype && toolName) {
     color = eventColors[`${subtype}:${toolName}`]
@@ -190,6 +209,23 @@ export function getEventColor(subtype: string | null, toolName?: string | null):
 }
 
 export function getEventIcon(subtype: string | null, toolName?: string | null): LucideIcon {
+  // Check user customizations first
+  if (subtype && toolName) {
+    const custom = getIconCustomization(`${subtype}:${toolName}`)
+    if (custom?.iconName) {
+      const icon = (allLucideIcons as Record<string, LucideIcon>)[custom.iconName]
+      if (icon) return icon
+    }
+  }
+  if (subtype) {
+    const custom = getIconCustomization(subtype)
+    if (custom?.iconName) {
+      const icon = (allLucideIcons as Record<string, LucideIcon>)[custom.iconName]
+      if (icon) return icon
+    }
+  }
+
+  // Fall back to defaults
   if (subtype && toolName && eventIcons[`${subtype}:${toolName}`]) {
     return eventIcons[`${subtype}:${toolName}`]
   }

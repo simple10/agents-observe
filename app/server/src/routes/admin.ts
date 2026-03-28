@@ -25,4 +25,19 @@ router.delete('/sessions/:id/events', async (c) => {
   return c.json({ ok: true })
 })
 
+// DELETE /projects/:id — delete a project and all its sessions, agents, events
+router.delete('/projects/:id', async (c) => {
+  const store = c.get('store')
+  const projectId = decodeURIComponent(c.req.param('id'))
+  await store.deleteProject(projectId)
+  return c.json({ ok: true })
+})
+
+// DELETE /data — delete all data (projects, sessions, agents, events)
+router.delete('/data', async (c) => {
+  const store = c.get('store')
+  await store.clearAllData()
+  return c.json({ ok: true })
+})
+
 export default router

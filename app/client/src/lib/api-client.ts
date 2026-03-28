@@ -46,4 +46,8 @@ export const api = {
     fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   clearSessionEvents: (sessionId: string) =>
     fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/events`, { method: 'DELETE' }),
+  deleteProject: (projectId: string) =>
+    fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }),
+  deleteAllData: () =>
+    fetch(`${API_BASE}/data`, { method: 'DELETE' }),
 };
