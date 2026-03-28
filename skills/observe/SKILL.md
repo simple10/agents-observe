@@ -12,11 +12,7 @@ Check if the Claude Observe server is running and show the dashboard URL.
 
 1. Run this command to check if the server is running:
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT:-$(dirname "$(dirname "$(dirname "$0")")")}/hooks/scripts/send_event.mjs health
-   ```
-   If `CLAUDE_PLUGIN_ROOT` is not set, fall back to:
-   ```bash
-   curl -sf http://127.0.0.1:4981/api/health
+   node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/observe_cli.mjs health
    ```
 
 2. If the command succeeds (exit code 0):

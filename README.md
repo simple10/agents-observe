@@ -69,7 +69,7 @@ This matters because:
 ## Architecture
 
 ```
-Claude Code Hooks  →  send_event.mjs  →  API Server (SQLite)  →  React Dashboard
+Claude Code Hooks  →  observe_cli.mjs  →  API Server (SQLite)  →  React Dashboard
     (dumb pipe)         (HTTP POST)        (parse + store)        (WebSocket live)
 ```
 
@@ -164,7 +164,7 @@ just open                # Open the dashboard in browser
 hooks/
   hooks.json                 # Plugin hook definitions
   scripts/
-    send_event.mjs           # Hook script — forwards raw events to server
+    observe_cli.mjs          # CLI — sends hook events, manages server
     manage_server.sh         # MCP server — manages Docker container
 skills/
   observe/                   # /observe skill
