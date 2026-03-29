@@ -15,9 +15,23 @@ const subCommand = cliArgs.commands[1] || null
 
 // -- Set Vars -----------------------------------------------------
 
+const pluginDataDir = process.env.CLAUDE_PLUGIN_DATA || `${process.env.HOME}/.claude-observe`
+const mcpPortFile = `${pluginDataDir}/mcp-port`
+
+function readMcpPort() {
+  try {
+    return readFileSync(mcpPortFile, 'utf8').trim() || null
+  } catch {
+    return null
+  }
+}
+
 const serverPort = process.env.CLAUDE_OBSERVE_SERVER_PORT || '4981'
+const savedPort = readMcpPort()
 const apiBaseUrl =
-  cliArgs.baseUrl || process.env.CLAUDE_OBSERVE_API_BASE_URL || `http://127.0.0.1:${serverPort}/api`
+  cliArgs.baseUrl ||
+  process.env.CLAUDE_OBSERVE_API_BASE_URL ||
+  (savedPort ? `http://127.0.0.1:${savedPort}/api` : `http://127.0.0.1:${serverPort}/api`)
 const baseOrigin = new URL(apiBaseUrl).origin
 const projectSlugOverride = cliArgs.projectSlug || process.env.CLAUDE_OBSERVE_PROJECT_SLUG || null
 const allowedCallbacks = (() => {
@@ -35,7 +49,6 @@ const allowedCallbacks = (() => {
 const containerName = process.env.CLAUDE_OBSERVE_DOCKER_CONTAINER_NAME || 'claude-observe'
 const dockerImage =
   process.env.CLAUDE_OBSERVE_DOCKER_IMAGE || 'ghcr.io/simple10/claude-observe:v0.5.0'
-const port = new URL(baseOrigin).port || '4981'
 const dataDir = process.env.CLAUDE_OBSERVE_DATA_DIR || `${process.env.HOME}/.claude-observe/data`
 
 // -- HTTP helpers -------------------------------------------------
@@ -202,6 +215,21 @@ async function healthCommand() {
   }
 }
 
+async function saveMcpPort(actualPort) {
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  mkdirSync(pluginDataDir, { recursive: true })
+  writeFileSync(mcpPortFile, String(actualPort))
+}
+
+async function removeMcpPort() {
+  try {
+    const { unlinkSync } = await import('node:fs')
+    unlinkSync(mcpPortFile)
+  } catch {
+    /* already gone */
+  }
+}
+
 async function serverStartCommand() {
   // Check Docker availability
   const dockerCheck = await run('docker', ['info'])
@@ -229,7 +257,7 @@ async function serverStartCommand() {
     await run('docker', ['rm', containerName])
   }
 
-  // Pull and start
+  // Pull image
   console.error('[claude-observe] Pulling image and starting container...')
   const pullResult = await run('docker', ['pull', dockerImage])
   if (!pullResult.ok) {
@@ -237,38 +265,71 @@ async function serverStartCommand() {
     process.exit(1)
   }
 
-  const runResult = await run('docker', [
-    'run',
-    '-d',
-    '--name',
-    containerName,
-    '-p',
-    `${port}:${port}`,
-    '-e',
-    `CLAUDE_OBSERVE_SERVER_PORT=${port}`,
-    '-e',
-    `CLAUDE_OBSERVE_DB_PATH=/data/observe.db`,
-    '-e',
-    `CLAUDE_OBSERVE_CLIENT_DIST_PATH=/app/client/dist`,
-    '-e',
-    `CLAUDE_OBSERVE_WEBSOCKET=true`,
-    '-v',
-    `${dataDir}:/data`,
+  // Try preferred port first, fall back to auto-assign if taken
+  const preferredPort = serverPort
+  const containerPort = '4981' // internal container port is always 4981
+
+  let runResult = await run('docker', [
+    'run', '-d',
+    '--name', containerName,
+    '-p', `${preferredPort}:${containerPort}`,
+    '-e', `CLAUDE_OBSERVE_SERVER_PORT=${containerPort}`,
+    '-e', 'CLAUDE_OBSERVE_DB_PATH=/data/observe.db',
+    '-e', 'CLAUDE_OBSERVE_CLIENT_DIST_PATH=/app/client/dist',
+    '-e', 'CLAUDE_OBSERVE_WEBSOCKET=true',
+    '-v', `${dataDir}:/data`,
     dockerImage,
   ])
 
-  if (!runResult.ok) {
+  let actualPort = preferredPort
+
+  if (!runResult.ok && runResult.stderr.includes('port is already allocated')) {
+    console.error(`[claude-observe] Port ${preferredPort} is in use, auto-assigning a free port...`)
+
+    // Let Docker pick a random host port
+    runResult = await run('docker', [
+      'run', '-d',
+      '--name', containerName,
+      '-p', `0:${containerPort}`,
+      '-e', `CLAUDE_OBSERVE_SERVER_PORT=${containerPort}`,
+      '-e', 'CLAUDE_OBSERVE_DB_PATH=/data/observe.db',
+      '-e', 'CLAUDE_OBSERVE_CLIENT_DIST_PATH=/app/client/dist',
+      '-e', 'CLAUDE_OBSERVE_WEBSOCKET=true',
+      '-v', `${dataDir}:/data`,
+      dockerImage,
+    ])
+
+    if (!runResult.ok) {
+      console.error(`[claude-observe] Failed to start container: ${runResult.stderr}`)
+      process.exit(1)
+    }
+
+    // Read the assigned port
+    const portResult = await run('docker', ['port', containerName, containerPort])
+    if (portResult.ok) {
+      // Output like "0.0.0.0:32768" or ":::32768"
+      const match = portResult.stdout.match(/:(\d+)$/)
+      if (match) actualPort = match[1]
+    }
+  } else if (!runResult.ok) {
     console.error(`[claude-observe] Failed to start container: ${runResult.stderr}`)
     process.exit(1)
   }
 
+  // Save the actual port for hooks and CLI to discover
+  await saveMcpPort(actualPort)
+
   // Wait for health
+  const actualApiUrl = `http://127.0.0.1:${actualPort}/api`
   console.error('[claude-observe] Waiting for server to start...')
   for (let i = 0; i < 15; i++) {
-    const h = await getJson(`${apiBaseUrl}/health`)
+    const h = await getJson(`${actualApiUrl}/health`)
     if (h.status === 200 && h.body?.ok) {
       console.error('[claude-observe] Server started successfully')
-      console.log(`Dashboard: ${baseOrigin}`)
+      console.log(`Dashboard: http://127.0.0.1:${actualPort}`)
+      if (actualPort !== preferredPort) {
+        console.error(`[claude-observe] Note: Using port ${actualPort} (preferred port ${preferredPort} was in use)`)
+      }
       process.exit(0)
     }
     await new Promise((r) => setTimeout(r, 1000))
@@ -283,6 +344,7 @@ async function serverStopCommand() {
   console.error('[claude-observe] Stopping server...')
   await run('docker', ['stop', containerName])
   await run('docker', ['rm', containerName])
+  await removeMcpPort()
   console.log('Server stopped.')
   process.exit(0)
 }
