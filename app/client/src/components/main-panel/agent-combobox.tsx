@@ -17,7 +17,7 @@ import {
   CommandItem,
   CommandSeparator,
 } from '@/components/ui/command'
-import { Bot, Check, ChevronDown, X, Users } from 'lucide-react'
+import { Bot, Check, ChevronDown, X, Users, Copy } from 'lucide-react'
 import type { Agent } from '@/types'
 
 function formatRuntime(agent: Agent): string {
@@ -154,13 +154,13 @@ export function AgentCombobox() {
                       <div className="flex flex-col min-w-0 flex-1">
                         <AgentLabel
                           agent={agent}
-                          parentAgent={agent.parentAgentId ? agentMap.get(agent.parentAgentId) : null}
+                          disableTooltip
                           className={cn('truncate', isMain && 'font-medium', agentColor.textOnly)}
                         />
                         {!isMain && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/50 font-mono">
-                            {agent.agentType && <span>{agent.agentType}</span>}
-                            <span>{agent.id}</span>
+                          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/50">
+                            {agent.agentType && <span className="font-mono">{agent.agentType}</span>}
+                            {agent.description && <span className="truncate">{agent.description}</span>}
                           </div>
                         )}
                       </div>
@@ -170,6 +170,18 @@ export function AgentCombobox() {
                         <Badge variant="outline" className="text-[9px] h-3.5 px-1">
                           {agent.eventCount}
                         </Badge>
+                        {!isMain && (
+                          <button
+                            className="opacity-40 hover:opacity-100 transition-opacity"
+                            title="Copy agent ID"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(agent.id)
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </CommandItem>
                   )

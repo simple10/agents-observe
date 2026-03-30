@@ -4,9 +4,11 @@ import type { Agent } from '@/types'
 
 interface AgentLabelProps {
   agent: Agent
-  /** Parent agent (for "Sub-Agent of X" line) */
+  /** Parent agent (for "Sub of X" line) */
   parentAgent?: Agent | null
   className?: string
+  /** Disable tooltip — just render the name */
+  disableTooltip?: boolean
   children?: React.ReactNode
 }
 
@@ -15,9 +17,9 @@ interface AgentLabelProps {
  * agent type, and parent relationship. Wrap any inline agent name
  * in this component to get consistent tooltips everywhere.
  */
-export function AgentLabel({ agent, parentAgent, className, children }: AgentLabelProps) {
+export function AgentLabel({ agent, parentAgent, className, disableTooltip, children }: AgentLabelProps) {
   const displayName = getAgentDisplayName(agent)
-  const hasTooltipContent = agent.description || agent.agentType || agent.parentAgentId
+  const hasTooltipContent = !disableTooltip && (agent.description || agent.agentType || agent.parentAgentId)
 
   if (!hasTooltipContent) {
     return <span className={className}>{children ?? displayName}</span>
@@ -37,8 +39,8 @@ export function AgentLabel({ agent, parentAgent, className, children }: AgentLab
             <span className="opacity-70">Type: {agent.agentType}</span>
           )}
           {agent.parentAgentId && (
-            <span className="opacity-70">
-              Sub-Agent of {parentAgent ? getAgentDisplayName(parentAgent) : 'Main'}
+            <span className="text-[10px] opacity-50">
+              Sub of {parentAgent ? getAgentDisplayName(parentAgent) : 'Main'}
             </span>
           )}
         </div>
