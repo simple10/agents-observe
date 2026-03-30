@@ -69,10 +69,6 @@ router.get('/sessions/:id/agents', async (c) => {
     parentAgentId: r.parent_agent_id,
     slug: r.slug,
     name: r.name,
-    status: r.status,
-    startedAt: r.started_at,
-    stoppedAt: r.stopped_at,
-    eventCount: r.event_count,
     agentType: r.agent_type || null,
   }))
 
@@ -106,9 +102,8 @@ router.get('/sessions/:id/events', async (c) => {
     payload: JSON.parse(r.payload),
   }))
 
-  // Lazy status correction based on event history.
+  // Lazy session status correction based on event history.
   if (events.length > 0) {
-    // Session status: only SessionEnd ends a session
     let lastSessionEndIdx = -1
     for (let i = events.length - 1; i >= 0; i--) {
       if (events[i].subtype === 'SessionEnd') { lastSessionEndIdx = i; break }
@@ -121,32 +116,6 @@ router.get('/sessions/:id/events', async (c) => {
         await store.updateSessionStatus(sessionId, 'active')
       } else if (lastSessionEndIdx < 0 && session.status === 'stopped') {
         await store.updateSessionStatus(sessionId, 'active')
-      }
-    }
-
-    // Agent status: mark subagents as stopped if they have a PostToolUse:Agent
-    // or SubagentStop but are still active (SubagentStop hook is unreliable)
-    const completedAgentIds = new Set<string>()
-    for (const e of events) {
-      if (e.subtype === 'SubagentStop' || (e.subtype === 'PostToolUse' && e.toolName === 'Agent')) {
-        const agentId = (e.payload as any)?.tool_response?.agentId || (e.payload as any)?.agent_id
-        if (agentId) completedAgentIds.add(agentId)
-      }
-    }
-    for (const agentId of completedAgentIds) {
-      const agent = await store.getAgentById(agentId)
-      if (agent && agent.status === 'active') {
-        await store.updateAgentStatus(agentId, 'stopped')
-      }
-    }
-
-    // Root agent status: if the last event is Stop/stop_hook_summary,
-    // the root agent should be stopped (idle between turns)
-    const lastEvent = events[events.length - 1]
-    if (lastEvent.subtype === 'Stop' || lastEvent.subtype === 'stop_hook_summary') {
-      const rootAgent = await store.getAgentById(sessionId) // root agent ID = session ID
-      if (rootAgent && rootAgent.status === 'active') {
-        await store.updateAgentStatus(sessionId, 'stopped')
       }
     }
   }

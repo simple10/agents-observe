@@ -1,7 +1,7 @@
 // app/server/src/routes/events.ts
 import { Hono } from 'hono'
 import type { EventStore } from '../storage/types'
-import type { Agent, ParsedEvent } from '../types'
+import type { ParsedEvent } from '../types'
 import { parseRawEvent } from '../parser'
 import { resolveProject } from '../services/project-resolver'
 
@@ -33,37 +33,18 @@ const pendingAgentTypes = new Map<string, string>() // toolUseId -> subagent_typ
 const pendingAgentNameQueue = new Map<string, string[]>() // sessionId -> FIFO queue of descriptions
 const namedAgents = new Map<string, Set<string>>() // sessionId -> set of agent IDs already named via queue
 
-async function getAgentForBroadcast(store: EventStore, agentId: string): Promise<Agent | null> {
-  const row = await store.getAgentById(agentId)
-  if (!row) return null
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    parentAgentId: row.parent_agent_id,
-    slug: row.slug,
-    name: row.name,
-    status: row.status,
-    startedAt: row.started_at,
-    stoppedAt: row.stopped_at,
-    eventCount: row.event_count,
-    agentType: row.agent_type || null,
-  }
-}
-
 async function ensureRootAgent(
   store: EventStore,
   sessionId: string,
   slug: string | null,
-  timestamp: number,
-): Promise<{ id: string; created: boolean }> {
+): Promise<string> {
   let rootId = sessionRootAgents.get(sessionId)
   if (!rootId) {
     rootId = sessionId
-    await store.upsertAgent(rootId, sessionId, null, slug, null, timestamp)
+    await store.upsertAgent(rootId, sessionId, null, slug, null)
     sessionRootAgents.set(sessionId, rootId)
-    return { id: rootId, created: true }
   }
-  return { id: rootId, created: false }
+  return rootId
 }
 
 // POST /events
@@ -128,20 +109,7 @@ router.post('/events', async (c) => {
       parsed.timestamp,
     )
 
-    const { id: rootAgentId, created: rootAgentCreated } = await ensureRootAgent(
-      store,
-      parsed.sessionId,
-      parsed.slug,
-      parsed.timestamp,
-    )
-
-    // Broadcast root agent only when first created
-    if (rootAgentCreated) {
-      const rootAgentData = await getAgentForBroadcast(store, rootAgentId)
-      if (rootAgentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: rootAgentData })
-      }
-    }
+    const rootAgentId = await ensureRootAgent(store, parsed.sessionId, parsed.slug)
 
     // When PreToolUse:Agent fires, stash the description for early naming.
     // We store it both by toolUseId (for definitive lookup at PostToolUse) and
@@ -198,12 +166,7 @@ router.post('/events', async (c) => {
         rootAgentId,
         null,
         pendingName,
-        parsed.timestamp,
       )
-      const ownerAgentData = await getAgentForBroadcast(store, parsed.ownerAgentId)
-      if (ownerAgentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: ownerAgentData })
-      }
     }
     let agentId = parsed.ownerAgentId || rootAgentId
 
@@ -230,13 +193,8 @@ router.post('/events', async (c) => {
         rootAgentId,
         null,
         subAgentName,
-        parsed.timestamp,
         subAgentType,
       )
-      const subAgentData = await getAgentForBroadcast(store, parsed.subAgentId)
-      if (subAgentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: subAgentData })
-      }
 
       // agent_progress events belong to the subagent
       if (parsed.subtype === 'agent_progress') {
@@ -244,36 +202,14 @@ router.post('/events', async (c) => {
       }
     }
 
-    // Handle stop events — Stop hook marks root agent inactive;
-    // any subsequent event reactivates it.
-    // Session status is independent: only SessionEnd marks a session as stopped.
-    if (parsed.subtype === 'Stop' || parsed.subtype === 'stop_hook_summary') {
-      await store.updateAgentStatus(rootAgentId, 'stopped')
-      const agentData = await getAgentForBroadcast(store, rootAgentId)
-      if (agentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: agentData })
-      }
-    } else if (parsed.subtype === 'SessionEnd') {
-      await store.updateAgentStatus(rootAgentId, 'stopped')
+    // Session lifecycle: SessionEnd stops the session, any other event reactivates a stopped session.
+    if (parsed.subtype === 'SessionEnd') {
       await store.updateSessionStatus(parsed.sessionId, 'stopped')
-      const agentData = await getAgentForBroadcast(store, rootAgentId)
-      if (agentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: agentData })
-      }
       broadcastToAll({
         type: 'session_update',
         data: { id: parsed.sessionId, status: 'stopped' },
       })
     } else {
-      // Reactivate root agent and session if previously stopped
-      const agent = await store.getAgentById(rootAgentId)
-      if (agent && agent.status === 'stopped') {
-        await store.updateAgentStatus(rootAgentId, 'active')
-        const agentData = await getAgentForBroadcast(store, rootAgentId)
-        if (agentData) {
-          broadcastToSession(parsed.sessionId, { type: 'agent_update', data: agentData })
-        }
-      }
       const session = await store.getSessionById(parsed.sessionId)
       if (session && session.status === 'stopped') {
         await store.updateSessionStatus(parsed.sessionId, 'active')
@@ -281,26 +217,6 @@ router.post('/events', async (c) => {
           type: 'session_update',
           data: { id: parsed.sessionId, status: 'active' },
         })
-      }
-    }
-
-    // SubagentStop: mark the subagent as stopped
-    if (parsed.subtype === 'SubagentStop' && parsed.subAgentId) {
-      await store.updateAgentStatus(parsed.subAgentId, 'stopped')
-      const agentData = await getAgentForBroadcast(store, parsed.subAgentId)
-      if (agentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: agentData })
-      }
-    }
-
-    // PostToolUse:Agent completion also marks the subagent as stopped.
-    // SubagentStop hook is unreliable and sometimes doesn't fire,
-    // but PostToolUse:Agent always fires when the agent task completes.
-    if (parsed.subtype === 'PostToolUse' && parsed.toolName === 'Agent' && parsed.subAgentId) {
-      await store.updateAgentStatus(parsed.subAgentId, 'stopped')
-      const agentData = await getAgentForBroadcast(store, parsed.subAgentId)
-      if (agentData) {
-        broadcastToSession(parsed.sessionId, { type: 'agent_update', data: agentData })
       }
     }
 
