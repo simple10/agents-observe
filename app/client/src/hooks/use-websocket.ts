@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { WSMessage, WSClientMessage, ParsedEvent } from '@/types'
+import type { WSMessage, WSClientMessage, ParsedEvent, Agent } from '@/types'
 
 const WS_URL = `ws://${window.location.host}/api/events/stream`
 
@@ -40,10 +40,22 @@ export function useWebSocket(sessionId: string | null) {
           (old) => old ? [...old, event] : [event],
         )
       }
-      // Also invalidate agents — new events may introduce new subagents
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
     } else if (msg.type === 'agent_update') {
-      queryClient.invalidateQueries({ queryKey: ['agents'] })
+      const agent = msg.data as Agent
+      const currentSessionId = sessionIdRef.current
+      if (currentSessionId && agent.sessionId === currentSessionId) {
+        queryClient.setQueryData<Agent[]>(
+          ['agents', currentSessionId],
+          (old) => {
+            if (!old) return [agent]
+            const exists = old.some((a) => a.id === agent.id)
+            if (exists) {
+              return old.map((a) => a.id === agent.id ? agent : a)
+            }
+            return [...old, agent]
+          },
+        )
+      }
     } else if (msg.type === 'session_update') {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
     } else if (msg.type === 'project_update') {

@@ -76,6 +76,7 @@ export interface Agent {
   startedAt: number
   stoppedAt: number | null
   eventCount?: number
+  agentType?: string | null
 }
 
 export interface ParsedEvent {
@@ -95,7 +96,7 @@ export interface ParsedEvent {
 
 export type WSMessage =
   | { type: 'event'; data: ParsedEvent }
-  | { type: 'agent_update'; data: { id: string; status: string; sessionId: string } }
+  | { type: 'agent_update'; data: Agent }
   | { type: 'session_update'; data: Session }
   | { type: 'project_update'; data: { id: number; name: string } }
 
