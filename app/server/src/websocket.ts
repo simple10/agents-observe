@@ -2,6 +2,8 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'http'
 import type { WSClientMessage } from './types'
 
+const LOG_LEVEL = (process.env.CLAUDE_OBSERVE_LOG_LEVEL || 'debug').toLowerCase()
+
 // Track which session each client is subscribed to
 const clientSessions = new Map<WebSocket, string>()
 const allClients = new Set<WebSocket>()
@@ -11,15 +13,24 @@ export function attachWebSocket(server: Server) {
 
   wss.on('connection', (ws) => {
     allClients.add(ws)
-    console.log('[WS] Client connected')
+    console.log(`[WS] Client connected (${allClients.size} total)`)
 
     ws.on('message', (raw) => {
       try {
         const msg: WSClientMessage = JSON.parse(raw.toString())
         if (msg.type === 'subscribe' && msg.sessionId) {
+          const prev = clientSessions.get(ws)
           clientSessions.set(ws, msg.sessionId)
+          if (LOG_LEVEL === 'debug' || LOG_LEVEL === 'trace') {
+            const prevInfo = prev ? ` (was: ${prev.slice(0, 8)})` : ''
+            console.log(`[WS] Client subscribed to session ${msg.sessionId.slice(0, 8)}${prevInfo}`)
+          }
         } else if (msg.type === 'unsubscribe') {
+          const prev = clientSessions.get(ws)
           clientSessions.delete(ws)
+          if (LOG_LEVEL === 'debug' || LOG_LEVEL === 'trace') {
+            console.log(`[WS] Client unsubscribed${prev ? ` from session ${prev.slice(0, 8)}` : ''}`)
+          }
         }
       } catch {}
     })
@@ -27,7 +38,7 @@ export function attachWebSocket(server: Server) {
     ws.on('close', () => {
       allClients.delete(ws)
       clientSessions.delete(ws)
-      console.log('[WS] Client disconnected')
+      console.log(`[WS] Client disconnected (${allClients.size} remaining)`)
     })
 
     ws.on('error', () => {

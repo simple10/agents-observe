@@ -7,6 +7,7 @@
 # Client port is only for local dev
 
 set dotenv-load := true
+set export := true
 set quiet := true
 
 port := env("CLAUDE_OBSERVE_SERVER_PORT", "4981")

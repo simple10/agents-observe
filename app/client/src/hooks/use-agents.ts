@@ -1,7 +1,12 @@
-import { useMemo, useRef, useCallback } from 'react'
+import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { Agent, ServerAgent, ParsedEvent } from '@/types'
+
+// Module-level dedup — shared across all useAgents instances so multiple
+// components (event-stream, combobox, timeline) don't each fire a fetch
+// for the same unknown agent.
+const pendingFetches = new Set<string>()
 
 /**
  * Derives full Agent objects from server metadata + events.
@@ -10,37 +15,12 @@ import type { Agent, ServerAgent, ParsedEvent } from '@/types'
  */
 export function useAgents(sessionId: string | null, events: ParsedEvent[] | undefined): Agent[] {
   const queryClient = useQueryClient()
-  const fetchedAgentIds = useRef(new Set<string>())
 
   const { data: serverAgents } = useQuery({
     queryKey: ['agents', sessionId],
     queryFn: () => api.getAgents(sessionId!),
     enabled: !!sessionId,
   })
-
-  const fetchAgentMetadata = useCallback((agentId: string) => {
-    if (fetchedAgentIds.current.has(agentId)) return
-    fetchedAgentIds.current.add(agentId)
-    api.getAgent(agentId).then((agent) => {
-      queryClient.setQueryData<ServerAgent[]>(
-        ['agents', sessionId],
-        (old) => {
-          if (!old) return [agent]
-          if (old.some((a) => a.id === agent.id)) {
-            return old.map((a) => a.id === agent.id ? agent : a)
-          }
-          return [...old, agent]
-        },
-      )
-    }).catch(() => {})
-  }, [sessionId, queryClient])
-
-  // Reset fetched set when session changes
-  const prevSessionId = useRef(sessionId)
-  if (sessionId !== prevSessionId.current) {
-    fetchedAgentIds.current = new Set<string>()
-    prevSessionId.current = sessionId
-  }
 
   return useMemo(() => {
     if (!events) return []
@@ -86,7 +66,23 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
     const result: Agent[] = []
     for (const [agentId, stats] of agentStats) {
       const server = serverMap.get(agentId)
-      if (!server) fetchAgentMetadata(agentId)
+
+      // Fetch metadata for agents we haven't seen from the server yet
+      if (!server && !pendingFetches.has(agentId)) {
+        pendingFetches.add(agentId)
+        api.getAgent(agentId).then((agent) => {
+          queryClient.setQueryData<ServerAgent[]>(
+            ['agents', sessionId],
+            (old) => {
+              if (!old) return [agent]
+              if (old.some((a) => a.id === agent.id)) {
+                return old.map((a) => a.id === agent.id ? agent : a)
+              }
+              return [...old, agent]
+            },
+          )
+        }).catch(() => {})
+      }
 
       result.push({
         id: agentId,
@@ -103,5 +99,5 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
     }
 
     return result
-  }, [events, serverAgents, sessionId, fetchAgentMetadata])
+  }, [events, serverAgents, sessionId, queryClient])
 }

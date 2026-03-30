@@ -29,6 +29,7 @@ function readVersion(): string {
 }
 
 const VERSION = readVersion()
+const LOG_LEVEL = (process.env.CLAUDE_OBSERVE_LOG_LEVEL || 'debug').toLowerCase()
 
 const router = new Hono<Env>()
 
@@ -41,6 +42,7 @@ router.get('/health', async (c) => {
       ok: result.ok,
       id: API_ID,
       version: VERSION,
+      logLevel: LOG_LEVEL,
       ...(result.error ? { error: result.error } : {}),
     },
     result.ok ? 200 : 503,
