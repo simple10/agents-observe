@@ -1,5 +1,5 @@
 // hooks/scripts/lib/http.mjs
-// HTTP helpers for Claude Observe. No dependencies - Node.js built-ins only.
+// HTTP helpers for Agents Observe. No dependencies - Node.js built-ins only.
 
 import { request } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -7,6 +7,8 @@ import { request as httpsRequest } from 'node:https'
 export function httpRequest(url, options, body) {
   const parsed = new URL(url)
   const transport = parsed.protocol === 'https:' ? httpsRequest : request
+  const fireAndForget = options.fireAndForget || false
+
   return new Promise((resolve) => {
     const req = transport(
       {
@@ -31,6 +33,13 @@ export function httpRequest(url, options, body) {
         })
       },
     )
+
+    if (fireAndForget) {
+      req.on('socket', (socket) => {
+        socket.unref()
+      })
+    }
+
     req.on('error', (err) => {
       resolve({ status: 0, body: null, error: err.message })
     })
@@ -43,7 +52,7 @@ export function httpRequest(url, options, body) {
   })
 }
 
-export function postJson(url, data) {
+export function postJson(url, data, opts = {}) {
   const body = JSON.stringify(data)
   return httpRequest(
     url,
@@ -53,6 +62,7 @@ export function postJson(url, data) {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
       },
+      fireAndForget: opts.fireAndForget || false,
     },
     body,
   )

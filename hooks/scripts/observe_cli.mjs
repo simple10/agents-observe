@@ -79,14 +79,14 @@ function hookCommand() {
   let input = ''
   process.stdin.setEncoding('utf8')
   process.stdin.on('data', (chunk) => { input += chunk })
-  process.stdin.on('end', async () => {
-    if (!input.trim()) process.exit(0)
+  process.stdin.on('end', () => {
+    if (!input.trim()) return
 
     let hookPayload
     try {
       hookPayload = JSON.parse(input)
     } catch {
-      process.exit(0)
+      return
     }
 
     const envelope = { hook_payload: hookPayload, meta: { env: {} } }
@@ -94,18 +94,17 @@ function hookCommand() {
       envelope.meta.env.AGENTS_OBSERVE_PROJECT_SLUG = config.projectSlug
     }
 
-    const result = await postJson(`${config.apiBaseUrl}/events`, envelope)
-
-    if (result.status === 0) {
-      log.warn(`Server unreachable at ${config.baseOrigin}: ${result.error}`)
-      process.exit(0)
-    }
-
-    if (result.body?.requests) {
-      await handleRequests(result.body.requests)
-    }
-
-    process.exit(0)
+    postJson(`${config.apiBaseUrl}/events`, envelope, { fireAndForget: true })
+      .then((result) => {
+        if (result.status === 0) {
+          log.warn(`Server unreachable at ${config.baseOrigin}: ${result.error}`)
+          return
+        }
+        if (result.body?.requests) {
+          handleRequests(result.body.requests)
+        }
+      })
+      .catch(() => {})
   })
 }
 
