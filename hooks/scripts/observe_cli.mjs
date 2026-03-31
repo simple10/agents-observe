@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // hooks/scripts/observe_cli.mjs
 // CLI entrypoint for Agents Observe plugin.
-// Commands: hook, health
+// Commands: hook, health, restart
 
 import { getConfig } from './lib/config.mjs'
 import { getJson, postJson } from './lib/http.mjs'
 import { createLogger } from './lib/logger.mjs'
 import { handleCallbackRequests } from './lib/callbacks.mjs'
+import { startServer } from './lib/docker.mjs'
 
 const cliArgs = parseArgs(process.argv.slice(2))
 const config = getConfig(cliArgs)
@@ -19,10 +20,13 @@ switch (cliArgs.commands[0] || 'hook') {
   case 'health':
     healthCommand()
     break
+  case 'restart':
+    restartCommand()
+    break
   default:
     console.error(`Unknown command: ${cliArgs.commands[0]}`)
     console.error(
-      'Usage: node observe_cli.mjs <hook|health> [--base-url URL] [--project-slug SLUG]',
+      'Usage: node observe_cli.mjs <hook|health|restart> [--base-url URL] [--project-slug SLUG]',
     )
     process.exit(1)
 }
@@ -122,6 +126,13 @@ async function healthCommand() {
       console.log(`  Database: ${b.dbPath || 'unknown'}`)
     }
     console.log(`  Log Level: ${b.logLevel || 'unknown'}`)
+
+    // Version mismatch detection
+    if (config.expectedVersion && b.version && config.expectedVersion !== b.version) {
+      console.log('')
+      console.log(`⚠ Version mismatch: CLI is v${config.expectedVersion}, server is v${b.version}`)
+      console.log(`  To update the server, run: node ${config.cliPath} restart`)
+    }
     process.exit(0)
   } else if (result.status === 0) {
     console.log(`Agents Observe server is not running.`)
@@ -131,6 +142,21 @@ async function healthCommand() {
   } else {
     console.log(`Agents Observe server error (HTTP ${result.status}):`)
     console.log(JSON.stringify(result.body, null, 2))
+    process.exit(1)
+  }
+}
+
+/**
+ * Restart the Docker container (pulls latest image for current CLI version).
+ */
+async function restartCommand() {
+  log.info('Restarting server...')
+  const actualPort = await startServer(config)
+  if (actualPort) {
+    console.log(`Server restarted on port ${actualPort}`)
+    console.log(`  Dashboard: http://127.0.0.1:${actualPort}`)
+  } else {
+    console.error('Failed to restart server')
     process.exit(1)
   }
 }

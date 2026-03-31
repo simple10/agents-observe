@@ -2,10 +2,11 @@
 
 ## QUEUED TASKS
 
-
+(empty)
 
 ## COMPLETED TASKS
 
+- [x] Detect plugin version & server version mismatches & add skill support to restart the server
 - [x] In Agent Label tooltip, don't show the description if it's the same as the name
   - Also in agents combo box - skip description line if it matches the agent display name
 
