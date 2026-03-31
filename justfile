@@ -67,8 +67,8 @@ dev:
     cd {{ client }} && npm run dev &
     pid2=$!
     trap 'kill $pid1 $pid2 2>/dev/null; wait $pid1 $pid2 2>/dev/null; exit 0' INT TERM
-    @sleep 1
-    @just open {{ dev_client_port }}
+    sleep 1
+    just open {{ dev_client_port }}
     wait
 
 # Start only the server (dev mode with hot reload)
