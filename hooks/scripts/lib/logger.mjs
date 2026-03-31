@@ -3,11 +3,10 @@
 // No dependencies - uses only Node.js built-ins.
 
 import { appendFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { getConfig } from './config.mjs'
+import { join, sep, resolve, basename, dirname } from 'node:path'
 
 const MAX_LOG_SIZE = 1_048_576 // 1MB
-const PRUNE_TARGET = 524_288  // 500KB — keep the tail
+const PRUNE_TARGET = 524_288 // 500KB — keep the tail
 
 /**
  * Creates a logger that writes to both a log file and console (stderr).
@@ -15,16 +14,19 @@ const PRUNE_TARGET = 524_288  // 500KB — keep the tail
  * File output: error/warn always; info/debug/trace only when logLevel is debug|trace.
  * Console output: error/warn/info always; debug/trace only when logLevel is debug|trace.
  */
-export function createLogger(filename) {
-  const config = getConfig()
+export function createLogger(filename, config) {
   const logLevel = config.logLevel
   const verbose = logLevel === 'debug' || logLevel === 'trace'
-  const logFile = join(config.logsDir, filename)
+
+  const full = resolve(config.logsDir, filename)
+  const safeDir = resolve(config.logsDir) + sep
+  const logFile = full.startsWith(safeDir) ? full : join(config.logsDir, basename(filename))
+
   let dirCreated = false
 
   function ensureDir() {
     if (!dirCreated) {
-      mkdirSync(config.logsDir, { recursive: true })
+      mkdirSync(dirname(logFile), { recursive: true })
       dirCreated = true
     }
   }

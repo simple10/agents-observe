@@ -10,7 +10,7 @@ import { handleCallbackRequests } from './lib/callbacks.mjs'
 
 const cliArgs = parseArgs(process.argv.slice(2))
 const config = getConfig(cliArgs)
-const log = createLogger('cli.log')
+const log = createLogger('cli.log', config)
 
 switch (cliArgs.commands[0] || 'hook') {
   case 'hook':

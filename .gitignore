@@ -18,7 +18,8 @@ coverage/
 htmlcov/
 
 # Docker data directory
-data/
+/data/
+/logs/
 
 # Security
 .env

@@ -9,7 +9,7 @@ import { startServer, stopServer } from './lib/docker.mjs'
 import { createLogger } from './lib/logger.mjs'
 
 const config = getConfig()
-const log = createLogger('mcp.log')
+const log = createLogger('mcp.log', config)
 
 async function main() {
   const actualPort = await startServer(config)
