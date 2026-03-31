@@ -48,13 +48,14 @@ export function getConfig(overrides = {}) {
     `ghcr.io/simple10/agents-observe:${version ? `v${version}` : 'latest'}`
 
   const allowedCallbacksRaw = (process.env.AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS ?? 'all').trim()
-  const allowedCallbacks =
+  const allowedCallbacks = new Set(
     allowedCallbacksRaw.toLowerCase() === 'all'
       ? ALL_CALLBACK_HANDLERS
       : allowedCallbacksRaw
           .split(',')
           .map((s) => s.trim())
-          .filter((s) => ALL_CALLBACK_HANDLERS.includes(s))
+          .filter((s) => ALL_CALLBACK_HANDLERS.includes(s)),
+  )
 
   return {
     serverPort,

@@ -63,7 +63,7 @@ function hookCommand() {
 
     // Send hook payload to API server
     postJson(`${config.apiBaseUrl}/events`, envelope, {
-      fireAndForget: config.allowedCallbacks.length === 0,
+      fireAndForget: config.allowedCallbacks.size === 0,
       log,
     })
       .then((result) => {
@@ -106,7 +106,7 @@ async function healthCommand() {
     console.log(`  Log Level: ${config.logLevel || 'unknown'}`)
     console.log(`  Logs: ${config.logsDir}`)
     console.log(
-      `  Allowed Callbacks: ${config.allowedCallbacks.length ? config.allowedCallbacks : 'none'}`,
+      `  Allowed Callbacks: ${config.allowedCallbacks.size ? [...config.allowedCallbacks].join(', ') : 'none'}`,
     )
     console.log('')
     console.log(`Agents Observe Server (${runtime}):`)
