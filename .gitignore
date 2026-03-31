@@ -2,6 +2,7 @@
 
 # TypeScript / JavaScript / Node
 node_modules/
+/package-lock.json
 app/**/dist/
 *.tsbuildinfo
 
