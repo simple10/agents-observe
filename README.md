@@ -5,7 +5,7 @@ Real-time observability dashboard for Claude Code agents.
 Includes powerful filtering, searching, and visualization of multi-agent sessions.
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/demo.mp4">
+  <a href="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/dashboard.gif">
     <img src="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/dashboard.gif" alt="Claude Observe Dashboard Demo" />
   </a>
 </p>
