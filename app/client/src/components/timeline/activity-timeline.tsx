@@ -16,8 +16,10 @@ export function ActivityTimeline() {
     selectedAgentIds,
     timelineHeight,
     timeRange,
+    timeOverride,
     setTimelineHeight,
     setTimeRange,
+    setTimeOverride,
   } = useUIStore()
 
   const { data: sessions } = useSessions(selectedProjectId)
@@ -109,12 +111,92 @@ export function ActivityTimeline() {
 
   const ranges: Array<'1m' | '5m' | '10m' | '60m'> = ['1m', '5m', '10m', '60m']
 
+  // Event time bounds for clamping scroll
+  const eventTimeBounds = useMemo(() => {
+    if (!events || events.length === 0) return null
+    let min = Infinity,
+      max = -Infinity
+    for (const e of events) {
+      if (e.timestamp < min) min = e.timestamp
+      if (e.timestamp > max) max = e.timestamp
+    }
+    return { min, max }
+  }, [events])
+
+  const handleTimeTravel = useCallback(() => {
+    if (timeOverride) {
+      setTimeOverride(null)
+    } else if (eventTimeBounds) {
+      setTimeOverride(eventTimeBounds.max)
+    }
+  }, [timeOverride, eventTimeBounds, setTimeOverride])
+
+  // Horizontal scroll in rewind mode shifts timeOverride.
+  // Scrolling left in live mode auto-enters rewind.
+  const rangeMs = useMemo(() => {
+    const ranges = { '1m': 60_000, '5m': 300_000, '10m': 600_000, '60m': 3_600_000 }
+    return ranges[timeRange]
+  }, [timeRange])
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      // Use deltaX for horizontal scroll (trackpad swipe).
+      // Also support shift+deltaY for mouse wheel users.
+      // Dominant axis: if vertical scroll is stronger, let it scroll agents normally.
+      const deltaX = e.shiftKey ? e.deltaY : e.deltaX
+      if (deltaX === 0 || (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.shiftKey)) return
+      if (!eventTimeBounds) return
+
+      e.preventDefault()
+
+      // Scrolling left (negative deltaX) = go back in time (decrease timeOverride)
+      // Scrolling right (positive deltaX) = go forward (increase timeOverride)
+      // Scale: full container width ≈ 600px maps to one full range
+      const msPerPixel = rangeMs / 600
+      const deltaMs = deltaX * msPerPixel
+
+      const current = timeOverride ?? Date.now()
+      // Lower bound: first event sits at the left edge with a small buffer (2% of range)
+      // so the dot icon is fully visible
+      const next = Math.max(
+        eventTimeBounds.min + rangeMs * 0.98,
+        Math.min(eventTimeBounds.max, current + deltaMs),
+      )
+      setTimeOverride(next)
+    },
+    [timeOverride, eventTimeBounds, rangeMs, setTimeOverride],
+  )
+
+  const timeTravelLabel = useMemo(() => {
+    if (!timeOverride) return null
+    const d = new Date(timeOverride)
+    return d.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  }, [timeOverride])
+
   return (
     <TooltipProvider>
       <div ref={containerRef} className="border-b border-border" style={{ height: timelineHeight }}>
         <div className="flex items-center justify-between px-3 py-1 border-b border-border/50">
-          <span className="text-xs text-muted-foreground font-medium">Activity</span>
+          <span className="text-xs text-muted-foreground font-medium">
+            Activity
+            {timeTravelLabel && <span className="ml-2 text-amber-500">@ {timeTravelLabel}</span>}
+          </span>
           <div className="flex gap-1">
+            <Button
+              variant={timeOverride ? 'default' : 'ghost'}
+              size="sm"
+              className={`h-5 px-2 text-[10px] ${timeOverride ? 'bg-amber-600 hover:bg-amber-700 text-white' : ''}`}
+              onClick={handleTimeTravel}
+              title={timeOverride ? 'Return to live' : 'Jump to latest event (time travel)'}
+            >
+              {timeOverride ? 'Switch to live' : 'Rewind'}
+            </Button>
+            <span className="w-px bg-border/50" />
             {ranges.map((r) => (
               <Button
                 key={r}
@@ -129,12 +211,19 @@ export function ActivityTimeline() {
           </div>
         </div>
 
-        <div data-scroll-area className="overflow-y-auto" style={{ height: timelineHeight - 32 }}>
+        <div
+          data-scroll-area
+          className="overflow-y-auto"
+          style={{ height: timelineHeight - 32 }}
+          onWheel={handleWheel}
+        >
           {flatAgents.map(({ agent, isSubagent }, idx) => (
             <AgentLane
               key={agent.id}
               agent={agent}
-              parentAgent={agent.parentAgentId ? agents.find((a) => a.id === agent.parentAgentId) : null}
+              parentAgent={
+                agent.parentAgentId ? agents.find((a) => a.id === agent.parentAgentId) : null
+              }
               events={eventsByAgent.get(agent.id) || []}
               allEvents={events || []}
               isSubagent={isSubagent}

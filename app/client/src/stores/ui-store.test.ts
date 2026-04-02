@@ -363,6 +363,14 @@ describe('ui-store', () => {
       useUIStore.getState().setTimelineHeight(200)
       expect(useUIStore.getState().timelineHeight).toBe(200)
     })
+
+    it('should set and clear time override', () => {
+      expect(useUIStore.getState().timeOverride).toBeNull()
+      useUIStore.getState().setTimeOverride(1700000000000)
+      expect(useUIStore.getState().timeOverride).toBe(1700000000000)
+      useUIStore.getState().setTimeOverride(null)
+      expect(useUIStore.getState().timeOverride).toBeNull()
+    })
   })
 
   // ── Icon customization version ────────────────────────────

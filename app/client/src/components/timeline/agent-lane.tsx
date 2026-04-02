@@ -1,5 +1,6 @@
 import { useRef, useMemo, useCallback } from 'react'
 import { cn } from '@/lib/utils'
+import { getNow } from '@/lib/get-now'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
 import { getEventSummary } from '@/lib/event-summary'
 import { useUIStore } from '@/stores/ui-store'
@@ -14,17 +15,19 @@ function DotContainer({
   events,
   rangeMs,
   generation,
+  timeFrozen,
   setScrollToEventId,
 }: {
   events: ParsedEvent[]
   rangeMs: number
   generation: number
+  timeFrozen: boolean
   setScrollToEventId: (id: number | null) => void
 }) {
   return (
     <>
       {events.map((event) => {
-        const age = Date.now() - event.timestamp
+        const age = getNow() - event.timestamp
         const position = 100 - (age / rangeMs) * 100
         if (position < -10 || position > 100) return null
 
@@ -39,17 +42,27 @@ function DotContainer({
               <button
                 className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-pointer hover:scale-125"
                 style={{ left: `${position}%` }}
-                ref={(el) => {
-                  if (!el) return
-                  // Start drift: set position without transition, then animate to off-screen
-                  requestAnimationFrame(() => {
-                    el.style.transition = `left ${remainingMs}ms linear`
-                    el.style.left = '-5%'
-                  })
-                }}
+                ref={
+                  timeFrozen
+                    ? undefined
+                    : (el) => {
+                        if (!el) return
+                        // Start drift: set position without transition, then animate to off-screen
+                        requestAnimationFrame(() => {
+                          el.style.transition = `left ${remainingMs}ms linear`
+                          el.style.left = '-5%'
+                        })
+                      }
+                }
                 onClick={() => setScrollToEventId(event.id)}
               >
-                <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', !customHex && dotColor)} style={customHex ? { backgroundColor: customHex } : undefined}>
+                <span
+                  className={cn(
+                    'flex items-center justify-center h-5 w-5 rounded-full',
+                    !customHex && dotColor,
+                  )}
+                  style={customHex ? { backgroundColor: customHex } : undefined}
+                >
                   <Icon className="h-3 w-3 text-white" />
                 </span>
               </button>
@@ -87,9 +100,16 @@ function tooltipLabel(event: ParsedEvent): string {
   return map[event.subtype || ''] || event.subtype || event.type
 }
 
-export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, color }: AgentLaneProps) {
+export function AgentLane({
+  agent,
+  parentAgent,
+  events,
+  allEvents,
+  isSubagent,
+  color,
+}: AgentLaneProps) {
   const agentId = agent.id
-  const { timeRange, setScrollToEventId, iconCustomizationVersion } = useUIStore()
+  const { timeRange, setScrollToEventId, iconCustomizationVersion, timeOverride } = useUIStore()
 
   const rangeMs = useMemo(() => {
     const ranges = { '1m': 60_000, '5m': 300_000, '10m': 600_000, '60m': 3_600_000 }
@@ -111,12 +131,19 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
     generationRef.current++
   }
 
+  // Remount dots when time override changes (time travel)
+  const prevTimeOverrideRef = useRef(timeOverride)
+  if (prevTimeOverrideRef.current !== timeOverride) {
+    prevTimeOverrideRef.current = timeOverride
+    generationRef.current++
+  }
+
   const generation = generationRef.current
 
   const visibleEvents = useMemo(
-    () => events.filter((e) => Date.now() - e.timestamp < rangeMs),
+    () => events.filter((e) => getNow() - e.timestamp < rangeMs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events, rangeMs],
+    [events, rangeMs, timeOverride],
   )
 
   // Tick marks based on time range
@@ -150,7 +177,11 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
   return (
     <div className="flex items-center h-8 border-b border-border/30">
       <button
-        className={cn('w-40 shrink-0 text-[10px] truncate px-2 text-left cursor-pointer hover:underline', color, isSubagent ? 'opacity-80 dark:opacity-50' : 'opacity-100 dark:opacity-70')}
+        className={cn(
+          'w-40 shrink-0 text-[10px] truncate px-2 text-left cursor-pointer hover:underline',
+          color,
+          isSubagent ? 'opacity-80 dark:opacity-50' : 'opacity-100 dark:opacity-70',
+        )}
         onClick={handleAgentNameClick}
       >
         {isSubagent ? '↳ ' : ''}
@@ -162,6 +193,7 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
           events={visibleEvents}
           rangeMs={rangeMs}
           generation={generation}
+          timeFrozen={timeOverride !== null}
           setScrollToEventId={setScrollToEventId}
         />
 

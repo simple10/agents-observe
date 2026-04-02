@@ -89,6 +89,10 @@ interface UIState {
   // Icon customization reactivity
   iconCustomizationVersion: number
   bumpIconCustomizationVersion: () => void
+
+  // Time travel: override Date.now() for testing with historical data
+  timeOverride: number | null
+  setTimeOverride: (time: number | null) => void
 }
 
 const { projectSlug: initialProjectSlug, sessionId: initialSessionId } = parseHash()
@@ -143,7 +147,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
 
     // Restore saved filter state for the new session, or default to "All"
-    const restored = id ? nextFilterStates.get(id) ?? DEFAULT_FILTER_STATE : DEFAULT_FILTER_STATE
+    const restored = id ? (nextFilterStates.get(id) ?? DEFAULT_FILTER_STATE) : DEFAULT_FILTER_STATE
 
     set({
       selectedSessionId: id,
@@ -219,7 +223,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   setAutoFollow: (enabled) => set({ autoFollow: enabled }),
 
   iconCustomizationVersion: 0,
-  bumpIconCustomizationVersion: () => set((s) => ({ iconCustomizationVersion: s.iconCustomizationVersion + 1 })),
+  bumpIconCustomizationVersion: () =>
+    set((s) => ({ iconCustomizationVersion: s.iconCustomizationVersion + 1 })),
+
+  timeOverride: null,
+  setTimeOverride: (time) => set({ timeOverride: time }),
 }))
 
 if (typeof window !== 'undefined') {
