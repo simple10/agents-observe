@@ -85,9 +85,26 @@ function hookCommand() {
       fireAndForget: config.allowedCallbacks.size === 0,
       log,
     })
-      .then((result) => {
+      .then(async (result) => {
         if (result.status === 0) {
-          log.error(`Server unreachable at ${config.baseOrigin}: ${result.error}`)
+          // Auto-start server on SessionStart if it's not running
+          if (hookEvent === 'SessionStart') {
+            log.info('Server not running on SessionStart, auto-starting...')
+            const actualPort = await startServer(config, log)
+            if (actualPort) {
+              log.info(`Server auto-started on port ${actualPort}`)
+              // Retry sending the SessionStart event
+              const retryUrl = `http://127.0.0.1:${actualPort}/api/events`
+              const retry = await postJson(retryUrl, envelope, { log })
+              if (retry.status !== 0) {
+                log.info('SessionStart event delivered after auto-start')
+              }
+            } else {
+              log.error('Auto-start failed')
+            }
+          } else {
+            log.error(`Server unreachable at ${config.baseOrigin}: ${result.error}`)
+          }
           return
         }
         log.trace(`Server response: status=${result.status} hasRequests=${!!result.body?.requests}`)
