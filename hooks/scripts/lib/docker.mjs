@@ -78,12 +78,16 @@ export async function startServer(config, log = console) {
     await run('docker', ['rm', config.containerName])
   }
 
-  // Pull image
-  log.info('Pulling image and starting container...')
-  const pullResult = await run('docker', ['pull', config.dockerImage])
-  if (!pullResult.ok) {
-    log.error(`Failed to pull image: ${pullResult.stderr}`)
-    return null
+  // Pull image (skipped in test harness when AGENTS_OBSERVE_TEST_SKIP_PULL=1)
+  if (!config.testSkipPull) {
+    log.info('Pulling image and starting container...')
+    const pullResult = await run('docker', ['pull', config.dockerImage])
+    if (!pullResult.ok) {
+      log.error(`Failed to pull image: ${pullResult.stderr}`)
+      return null
+    }
+  } else {
+    log.info('AGENTS_OBSERVE_TEST_SKIP_PULL=1 — skipping docker pull (test harness)')
   }
 
   // Try preferred port, fall back to auto-assign

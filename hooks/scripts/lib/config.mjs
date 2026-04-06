@@ -107,6 +107,9 @@ export function getConfig(overrides = {}) {
     API_ID: 'agents-observe',
     expectedVersion: version,
 
+    /* Test harness only — skip `docker pull` when image is pre-loaded. See docs/plans/_queued/spec-fresh-install-test-harness.md */
+    testSkipPull: process.env.AGENTS_OBSERVE_TEST_SKIP_PULL === '1',
+
     mcpPortFile,
   }
 }

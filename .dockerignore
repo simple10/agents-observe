@@ -1,0 +1,36 @@
+# Fresh install test harness — keep build context small and reproducible
+
+# Dependency trees (reinstalled inside the image)
+node_modules
+app/server/node_modules
+app/client/node_modules
+
+# Build outputs
+app/client/dist
+app/server/dist
+
+# Runtime state
+data
+logs
+*.db
+*.db-journal
+
+# Version control and editor state
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+.DS_Store
+.tmp
+.bak
+bak/
+
+# Local configuration
+.env
+.env.local
+settings.local.json
+
+# Existing harness tarballs (the driver writes to /tmp, not the repo, but belt-and-suspenders)
+server-image.tar
+*.tar

@@ -39,3 +39,5 @@ credentials/
 bak/
 
 .justfile.swp
+
+.tmp/

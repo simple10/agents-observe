@@ -10,6 +10,8 @@ RUN cd server && npm install
 COPY app/client/package*.json client/
 RUN cd client && npm install
 COPY app/client/ client/
+# vite.config.ts reads ../../package.json (resolves to /package.json inside image)
+COPY package.json /package.json
 RUN cd client && npm run build
 
 # Copy server source ONLY (not node_modules — those were built above for Linux)

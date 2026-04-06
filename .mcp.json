@@ -2,7 +2,7 @@
   "mcpServers": {
     "agents-observe": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/mcp_server.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/hooks/scripts/mcp_server.mjs"]
     }
   }
 }

@@ -12,6 +12,7 @@ const envKeys = [
   'AGENTS_OBSERVE_DATA_DIR',
   'AGENTS_OBSERVE_LOGS_DIR',
   'AGENTS_OBSERVE_LOG_LEVEL',
+  'AGENTS_OBSERVE_TEST_SKIP_PULL',
 ]
 
 let savedEnv
@@ -97,5 +98,16 @@ describe('config', () => {
   it('defaults logLevel to warn', async () => {
     const cfg = await loadConfig()
     expect(cfg.logLevel).toBe('warn')
+  })
+
+  it('defaults testSkipPull to false', async () => {
+    const cfg = await loadConfig()
+    expect(cfg.testSkipPull).toBe(false)
+  })
+
+  it('sets testSkipPull true when AGENTS_OBSERVE_TEST_SKIP_PULL=1', async () => {
+    process.env.AGENTS_OBSERVE_TEST_SKIP_PULL = '1'
+    const cfg = await loadConfig()
+    expect(cfg.testSkipPull).toBe(true)
   })
 })
