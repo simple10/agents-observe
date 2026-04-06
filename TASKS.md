@@ -2,20 +2,28 @@
 
 ## QUEUED TASKS
 
-- [ ] Improve search UI
-  - Highlight the search input field when a search is being used - it's too easy right now for the user to visually miss that a search is being used - add a highlight border color to the search field
-  - Add a "x" button to clear the search - currently user has to manually delete the search field contents
-  - Ignore search queries if search field only has spaces - currently a space char triggers a search - be careful not to trim queries, users often want the search to include proceeding or trailing spaces - just don't search on spaces alone
-  - If easy, add a background color to the search text to make it easier to see that a search has proceeding or trailing spaces?
-- [ ] Fix timeline animation bugs - see docs/plans/_queued/spec-timeline-animation-bugs.md
 - [ ] Review PR #5 <https://github.com/simple10/agents-observe/pull/5>
   - We currently rely on claude to start the mcp server which starts the docker container
   - Investigate the need for SessionStart to also trigger auto start
     - This would break the model where user intentionally stopped the mcp server, but might be needed when server auto shuts down due to timeout in activity? MCP server should be keeping the server alive already.
   - We need a better way of testing fresh installs before pushing new releases
-- [ ] Add CSS for cursor pointers (hand?) to clickable elements in sidebar & activity stream
 
 ## COMPLETED TASKS
+
+- [x] Add CSS for cursor pointers to clickable elements in sidebar & activity stream
+  - Added cursor-pointer to Button component base class (all Button instances)
+  - Added cursor-pointer to project buttons, session buttons, and event rows
+- [x] Improve search UI
+  - Highlight border + ring on search input when query is active
+  - Search icon turns primary color when active
+  - X button to clear the search
+  - Subtle background tint when query has leading/trailing spaces
+  - Spaces-only queries are ignored (don't trim — just skip filtering)
+- [x] Fix timeline animation bugs (per spec-timeline-animation-bugs.md)
+  - Replaced per-dot CSS transitions with single container Web Animation
+  - All dots share one translateX animation — same speed, can't diverge
+  - React re-renders don't disrupt the running animation
+  - Zero-discontinuity re-anchor on animation finish
 
 - [x] Show the version next to the "connected" message in the bottom of sidebar
 - [x] Modify the Settings > Projects tab to enable per project deleting of sessions
