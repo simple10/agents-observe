@@ -4,79 +4,290 @@
   },
   "hooks": {
     "SessionStart": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "SessionEnd": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PostToolUseFailure": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PermissionRequest": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "StopFailure": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "SubagentStart": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "SubagentStop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "TeammateIdle": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "TaskCreated": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "TaskCompleted": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "Notification": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "InstructionsLoaded": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "ConfigChange": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "CwdChanged": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "FileChanged": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PreCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "PostCompact": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "Elicitation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "ElicitationResult": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "WorktreeCreate": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ],
     "WorktreeRemove": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "bash __HOOK_SCRIPT__" }] }
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __HOOK_SCRIPT__"
+          }
+        ]
+      }
     ]
   }
 }
