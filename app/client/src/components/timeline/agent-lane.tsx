@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback } from 'react'
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
 import { getEventSummary } from '@/lib/event-summary'
@@ -7,9 +7,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { AgentLabel } from '@/components/shared/agent-label'
 import type { Agent, ParsedEvent } from '@/types'
 
-// Renders event dots with CSS-driven drift animation.
-// Each dot mounts at its current position and CSS-transitions to -5% (off-screen).
-// On scale change, all dots are unmounted and remounted via a key change.
+// Renders event dots inside a single animated container.
+// Instead of per-dot CSS transitions (which drift at different speeds and
+// conflict with React re-renders), all dots share one container animation:
+// translateX(0) → translateX(-100%) over rangeMs. Dots have static left
+// positions relative to the container, so they all move at exactly the
+// same speed and can never pass each other.
 function DotContainer({
   events,
   rangeMs,
@@ -21,35 +24,54 @@ function DotContainer({
   generation: number
   setScrollToEventId: (id: number | null) => void
 }) {
-  return (
-    <>
-      {events.map((event) => {
-        const age = Date.now() - event.timestamp
-        const position = 100 - (age / rangeMs) * 100
-        if (position < -10 || position > 100) return null
+  const [anchorTime, setAnchorTime] = useState(() => Date.now())
+  const containerRef = useRef<HTMLDivElement>(null)
 
-        const remainingMs = Math.max(0, rangeMs - age)
+  // Reset anchor when generation changes (time range switch, icon customization)
+  useEffect(() => {
+    setAnchorTime(Date.now())
+  }, [generation])
+
+  // Start/restart the container animation via Web Animations API.
+  // On finish, re-anchor — the math cancels out so there's zero visual
+  // discontinuity (see spec-timeline-animation-bugs.md).
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const anim = el.animate(
+      [{ transform: 'translateX(0%)' }, { transform: 'translateX(-100%)' }],
+      { duration: rangeMs, easing: 'linear', fill: 'forwards' },
+    )
+
+    anim.onfinish = () => setAnchorTime(Date.now())
+    return () => anim.cancel()
+  }, [anchorTime, rangeMs])
+
+  return (
+    <div ref={containerRef} className="absolute inset-0">
+      {events.map((event) => {
+        // Static position relative to the container. The container's
+        // translateX animation slides everything left uniformly.
+        const position = ((event.timestamp - anchorTime) / rangeMs) * 100
+        if (position < -5 || position > 110) return null
+
         const Icon = getEventIcon(event.subtype, event.toolName)
         const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
         const summary = getEventSummary(event)
 
         return (
-          <Tooltip key={`${event.id}-${generation}`}>
+          <Tooltip key={event.id}>
             <TooltipTrigger asChild>
               <button
                 className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-pointer hover:scale-125"
                 style={{ left: `${position}%` }}
-                ref={(el) => {
-                  if (!el) return
-                  // Start drift: set position without transition, then animate to off-screen
-                  requestAnimationFrame(() => {
-                    el.style.transition = `left ${remainingMs}ms linear`
-                    el.style.left = '-5%'
-                  })
-                }}
                 onClick={() => setScrollToEventId(event.id)}
               >
-                <span className={cn('flex items-center justify-center h-5 w-5 rounded-full', !customHex && dotColor)} style={customHex ? { backgroundColor: customHex } : undefined}>
+                <span
+                  className={cn('flex items-center justify-center h-5 w-5 rounded-full', !customHex && dotColor)}
+                  style={customHex ? { backgroundColor: customHex } : undefined}
+                >
                   <Icon className="h-3 w-3 text-white" />
                 </span>
               </button>
@@ -61,7 +83,7 @@ function DotContainer({
           </Tooltip>
         )
       })}
-    </>
+    </div>
   )
 }
 
@@ -96,7 +118,7 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
     return ranges[timeRange]
   }, [timeRange])
 
-  // Increment generation on scale change to force all dots to remount
+  // Increment generation on scale change to reset anchor + animation
   const generationRef = useRef(0)
   const prevRangeRef = useRef(rangeMs)
   if (prevRangeRef.current !== rangeMs) {
@@ -104,7 +126,7 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
     generationRef.current++
   }
 
-  // Also remount dots when icon customizations change
+  // Also reset when icon customizations change
   const prevCustomVersionRef = useRef(iconCustomizationVersion)
   if (prevCustomVersionRef.current !== iconCustomizationVersion) {
     prevCustomVersionRef.current = iconCustomizationVersion
@@ -165,7 +187,7 @@ export function AgentLane({ agent, parentAgent, events, allEvents, isSubagent, c
           setScrollToEventId={setScrollToEventId}
         />
 
-        {/* Time tick marks */}
+        {/* Time tick marks — outside the animated container so they stay fixed */}
         {ticks.map(({ pct, label }) => (
           <div
             key={label}
