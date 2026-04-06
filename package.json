@@ -13,6 +13,7 @@
     "test:client:watch": "cd app/server && npm run test:watch"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.11",
     "vitest": "^3.2.4"
   }
 }

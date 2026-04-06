@@ -34,8 +34,17 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ -n "$(git status --porcelain)" ]; then
+if ! $DRY_RUN && [ -n "$(git status --porcelain)" ]; then
   echo "Error: working directory is not clean — commit or stash changes first"
+  exit 1
+fi
+
+# Make sure all hooks are properly configured in the hooks files
+echo ""
+if bun run ./scripts/check-hooks.ts; then
+  echo "All hooks properly configured"
+else
+  echo "Fix the hooks before releasing"
   exit 1
 fi
 
