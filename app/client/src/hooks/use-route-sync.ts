@@ -43,14 +43,25 @@ export function useRouteSync() {
     })
   }, [selectedSessionId, selectedProjectId, projects])
 
-  // When projects load: correct the URL slug if it doesn't match
+  // When projects load: resolve slug → project ID, or correct a stale slug
   useEffect(() => {
-    if (!projects || !selectedProjectId) return
-    const project = projects.find((p) => p.id === selectedProjectId)
-    if (!project) return
+    if (!projects) return
 
-    if (project.slug !== selectedProjectSlug) {
-      useUIStore.getState().updateProjectSlug(project.slug)
+    // Have a slug from the URL but no project ID yet — resolve it
+    if (!selectedProjectId && selectedProjectSlug) {
+      const project = projects.find((p) => p.slug === selectedProjectSlug)
+      if (project) {
+        useUIStore.getState().setSelectedProject(project.id, project.slug)
+      }
+      return
+    }
+
+    // Have a project ID — make sure the URL slug matches
+    if (selectedProjectId) {
+      const project = projects.find((p) => p.id === selectedProjectId)
+      if (project && project.slug !== selectedProjectSlug) {
+        useUIStore.getState().updateProjectSlug(project.slug)
+      }
     }
   }, [projects, selectedProjectId, selectedProjectSlug])
 }

@@ -1,12 +1,18 @@
 import { create } from 'zustand'
 
+// Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function parseHash(): { projectSlug: string | null; sessionId: string | null } {
   const hash = window.location.hash.slice(1)
   if (!hash || hash === '/') return { projectSlug: null, sessionId: null }
   const parts = hash.split('/').filter(Boolean)
   if (parts.length === 1) {
-    // Could be a session ID or a project slug — treat as session ID
-    return { projectSlug: null, sessionId: parts[0] }
+    // Distinguish between session ID (UUID) and project slug
+    if (UUID_RE.test(parts[0])) {
+      return { projectSlug: null, sessionId: parts[0] }
+    }
+    return { projectSlug: parts[0], sessionId: null }
   }
   if (parts.length >= 2) {
     return { projectSlug: parts[0], sessionId: parts[1] }
