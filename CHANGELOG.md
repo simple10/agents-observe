@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.8.1 — Session management and richer event details
+
+This release adds the ability to move sessions between projects, edit session names inline, and copy transcript paths — all from a new session action column. Event details now render markdown and diffs, and Bash/Read tool expansions show more context. The client bundle was also cut nearly in half.
+
+### Features
+
+- Move sessions between projects via a new action column with drag-and-drop support
+- Copy JSONL transcript path button in session actions
+- Open project modal directly from the sidebar edit button
+- Session breadcrumb showing project, session name, and working directory
+- Markdown and diff rendering in expanded event details
+- Improved rendering for Bash, Read StopFailure, PostToolUseFailure, and PermissionRequest events
+- Configurable shutdown delay via `AGENTS_OBSERVE_SHUTDOWN_DELAY_MS`
+- Reduced client bundle from 1.27 MB to 749 KB with dynamic icon imports
+
+### Fixes
+
+- SubagentStop events now included in the Stop filter
+- Database migration dropping unused `events.summary` and `events.status` columns
+
+### Other
+
+- Sidebar polish: projects sorted alphabetically, improved session row UX, footer icons stack vertically when collapsed; sticky select-all bar and better changelog modal headings in the project modal
+- Cached event count, agent count, and last activity on the sessions table for faster queries
+
 ## v0.8.0 — Session pinning, sorting, and CLI tooling
 
 This release adds several dashboard UI enhancements like session pinning and sort controls, making it easier to organize and find sessions. The CLI gains new commands like hook-sync and hook-autostart, and the `/observe` skill was enhanced with more subcommands and debugging tools. The plugin now checks server health during SessionStart events, sends a status message visible in claude, and auto repairs stopped servers.
