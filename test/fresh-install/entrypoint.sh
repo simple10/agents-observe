@@ -75,7 +75,7 @@ set +e
 claude \
   --plugin-dir /plugin \
   --mcp-config /plugin/.mcp.json \
-  -p "hello, this is a fresh install smoke test" \
+  -p "/observe status" \
   >"$CLAUDE_STDOUT" 2>"$CLAUDE_STDERR"
 CLAUDE_EXIT=$?
 # Do NOT restore set -e here — the rest of the script (verification +
