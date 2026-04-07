@@ -60,7 +60,7 @@ export function Sidebar({ connected }: SidebarProps) {
     <div
       ref={sidebarRef}
       className={cn(
-        'relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200',
+        '@container relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200',
         sidebarCollapsed ? 'w-12' : '',
       )}
       style={sidebarCollapsed ? undefined : { width: sidebarWidth }}
