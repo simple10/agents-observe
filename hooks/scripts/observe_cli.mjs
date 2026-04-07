@@ -201,9 +201,14 @@ function confirm(prompt) {
 }
 
 function parseArgs(args) {
+  // Commands like 'logs' pass remaining args through to docker, so once we
+  // encounter one of these we stop parsing and capture everything that follows.
+  const passthroughCommands = new Set(['logs'])
   const parsed = { commands: [], baseUrl: null, projectSlug: null, force: false }
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--base-url' && args[i + 1]) {
+    if (parsed.commands.length && passthroughCommands.has(parsed.commands[0])) {
+      parsed.commands.push(args[i])
+    } else if (args[i] === '--base-url' && args[i + 1]) {
       parsed.baseUrl = args[i + 1]
       i++
     } else if (args[i] === '--project-slug' && args[i + 1]) {

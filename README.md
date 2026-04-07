@@ -45,14 +45,19 @@ Hooks are used instead of OTEL to capture the full picture of agent actions.
 
 3. Restart Claude Code.
 
-That's it. On your next session, the server auto-starts as a Docker container and hooks begin capturing events. Open **<http://localhost:4981>** to see the dashboard.
+That's it. On your next session, the server automatically launches as a Docker container and the dashboard becomes accessible at **<http://localhost:4981>**. Use `/observe` to open the dashboard or `/observe debug` if something isn't working.
 
 ## Plugin Skills
 
 | Skill | Description |
 |-------|-------------|
 | `/observe` | Open the dashboard URL and check if the server is running |
-| `/observe status` | Check server health and show dashboard URL |
+| `/observe status` | Show server health, version, runtime, and config details |
+| `/observe start` | Start the server |
+| `/observe stop` | Stop the server |
+| `/observe restart` | Restart the server |
+| `/observe logs` | Show recent Docker container logs |
+| `/observe debug` | Diagnose server issues (health, docker logs, mcp.log, cli.log) |
 
 ## Why observability matters
 
@@ -145,33 +150,26 @@ Navigate to **<http://localhost:5174>** (dev) or **<http://localhost:4981>** (Do
 If you have [just](https://github.com/casey/just) installed:
 
 ```bash
-# Local Dev Commands:
+# Development:
 just install      # Install all dependencies
 just dev          # Start server + client in dev mode (hot reload)
-just dev-server   # Start only the server
-just dev-client       # Start only the client
-just dev-client-build # Build the client for production
-just test             # Run all tests (server + client)
+just test         # Run all tests (server + client)
 just test-event   # Send a test event to the server
 just fmt          # Format all source files
 
-# Docker Container Commands:
+# Server (Docker):
 just build        # Build the Docker image locally
-just start        # Start production containers (Docker, detached)
-just stop         # Stop Docker containers
-just restart      # Restart Docker containers
+just start        # Start the server (same path as plugin MCP)
+just stop         # Stop the server
+just restart      # Restart the server
 just logs         # Follow Docker container logs
+just start-local  # Start server locally without Docker
 
-# Local Server Commands:
-# Starts the server as a single process for API & client without docker
-just start-local  # Builds client and runs local server (without docker)
-npm run start     # Same as `just start-local`
-
-# Setup & Utilities:
+# Utilities:
 just setup-hooks <name>  # Generate hooks config for a project
 just health              # Check server health
-just cli <command>       # Run the CLI (hook, health, start, stop, restart)
 just db-reset            # Delete the events database
+just cli <command>       # Run CLI directly (hook, health, start, stop, restart, logs)
 just open                # Open the dashboard in browser
 ```
 
@@ -184,18 +182,17 @@ app/
 hooks/
   hooks.json                 # Plugin hook definitions
   scripts/                   # CLI, MCP server, and shared libs
-skills/                      # /observe and /observe status skills
+skills/                      # /observe skills
 scripts/                     # Release tooling
 test/                        # Integration tests
-data/                        # SQLite database (auto-created)
-docs/                        # Screenshots and demo assets
+docs/                        # Plans and demo assets
 .claude-plugin/              # Plugin + marketplace manifests
 .env                         # Env config options used by cli & local server
 .mcp.json                    # MCP server configuration
 Dockerfile                   # Production container image
-docker-compose.yml           # Container orchestration
+docker-compose.yml           # Container orchestration - not used by the plugin
 justfile                     # Task runner commands
-start.mjs                    # Docker container entrypoint
+start.mjs                    # Local server entrypoint (non-Docker)
 settings.template.json       # Hooks config template for setup-hooks
 vitest.config.ts             # Test configuration
 package.json                 # Version metadata and workspace scripts
@@ -225,15 +222,11 @@ The plugin requires Docker to run the server. Make sure Docker Desktop (or the D
 
 **Port 4981 in use?**
 
-If another process is using port 4981, stop it or remove a stale container:
-
-```bash
-docker stop agents-observe && docker rm agents-observe
-```
+The server auto-assigns a free port if 4981 is taken. To explicitly set a port, add `AGENTS_OBSERVE_SERVER_PORT=<port>` to your environment or `.env` file.
 
 **Plugin not capturing events?**
 
-Run `/observe status` to check if the server is running. If the container doesn't exist, restart Claude Code. Check Docker logs with `docker logs agents-observe`.
+Run `/observe debug` to diagnose. It checks server health, Docker container logs, MCP logs, and CLI logs. You can also run `/observe status` for a quick health check.
 
 **Events not appearing in the dashboard?**
 
@@ -248,7 +241,7 @@ The client reconnects automatically every 3 seconds if the WebSocket connection 
 
 **Database issues?**
 
-Run `just db-reset` to delete the SQLite database and start fresh. The database is auto-created on the next server start.
+Run `just db-reset` to delete the SQLite database and start fresh (stops the server, deletes the db, restarts). The database is auto-created on the next server start.
 
 ## ROADMAP
 

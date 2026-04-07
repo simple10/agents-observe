@@ -1,3 +1,10 @@
+# Example Docker Compose Config
+# Start with `docker compose up`
+#
+# This file is not used by the claude plugin or local dev scripts.
+# It's here for reference and quick testing.
+# Recommended to use the `just start` and `just dev` commands instead.
+#
 services:
   agents-observe:
     build:
