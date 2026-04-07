@@ -43,3 +43,4 @@ bak/
 .tmp/
 
 .claude/worktrees/
+.worktrees/
