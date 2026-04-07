@@ -30,19 +30,12 @@ In dev mode, client and server run as separate processes on separate ports. In p
 | `just test` | Run all tests |
 | `just test-event` | Send a test event |
 | `just health` | Check server health |
+| `just check` | **Run before every commit** — tests + format |
 | `just fmt` | Format all source files |
 | `just db-reset` | Delete the SQLite database (stops/restarts server) |
 | `just logs` | Follow Docker container logs |
 | `just open` | Open dashboard in browser |
 | `just cli <cmd>` | Run CLI directly |
-
-### npm scripts (run from project root)
-
-| Command | Description |
-|---------|-------------|
-| `npm test` | Run all tests (scripts + server + client) |
-| `npm run fmt` | Format all source files (server + client + scripts) |
-| `npm run check` | Run tests then format — **run this before every commit** |
 
 ## Project Structure
 
@@ -133,7 +126,7 @@ Present the analysis with a clear recommendation and let the user decide.
 ## Code Style
 
 - TypeScript throughout, avoid `any`
-- Run `npm run check` before committing (runs all tests + Prettier)
+- Run `just check` before committing (runs all tests + Prettier)
 - Hook scripts are dependency-free (Node.js built-ins only)
 - Use kebab-case for file names
 - Use [Conventional Commits](https://www.conventionalcommits.org/) — see [CLAUDE.md](../CLAUDE.md) for prefixes
@@ -149,15 +142,12 @@ The release script generates a CHANGELOG.md entry via Claude, opens it in your e
 
 ## Testing
 
-**Before committing, always run `npm run check` from the project root.** This runs all tests and formats code. Do not skip this step or guess at which test commands to run in which directories.
+**Before committing, always run `just check` from the project root.** This runs all tests and formats code. Do not skip this step or guess at which test commands to run in which directories.
 
 ```bash
-npm run check                       # tests + format — run before every commit
-npm test                            # all tests (server + client + hooks)
-npm run fmt                         # format all source files
-npx vitest run                      # hooks/scripts/lib tests only
-cd app/client && npx vitest run     # client tests only
-cd app/server && npm test           # server tests only
+just check                          # tests + format — run before every commit
+just test                           # all tests only
+just fmt                            # format only
 ```
 
 Fresh install test harness (requires Docker + OAuth token in `.env`):

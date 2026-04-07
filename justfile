@@ -86,10 +86,14 @@ cli *args:
 open port=port:
     open http://localhost:{{ port }}
 
+# Run all tests + format (run before every commit)
+check:
+    npm test
+    npm run fmt
+
 # Format all source files
 fmt:
-    cd {{ server }} && npm run fmt
-    cd {{ client }} && npm run fmt
+    npm run fmt
 
 # Tag and push a release (bumps versions, tests, builds, tags, pushes)
 release version:

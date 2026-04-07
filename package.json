@@ -11,7 +11,9 @@
     "test": "npm run test:scripts && cd app/server && npm test && cd ../client && npm test",
     "test:scripts": "vitest run",
     "test:server:watch": "cd app/server && npm run test:watch",
-    "test:client:watch": "cd app/server && npm run test:watch"
+    "test:client:watch": "cd app/client && npm run test:watch",
+    "fmt": "npx prettier --write 'app/server/src/**/*.ts' 'app/client/src/**/*.{ts,tsx}' 'hooks/scripts/**/*.mjs' 'test/**/*.mjs' 'start.mjs'",
+    "check": "npm test && npm run fmt"
   },
   "devDependencies": {
     "@types/bun": "^1.3.11",
