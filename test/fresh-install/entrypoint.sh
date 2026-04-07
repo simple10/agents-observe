@@ -67,17 +67,26 @@ export CLAUDE_PLUGIN_ROOT=/plugin
 echo "CLAUDE_PLUGIN_ROOT=$CLAUDE_PLUGIN_ROOT"
 echo ""
 
-# --- Run claude against the plugin -------------------------------------
-echo "=== Running claude -p ... ==="
+# --- Run claude as non-root user --------------------------------------
+# Claude CLI refuses --permission-mode bypassPermissions as root.
+# Run as testuser, passing through env vars it needs.
+echo "=== Running claude -p ... (as testuser) ==="
 CLAUDE_STDOUT=/tmp/claude.stdout
 CLAUDE_STDERR=/tmp/claude.stderr
 set +e
-claude \
-  --plugin-dir /plugin \
-  --mcp-config /plugin/.mcp.json \
-  --permission-mode bypassPermissions \
-  -p "/observe status" \
-  >"$CLAUDE_STDOUT" 2>"$CLAUDE_STDERR"
+su -s /bin/bash testuser -c "
+  export CLAUDE_CODE_OAUTH_TOKEN='$CLAUDE_CODE_OAUTH_TOKEN'
+  export AGENTS_OBSERVE_DOCKER_IMAGE='$AGENTS_OBSERVE_DOCKER_IMAGE'
+  export AGENTS_OBSERVE_TEST_SKIP_PULL='$AGENTS_OBSERVE_TEST_SKIP_PULL'
+  export AGENTS_OBSERVE_LOG_LEVEL='${AGENTS_OBSERVE_LOG_LEVEL:-trace}'
+  export CLAUDE_PLUGIN_ROOT='$CLAUDE_PLUGIN_ROOT'
+  claude \
+    --plugin-dir /plugin \
+    --mcp-config /plugin/.mcp.json \
+    --permission-mode bypassPermissions \
+    -p '/observe status' \
+    >'$CLAUDE_STDOUT' 2>'$CLAUDE_STDERR'
+"
 CLAUDE_EXIT=$?
 # Do NOT restore set -e here — the rest of the script (verification +
 # diagnostic dump) must tolerate individual command failures.
