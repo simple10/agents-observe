@@ -100,10 +100,18 @@ just test                # verify everything works together
 
 # Then merge back
 git checkout main
-git merge <branch>       # or: git merge --squash <branch>
+git merge --squash <branch>    # default: squash into one commit
+git commit -m "feat: description of the feature"
 ```
 
 Main should never be the first place where two branches meet — surface conflicts in the worktree where you can test them.
+
+**Default to squash merge.** Most branches are single-purpose feature work where the individual development commits (WIP, fix typo, try again) aren't meaningful history. One clean commit on main is easier to bisect, revert, and read in `git log`.
+
+**Use a regular merge (`git merge <branch>`) when:**
+- The branch has multiple logical steps that are each independently meaningful and potentially revertable (e.g., config change → CLI command → UI → tests as separate commits)
+- The branch is a large refactor touching many files — keeping commits lets reviewers see the progression
+- The branch commits have already been reviewed individually (e.g., PR with per-commit feedback)
 
 ## Code Style
 
