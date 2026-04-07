@@ -8,8 +8,7 @@ Real-time observability dashboard for Claude Code agents. Captures every hook ev
 
 If agents-observe is installed as a plugin, hooks are already configured. The server auto-starts as a Docker container on session start. The dashboard is at **http://localhost:4981**.
 
-Use `/observe` to open the dashboard and check server status.
-Use `/observe status` to check server health.
+Use `/observe` to open the dashboard. Other commands: `/observe status`, `/observe start`, `/observe stop`, `/observe restart`, `/observe logs`, `/observe debug`.
 
 ### Standalone (development)
 
@@ -66,18 +65,17 @@ In dev mode, client and server run as separate processes on separate ports. In p
 |---------|-------------|
 | `just install` | Install all dependencies |
 | `just dev` | Start server + client in dev mode (hot reload) |
-| `just dev-server` | Start only the server |
-| `just dev-client` | Start only the client |
-| `just start` | Start Docker container |
-| `just stop` | Stop Docker container |
-| `just restart` | Restart Docker container |
+| `just start` | Start the server (same path as plugin MCP) |
+| `just stop` | Stop the server |
+| `just restart` | Restart the server |
 | `just test` | Run all tests |
 | `just test-event` | Send a test event |
 | `just health` | Check server health |
 | `just fmt` | Format all source files |
-| `just db-reset` | Delete the SQLite database |
+| `just db-reset` | Delete the SQLite database (stops/restarts server) |
 | `just logs` | Follow Docker container logs |
 | `just open` | Open dashboard in browser |
+| `just cli <cmd>` | Run CLI directly (hook, health, start, stop, restart, logs, db-reset) |
 | `just setup-hooks <slug>` | Generate hooks config for a project |
 
 ## Project Structure
@@ -87,7 +85,7 @@ app/server/        # Hono server, SQLite, WebSocket
 app/client/        # React 19 + shadcn dashboard
 hooks/scripts/     # Hook script, CLI, MCP server
 hooks/hooks.json   # Plugin hook definitions
-skills/            # /observe and /observe status skills
+skills/            # /observe skill (status, start, stop, restart, logs, debug)
 test/              # Integration tests
 data/              # SQLite database (auto-created)
 ```
@@ -102,6 +100,21 @@ data/              # SQLite database (auto-created)
 | `AGENTS_OBSERVE_API_BASE_URL` | `http://127.0.0.1:4981/api` | API endpoint URL |
 | `AGENTS_OBSERVE_LOG_LEVEL` | `debug` | Log level (`debug` or `trace`) |
 | `AGENTS_OBSERVE_DATA_DIR` | `./data` | SQLite database directory |
+
+## Worktrees
+
+When using git worktrees for parallel development, each worktree needs its own ports to avoid conflicts with the main checkout.
+
+Create a `.env` in the worktree root with unique ports:
+
+```bash
+AGENTS_OBSERVE_SERVER_PORT=4982
+AGENTS_OBSERVE_DEV_CLIENT_PORT=5179
+```
+
+Pick any unused ports — just make sure they don't collide with the main checkout (4981/5174) or other worktrees. The `.env` file is gitignored so it won't affect other checkouts.
+
+Then run `just dev` or `just start` as normal — the justfile loads `.env` automatically.
 
 ## Code Style
 
