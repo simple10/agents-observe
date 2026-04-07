@@ -14,10 +14,10 @@ interface ChangelogModalProps {
 
 const mdComponents = {
   h2: ({ children, ...props }: React.ComponentProps<'h2'>) => (
-    <h2 className="text-lg font-semibold mt-6 first:mt-0 mb-2" {...props}>{children}</h2>
+    <h2 className="text-lg font-semibold mt-6 first:mt-0 mb-2 pt-4 first:pt-0 border-t first:border-t-0 border-foreground/20" {...props}>{children}</h2>
   ),
   h3: ({ children, ...props }: React.ComponentProps<'h3'>) => (
-    <h3 className="text-sm font-medium mt-4 mb-1.5 text-muted-foreground" {...props}>{children}</h3>
+    <h3 className="text-base font-semibold mt-4 mb-1.5 text-foreground" {...props}>{children}</h3>
   ),
   ul: ({ children, ...props }: React.ComponentProps<'ul'>) => (
     <ul className="list-disc pl-5 space-y-1" {...props}>{children}</ul>
@@ -56,8 +56,9 @@ export function ChangelogModal({ open, onOpenChange }: ChangelogModalProps) {
       <DialogContent aria-describedby={undefined} className="w-[700px] max-w-[90vw] max-h-[80vh] flex flex-col p-0">
         <div className="flex items-center px-6 pt-6 pb-0">
           <DialogTitle>Changelog</DialogTitle>
+          <span className="ml-2 text-xs text-muted-foreground">v{__APP_VERSION__}</span>
           {latestVersion && !versionMismatch && !outdated && (
-            <span className="ml-2 text-xs text-muted-foreground/60">up to date</span>
+            <span className="ml-1.5 text-[10px] text-green-600 dark:text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full">up to date</span>
           )}
           <div className="flex items-center gap-1 ml-auto">
             {__GITHUB_REPO_URL__ && (

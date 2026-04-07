@@ -23,7 +23,7 @@ const customBanner = {
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(rootPkg.version),
-    __GITHUB_REPO_URL__: JSON.stringify(process.env.AGENTS_OBSERVE_GITHUB_REPO_URL || ''),
+    __GITHUB_REPO_URL__: JSON.stringify(process.env.AGENTS_OBSERVE_GITHUB_REPO_URL || rootPkg.repository || ''),
   },
   plugins: [react(), tailwindcss(), customBanner],
   resolve: {
