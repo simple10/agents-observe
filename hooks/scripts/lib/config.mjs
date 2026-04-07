@@ -150,6 +150,7 @@ export function getServerEnv(config) {
         : resolve(config.installDir, 'app/client/dist'),
     AGENTS_OBSERVE_LOG_LEVEL: config.logLevel,
     AGENTS_OBSERVE_RUNTIME: config.runtime,
+    ...(isDev && { AGENTS_OBSERVE_DEV_CLIENT_PORT: config.clientPort }),
     AGENTS_OBSERVE_STORAGE_ADAPTER: 'sqlite',
   }
 }

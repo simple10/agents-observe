@@ -7,9 +7,9 @@ import { fileURLToPath } from 'url'
 
 const logLevel = (process.env.AGENTS_OBSERVE_LOG_LEVEL || 'debug').toLowerCase()
 
-function detectRuntime(): 'docker' | 'local' {
+function detectRuntime(): 'docker' | 'local' | 'dev' {
   const explicit = process.env.AGENTS_OBSERVE_RUNTIME
-  if (explicit === 'docker' || explicit === 'local') return explicit
+  if (explicit === 'docker' || explicit === 'local' || explicit === 'dev') return explicit
   if (existsSync('/.dockerenv')) return 'docker'
   return 'local'
 }
@@ -41,4 +41,5 @@ export const config = {
   dbPath: resolve(process.env.AGENTS_OBSERVE_DB_PATH || '../../data/observe.db'),
   storageAdapter: process.env.AGENTS_OBSERVE_STORAGE_ADAPTER || 'sqlite',
   clientDistPath: process.env.AGENTS_OBSERVE_CLIENT_DIST_PATH || '',
+  devClientPort: parseInt(process.env.AGENTS_OBSERVE_DEV_CLIENT_PORT || '5174', 10),
 }
