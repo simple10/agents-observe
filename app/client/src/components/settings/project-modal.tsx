@@ -239,7 +239,7 @@ export function ProjectModal({ project, open, onOpenChange }: ProjectModalProps)
             {sortedSessions.length > 0 ? (
               <div className="divide-y divide-border/50">
                 {/* Select all header */}
-                <div className="flex items-center gap-3 px-5 py-2 bg-muted/30">
+                <div className="flex items-center gap-3 px-5 py-2 bg-background sticky top-0 z-10 border-b border-border/50">
                   <Checkbox
                     checked={allSelected}
                     onCheckedChange={toggleAll}
