@@ -194,13 +194,58 @@ echo "2. Server health:          $CHECK_2_RESULT — $CHECK_2_DETAIL"
 echo "3. Events captured:        $CHECK_3_RESULT — $CHECK_3_DETAIL"
 echo "4. mcp.log ERROR lines:    $CHECK_4_MCP_COUNT"
 echo "4. cli.log ERROR lines:    $CHECK_4_CLI_COUNT"
+
+# Check 5 (soft): UI HTML loads and references valid assets
+CHECK_5_RESULT="SKIP"
+CHECK_5_DETAIL=""
+UI_HTML="$(curl -sf http://127.0.0.1:4981/ 2>/dev/null || true)"
+if [ -n "$UI_HTML" ]; then
+  if echo "$UI_HTML" | grep -q '<div id="root">' && echo "$UI_HTML" | grep -q '<script'; then
+    # Verify JS assets are reachable
+    ASSET_URLS="$(echo "$UI_HTML" | grep -oE '(src|href)="/assets/[^"]+' | sed 's/^[^"]*"//' || true)"
+    ASSETS_OK=true
+    for asset in $ASSET_URLS; do
+      if ! curl -sf "http://127.0.0.1:4981${asset}" -o /dev/null 2>/dev/null; then
+        ASSETS_OK=false
+        CHECK_5_DETAIL="missing asset: $asset"
+        break
+      fi
+    done
+    if $ASSETS_OK; then
+      CHECK_5_RESULT="PASS"
+      CHECK_5_DETAIL="HTML + $(echo "$ASSET_URLS" | wc -w | tr -d ' ') assets OK"
+    else
+      CHECK_5_RESULT="FAIL"
+    fi
+  else
+    CHECK_5_RESULT="FAIL"
+    CHECK_5_DETAIL="HTML missing root div or script tag"
+  fi
+else
+  CHECK_5_DETAIL="curl to / returned empty"
+fi
+echo "5. UI assets reachable:    $CHECK_5_RESULT — $CHECK_5_DETAIL"
 echo ""
 
 # --- Final status ------------------------------------------------------
 if [ "$CHECK_1_RESULT" = "PASS" ] && [ "$CHECK_2_RESULT" = "PASS" ] && [ "$CHECK_3_RESULT" = "PASS" ]; then
-  echo "=== final status: PASS ==="
+  FINAL_STATUS="PASS"
+else
+  FINAL_STATUS="FAIL"
+fi
+
+echo "=== final status: $FINAL_STATUS ==="
+echo "[CHECKS_DONE]"
+
+# Keep alive if requested (for manual UI verification from host)
+if [ "${AGENTS_OBSERVE_TEST_KEEP_ALIVE:-}" = "1" ] && [ "$FINAL_STATUS" = "PASS" ]; then
+  echo "Container staying alive for manual UI check. Kill to exit."
+  # Sleep forever — the test script will docker rm -f when done
+  sleep infinity
+fi
+
+if [ "$FINAL_STATUS" = "PASS" ]; then
   exit 0
 else
-  echo "=== final status: FAIL ==="
   exit 1
 fi
