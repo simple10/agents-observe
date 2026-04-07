@@ -86,6 +86,8 @@ Rules:
 - Keep the ### Other section short — combine minor changes (docs updates, refactors, config tweaks) into 2-3 combined bullet points rather than listing each one individually
 - Do NOT include commit SHAs, author names, or dates on individual items
 - Do NOT include the release: commit itself
+- Do NOT include a top-level # Changelog header — only the ## version entry and its contents
+- Ensure valid markdown: blank line before and after headings, consistent list indentation, no trailing whitespace
 - Output ONLY the markdown entry, no preamble or explanation
 PROMPT
 )" 2>/dev/null)
@@ -96,10 +98,11 @@ if [ -z "$CHANGELOG_ENTRY" ]; then
   exit 1
 fi
 
-# Prepend the new entry to CHANGELOG.md (create if needed)
+# Insert new entry below the # Changelog header (create file if needed)
 if [ -f CHANGELOG.md ]; then
-  EXISTING=$(cat CHANGELOG.md)
-  printf '%s\n\n%s\n' "$CHANGELOG_ENTRY" "$EXISTING" > CHANGELOG.md
+  # Extract everything after the first header line
+  BODY=$(sed '1{/^# /d;}' CHANGELOG.md | sed '/./,$!d')
+  printf '# Changelog\n\n%s\n\n%s\n' "$CHANGELOG_ENTRY" "$BODY" > CHANGELOG.md
 else
   printf '# Changelog\n\n%s\n' "$CHANGELOG_ENTRY" > CHANGELOG.md
 fi
