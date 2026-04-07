@@ -233,7 +233,7 @@ export class SqliteAdapter implements EventStore {
       FROM projects p
       LEFT JOIN sessions s ON s.project_id = p.id
       GROUP BY p.id
-      ORDER BY p.created_at DESC
+      ORDER BY p.name ASC
     `,
       )
       .all()
