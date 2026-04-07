@@ -1,6 +1,7 @@
 ---
 name: observe
-description: Agents Observe dashboard and server management. Usage: /observe, /observe status, /observe start, /observe stop, /observe restart
+description: Agents Observe dashboard and server management
+argument-hint: [status|start|stop|restart]
 user_invocable: true
 ---
 
@@ -18,7 +19,7 @@ Agents Observe dashboard and server management.
 
 ## Instructions
 
-Parse the user's arguments to determine the subcommand. If no arguments, default to showing the dashboard URL.
+The subcommand is in `$ARGUMENTS`. If empty, default to showing the dashboard URL.
 
 ### /observe (no args)
 
