@@ -106,10 +106,19 @@ git commit -m "feat: description of the feature"
 
 Main should never be the first place where two branches meet — surface conflicts in the worktree where you can test them.
 
+**Before merging, analyze the branch and recommend squash vs regular merge.** Run `git log --oneline main..<branch>` and assess:
+
+1. **How many commits?** And are they independently meaningful, or development iteration (feat → fix typo → refactor → fix tests)?
+2. **Would anyone ever revert a single commit independently?** If not, they should be squashed together.
+3. **Is there a logical multi-step progression?** (e.g., "add config" → "add CLI" → "add UI" → "add tests" where each is a complete unit)
+4. **How many files changed?** A squash of 5 files is easy to review; a squash of 30 files across unrelated areas might benefit from keeping commits.
+
+Present the analysis with a clear recommendation and let the user decide.
+
 **Default to squash merge.** Most branches are single-purpose feature work where the individual development commits (WIP, fix typo, try again) aren't meaningful history. One clean commit on main is easier to bisect, revert, and read in `git log`.
 
 **Use a regular merge (`git merge <branch>`) when:**
-- The branch has multiple logical steps that are each independently meaningful and potentially revertable (e.g., config change → CLI command → UI → tests as separate commits)
+- The branch has multiple logical steps that are each independently meaningful and potentially revertable
 - The branch is a large refactor touching many files — keeping commits lets reviewers see the progression
 - The branch commits have already been reviewed individually (e.g., PR with per-commit feedback)
 
