@@ -17,7 +17,14 @@ describe('consumer-tracker', () => {
       getClientCount: vi.fn(() => 0),
     }
     vi.doMock('./websocket', () => websocketMock)
-    vi.doMock('./config', () => ({ config: { runtime: 'docker' } }))
+    vi.doMock('./config', () => ({
+      config: {
+        shutdownDelayMs: 30_000,
+        consumerTtlMs: 30_000,
+        sweepIntervalMs: 10_000,
+        startupGraceMs: 60_000,
+      },
+    }))
 
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
 
@@ -97,17 +104,24 @@ describe('consumer-tracker', () => {
     })
   })
 
-  describe('checkShutdown — dev mode', () => {
+  describe('checkShutdown — auto-shutdown disabled', () => {
     beforeEach(async () => {
       vi.resetModules()
       vi.doMock('./websocket', () => ({
         getClientCount: vi.fn(() => 0),
       }))
-      vi.doMock('./config', () => ({ config: { runtime: 'local' } }))
+      vi.doMock('./config', () => ({
+        config: {
+          shutdownDelayMs: 0,
+          consumerTtlMs: 30_000,
+          sweepIntervalMs: 10_000,
+          startupGraceMs: 60_000,
+        },
+      }))
       tracker = await import('./consumer-tracker')
     })
 
-    test('logs but does not shut down in dev mode', () => {
+    test('does not shut down when shutdownDelayMs is 0', () => {
       vi.advanceTimersByTime(61_000)
       tracker.checkShutdown()
       vi.advanceTimersByTime(500)

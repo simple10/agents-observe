@@ -19,7 +19,7 @@ describe('dev mode redirect', () => {
     vi.doMock('./config', () => ({
       config: {
         clientDistPath: '',
-        runtime: 'dev',
+        isDev: true,
         devClientPort: 5174,
       },
     }))
@@ -36,7 +36,7 @@ describe('dev mode redirect', () => {
     vi.doMock('./config', () => ({
       config: {
         clientDistPath: '',
-        runtime: 'dev',
+        isDev: true,
         devClientPort: 5174,
       },
     }))
@@ -53,7 +53,7 @@ describe('dev mode redirect', () => {
     vi.doMock('./config', () => ({
       config: {
         clientDistPath: '',
-        runtime: 'dev',
+        isDev: true,
         devClientPort: 5174,
       },
     }))
@@ -69,7 +69,7 @@ describe('dev mode redirect', () => {
     vi.doMock('./config', () => ({
       config: {
         clientDistPath: '',
-        runtime: 'local',
+        isDev: false,
         devClientPort: 5174,
       },
     }))
@@ -85,7 +85,7 @@ describe('dev mode redirect', () => {
     vi.doMock('./config', () => ({
       config: {
         clientDistPath: '',
-        runtime: 'dev',
+        isDev: true,
         devClientPort: 9999,
       },
     }))

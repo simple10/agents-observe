@@ -36,6 +36,14 @@ In dev mode, client and server run as separate processes on separate ports. In p
 | `just open` | Open dashboard in browser |
 | `just cli <cmd>` | Run CLI directly |
 
+### npm scripts (run from project root)
+
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run all tests (scripts + server + client) |
+| `npm run fmt` | Format all source files (server + client + scripts) |
+| `npm run check` | Run tests then format — **run this before every commit** |
+
 ## Project Structure
 
 ```
@@ -64,7 +72,8 @@ All env vars are read in `hooks/scripts/lib/config.mjs` (centralized — never r
 |----------|---------|-------------|
 | `AGENTS_OBSERVE_SERVER_PORT` | `4981` | Server port (dev + Docker) |
 | `AGENTS_OBSERVE_DEV_CLIENT_PORT` | `5174` | Vite dev client port |
-| `AGENTS_OBSERVE_RUNTIME` | `docker` | Runtime mode: `docker`, `local`, or `dev` |
+| `AGENTS_OBSERVE_RUNTIME` | `docker` | Runtime mode: `docker` or `local` |
+| `AGENTS_OBSERVE_SHUTDOWN_DELAY_MS` | `30000` | Auto-shutdown delay after last consumer disconnects. `0` disables |
 | `AGENTS_OBSERVE_PROJECT_SLUG` | (auto-detected) | Project slug in dashboard URL |
 | `AGENTS_OBSERVE_API_BASE_URL` | `http://127.0.0.1:4981/api` | API endpoint (set for remote servers) |
 | `AGENTS_OBSERVE_LOG_LEVEL` | `warn` | Log level: `warn`, `debug`, or `trace` |
@@ -124,7 +133,7 @@ Present the analysis with a clear recommendation and let the user decide.
 ## Code Style
 
 - TypeScript throughout, avoid `any`
-- Run `just fmt` before committing (Prettier)
+- Run `npm run check` before committing (runs all tests + Prettier)
 - Hook scripts are dependency-free (Node.js built-ins only)
 - Use kebab-case for file names
 - Use [Conventional Commits](https://www.conventionalcommits.org/) — see [CLAUDE.md](../CLAUDE.md) for prefixes
@@ -140,8 +149,12 @@ The release script generates a CHANGELOG.md entry via Claude, opens it in your e
 
 ## Testing
 
+**Before committing, always run `npm run check` from the project root.** This runs all tests and formats code. Do not skip this step or guess at which test commands to run in which directories.
+
 ```bash
-just test                           # all tests (server + client + hooks)
+npm run check                       # tests + format — run before every commit
+npm test                            # all tests (server + client + hooks)
+npm run fmt                         # format all source files
 npx vitest run                      # hooks/scripts/lib tests only
 cd app/client && npx vitest run     # client tests only
 cd app/server && npm test           # server tests only

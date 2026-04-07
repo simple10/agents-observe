@@ -26,6 +26,13 @@ export function getConfig(overrides = {}) {
 
   /** Runtime used by start scripts: docker | local | dev */
   const runtime = overrides.runtime || process.env.AGENTS_OBSERVE_RUNTIME || 'docker'
+  /** True when running in dev mode (hot reload, vite client) */
+  const isDevRuntime = runtime === 'dev'
+  /** Shutdown delay in ms. 0 or negative disables auto-shutdown. Default 30s. */
+  const shutdownDelayMs = parseInt(
+    overrides.shutdownDelayMs || process.env.AGENTS_OBSERVE_SHUTDOWN_DELAY_MS || '30000',
+    10,
+  )
 
   const homeDir = process.env.HOME || ''
   const pluginDataDir = process.env.CLAUDE_PLUGIN_DATA
@@ -84,6 +91,8 @@ export function getConfig(overrides = {}) {
     homeDir,
 
     runtime,
+    isDevRuntime,
+    shutdownDelayMs,
 
     serverPort,
     serverPortFile,
@@ -136,21 +145,22 @@ export function getConfig(overrides = {}) {
  */
 export function getServerEnv(config) {
   const isDocker = config.runtime === 'docker'
-  const isDev = config.runtime === 'dev'
 
   return {
     AGENTS_OBSERVE_SERVER_PORT: isDocker ? '4981' : config.serverPort,
     AGENTS_OBSERVE_DB_PATH: isDocker
       ? `/data/${config.databaseFileName}`
       : resolve(config.dataDir, config.databaseFileName),
-    AGENTS_OBSERVE_CLIENT_DIST_PATH: isDev
+    AGENTS_OBSERVE_CLIENT_DIST_PATH: config.isDevRuntime
       ? '' // vite dev server serves the client
       : isDocker
         ? '/app/client/dist'
         : resolve(config.installDir, 'app/client/dist'),
     AGENTS_OBSERVE_LOG_LEVEL: config.logLevel,
-    AGENTS_OBSERVE_RUNTIME: config.runtime,
-    ...(isDev && { AGENTS_OBSERVE_DEV_CLIENT_PORT: config.clientPort }),
+    AGENTS_OBSERVE_RUNTIME: isDocker ? 'docker' : 'local',
+    AGENTS_OBSERVE_RUNTIME_DEV: config.isDevRuntime ? '1' : '',
+    AGENTS_OBSERVE_SHUTDOWN_DELAY_MS: String(config.shutdownDelayMs),
+    ...(config.isDevRuntime && { AGENTS_OBSERVE_DEV_CLIENT_PORT: config.clientPort }),
     AGENTS_OBSERVE_STORAGE_ADAPTER: 'sqlite',
   }
 }

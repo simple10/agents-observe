@@ -24,7 +24,7 @@ import { saveServerPortFile, removeServerPortFile } from './hooks/scripts/lib/fs
 const config = getConfig()
 const serverDir = resolve(config.installDir, 'app/server')
 const clientDir = resolve(config.installDir, 'app/client')
-const isDev = config.runtime === 'dev'
+const isDev = config.isDevRuntime
 
 function run(cmd, args, cwd, env = {}) {
   const rel = cwd.replace(config.installDir + '/', '') || '.'

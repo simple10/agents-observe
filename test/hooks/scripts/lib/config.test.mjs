@@ -395,14 +395,16 @@ describe('getServerEnv', () => {
     expect(env.AGENTS_OBSERVE_RUNTIME).toBe('local')
   })
 
-  it('sets empty CLIENT_DIST_PATH for dev runtime', async () => {
+  it('sets empty CLIENT_DIST_PATH and RUNTIME_DEV for dev runtime', async () => {
     const mod = await loadModule()
     const cfg = mod.getConfig({ runtime: 'dev' })
     const env = mod.getServerEnv(cfg)
 
     expect(env.AGENTS_OBSERVE_SERVER_PORT).toBe(cfg.serverPort)
     expect(env.AGENTS_OBSERVE_CLIENT_DIST_PATH).toBe('')
-    expect(env.AGENTS_OBSERVE_RUNTIME).toBe('dev')
+    expect(env.AGENTS_OBSERVE_RUNTIME).toBe('local')
+    expect(env.AGENTS_OBSERVE_RUNTIME_DEV).toBe('1')
+    expect(env.AGENTS_OBSERVE_SHUTDOWN_DELAY_MS).toBe(String(cfg.shutdownDelayMs))
   })
 
   it('always includes log level and storage adapter', async () => {

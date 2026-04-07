@@ -61,7 +61,7 @@ export function createApp(
     // SPA fallback: serve index.html for all non-API routes
     const indexHtml = fs.readFileSync(path.join(clientDistPath, 'index.html'), 'utf8')
     app.get('*', (c) => c.html(indexHtml))
-  } else if (config.runtime === 'dev') {
+  } else if (config.isDev) {
     // Dev mode: redirect unmatched GET requests to the Vite dev client
     const devClientUrl = `http://localhost:${config.devClientPort}`
     app.get('*', (c) => c.redirect(devClientUrl, 302))
