@@ -374,8 +374,9 @@ function SessionList({ projectId }: { projectId: number }) {
                           className={cn(
                             'h-3 w-3 absolute inset-0 cursor-pointer transition-opacity',
                             pinnedSessionIds.has(session.id)
-                              ? 'opacity-60 text-primary'
-                              : 'opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-muted-foreground',
+                              ? session.status === 'active' ? 'opacity-80 text-green-500' : 'opacity-60 text-primary'
+                              : 'opacity-0 group-hover:opacity-100',
+                            !pinnedSessionIds.has(session.id) && (session.status === 'active' ? 'text-green-500/60 hover:text-green-500' : 'text-muted-foreground/50 hover:text-muted-foreground'),
                           )}
                         />
                       </span>
