@@ -3,11 +3,13 @@
 // CLI entrypoint for Agents Observe plugin.
 // Commands: hook, health, restart
 
+import { createInterface } from 'node:readline'
 import { getConfig } from './lib/config.mjs'
 import { getJson, postJson } from './lib/http.mjs'
 import { createLogger } from './lib/logger.mjs'
 import { handleCallbackRequests } from './lib/callbacks.mjs'
 import { startServer, stopServer } from './lib/docker.mjs'
+import { removeDatabase } from './lib/fs.mjs'
 
 const cliArgs = parseArgs(process.argv.slice(2))
 const config = getConfig(cliArgs)
@@ -16,12 +18,13 @@ const log = createLogger('cli.log', config)
 switch (cliArgs.commands[0] || 'help') {
   case 'help':
     console.log('Usage: node observe_cli.mjs <command> [--base-url URL] [--project-slug SLUG]')
-    console.log('Commands: hook, health, start, stop,restart')
-    console.log('  hook: Send an event to the server')
-    console.log('  health: Check the server health')
-    console.log('  start: Restart the server')
-    console.log('  stop: Stop the server')
-    console.log('  restart: Restart the server')
+    console.log('Commands: hook, health, start, stop, restart, db-reset')
+    console.log('  hook:      Send an event to the server')
+    console.log('  health:    Check the server health')
+    console.log('  start:     Start the server')
+    console.log('  stop:      Stop the server')
+    console.log('  restart:   Restart the server')
+    console.log('  db-reset:  Delete the SQLite database [--force to skip confirmation]')
     process.exit(0)
   case 'hook':
     hookCommand()
@@ -37,6 +40,9 @@ switch (cliArgs.commands[0] || 'help') {
     break
   case 'restart':
     startCommand('Restarting server...')
+    break
+  case 'db-reset':
+    dbResetCommand()
     break
   default:
     console.error(`Unknown command: ${cliArgs.commands[0]}`)
@@ -180,16 +186,64 @@ async function startCommand(msg = 'Starting server...') {
 }
 
 /**
- * Stop the Docker container (pulls latest image for current CLI version).
+ * Stop the Docker container.
  */
 async function stopCommand() {
   await stopServer(config, log)
   log.info('Server stopped')
 }
+
+/**
+ * Delete the SQLite database. Stops the server first if running,
+ * then restarts it afterward.
+ */
+async function dbResetCommand() {
+  const dbPath = `${config.dataDir}/${config.databaseFileName}`
+
+  if (!cliArgs.force) {
+    const confirmed = await confirm(`Delete database at ${dbPath}? This cannot be undone. [y/N] `)
+    if (!confirmed) {
+      console.log('Aborted.')
+      process.exit(0)
+    }
+  }
+
+  // Check if server is running so we can restart it after
+  const health = await getJson(`${config.apiBaseUrl}/health`, { log })
+  const wasRunning = health.status === 200 && health.body?.ok
+
+  if (wasRunning) {
+    console.log('Stopping server...')
+    await stopServer(config, log)
+  }
+
+  const { removed } = removeDatabase(config)
+  if (removed.length > 0) {
+    console.log(`Deleted: ${removed.join(', ')}`)
+  } else {
+    console.log('No database files found.')
+  }
+
+  if (wasRunning) {
+    console.log('Restarting server...')
+    await startServer(config, log)
+    console.log('Server restarted.')
+  }
+}
+
+function confirm(prompt) {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    rl.question(prompt, (answer) => {
+      rl.close()
+      resolve(answer.trim().toLowerCase() === 'y')
+    })
+  })
+}
 // -- Helpers ------------------------------------------------------
 
 function parseArgs(args) {
-  const parsed = { commands: [], baseUrl: null, projectSlug: null }
+  const parsed = { commands: [], baseUrl: null, projectSlug: null, force: false }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--base-url' && args[i + 1]) {
       parsed.baseUrl = args[i + 1]
@@ -197,6 +251,8 @@ function parseArgs(args) {
     } else if (args[i] === '--project-slug' && args[i + 1]) {
       parsed.projectSlug = args[i + 1]
       i++
+    } else if (args[i] === '--force') {
+      parsed.force = true
     } else if (!args[i].startsWith('-')) {
       parsed.commands.push(args[i])
     }

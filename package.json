@@ -8,7 +8,8 @@
   "private": true,
   "scripts": {
     "start": "node start.mjs",
-    "test": "vitest run && cd app/server && npm test && cd ../client && npm test",
+    "test": "npm run test:scripts && cd app/server && npm test && cd ../client && npm test",
+    "test:scripts": "vitest run",
     "test:server:watch": "cd app/server && npm run test:watch",
     "test:client:watch": "cd app/server && npm run test:watch"
   },

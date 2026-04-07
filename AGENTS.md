@@ -97,7 +97,7 @@ data/              # SQLite database (auto-created)
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENTS_OBSERVE_SERVER_PORT` | `4981` | Server port (dev + Docker) |
-| `AGENTS_OBSERVE_CLIENT_PORT` | `5174` | Vite dev client port |
+| `AGENTS_OBSERVE_DEV_CLIENT_PORT` | `5174` | Vite dev client port |
 | `AGENTS_OBSERVE_PROJECT_SLUG` | (auto-detected) | Project slug in dashboard URL |
 | `AGENTS_OBSERVE_API_BASE_URL` | `http://127.0.0.1:4981/api` | API endpoint URL |
 | `AGENTS_OBSERVE_LOG_LEVEL` | `debug` | Log level (`debug` or `trace`) |

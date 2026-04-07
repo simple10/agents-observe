@@ -163,6 +163,7 @@ just restart      # Restart Docker containers
 just logs         # Follow Docker container logs
 
 # Local Server Commands:
+# Starts the server as a single process for API & client without docker
 just start-local  # Builds client and runs local server (without docker)
 npm run start     # Same as `just start-local`
 

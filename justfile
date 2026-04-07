@@ -1,7 +1,7 @@
 # Agents Observe
 # Usage: just <recipe>
 #
-# AGENTS_OBSERVE_SERVER_PORT & AGENTS_OBSERVE_CLIENT_PORT are read from .env
+# AGENTS_OBSERVE_SERVER_PORT & AGENTS_OBSERVE_DEV_CLIENT_PORT are read from .env
 # Allows for overriding the default ports
 # Server port is used for both local dev & docker starts
 # Client port is only for local dev
@@ -11,7 +11,7 @@ set export := true
 set quiet := true
 
 port := env("AGENTS_OBSERVE_SERVER_PORT", "4981")
-dev_client_port := env("AGENTS_OBSERVE_CLIENT_PORT", "5174")
+dev_client_port := env("AGENTS_OBSERVE_DEV_CLIENT_PORT", "5174")
 project_root := justfile_directory()
 server := project_root / "app" / "server"
 client := project_root / "app" / "client"
@@ -66,31 +66,7 @@ logs:
 
 # Start local server + client in dev mode (hot reload)
 dev:
-    #!/usr/bin/env bash
-    echo "Starting dev server + client..."
-    echo "Server: http://localhost:{{ port }}"
-    echo "Client: http://localhost:{{ dev_client_port }} (Vite dev)"
-    echo ""
-    cd {{ server }} && npm run dev &
-    pid1=$!
-    cd {{ client }} && npm run dev &
-    pid2=$!
-    trap 'kill $pid1 $pid2 2>/dev/null; wait $pid1 $pid2 2>/dev/null; exit 0' INT TERM
-    sleep 1
-    just open {{ dev_client_port }}
-    wait
-
-# Start only the server (dev mode with hot reload)
-dev-server:
-    cd {{ server }} && npm run dev
-
-# Start only the client (Vite dev server)
-dev-client:
-    cd {{ client }} && npm run dev
-
-# Build the client for production - not needed if using docker
-dev-client-build:
-    cd {{ client }} && npm run build
+    AGENTS_OBSERVE_RUNTIME=dev node {{ project_root }}/start.mjs
 
 # ─── Testing ────────────────────────────────────────────
 
@@ -101,15 +77,14 @@ test:
 # Send a test event to the server
 test-event:
     @echo '{"session_id":"test-1234","hook_event_name":"SessionStart","cwd":"/tmp","source":"new"}' \
-      | AGENTS_OBSERVE_PROJECT_NAME=test-project node {{ project_root }}/hooks/scripts/observe_cli.mjs
+      | AGENTS_OBSERVE_PROJECT_NAME=test-project node {{ project_root }}/hooks/scripts/observe_cli.mjs hook
     @echo "Event sent"
 
 # ─── Database ────────────────────────────────────────────
 
-# Delete the events database
+# Delete the events database (stops server, deletes, restarts)
 db-reset:
-    rm -f {{ project_root }}/data/observe.db {{ project_root }}/data/observe.db-wal {{ project_root }}/data/observe.db-shm
-    @echo "Database reset"
+    node {{ cli_script }} db-reset
 
 # ─── Utilities ───────────────────────────────────────────
 

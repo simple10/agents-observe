@@ -2,8 +2,9 @@
 // Docker container management for Agents Observe. Node.js built-ins only.
 
 import { execFile } from 'node:child_process'
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs'
 import { getJson } from './http.mjs'
+import { initLocalDataDirs } from './config.mjs'
+import { saveServerPortFile, removeServerPortFile } from './fs.mjs'
 
 // -- Shell helper -------------------------------------------------
 
@@ -18,21 +19,6 @@ function run(cmd, args) {
       })
     })
   })
-}
-
-// -- Port file management -----------------------------------------
-
-export function saveMcpPort(config, port) {
-  mkdirSync(config.pluginDataDir, { recursive: true })
-  writeFileSync(config.mcpPortFile, String(port))
-}
-
-export function removeMcpPort(config) {
-  try {
-    unlinkSync(config.mcpPortFile)
-  } catch {
-    /* already gone */
-  }
 }
 
 // -- Docker lifecycle ---------------------------------------------
@@ -54,7 +40,9 @@ export async function startServer(config, log = console) {
   const healthResult = await getJson(`${config.apiBaseUrl}/health`)
   if (healthResult.status === 200 && healthResult.body?.ok) {
     if (healthResult.body.id !== config.API_ID) {
-      log.warn(`Port ${config.serverPort} is in use by another service, auto-assigning a free port...`)
+      log.warn(
+        `Port ${config.serverPort} is in use by another service, auto-assigning a free port...`,
+      )
     } else if (config.expectedVersion && healthResult.body.version !== config.expectedVersion) {
       log.warn(
         `Server version mismatch: running ${healthResult.body.version}, expected ${config.expectedVersion}. Restarting...`,
@@ -68,8 +56,8 @@ export async function startServer(config, log = console) {
     }
   }
 
-  // Ensure data directory
-  mkdirSync(config.dataDir, { recursive: true })
+  // Ensure the local data dir has been created
+  initLocalDataDirs(config)
 
   // Remove stale container to ensure latest image
   const psResult = await run('docker', ['ps', '-a', '--format', '{{.Names}}'])
@@ -155,7 +143,7 @@ export async function startServer(config, log = console) {
   }
 
   // Save port for hooks to discover
-  saveMcpPort(config, actualPort)
+  saveServerPortFile(config, actualPort)
 
   // Wait for health
   const actualApiUrl = `http://127.0.0.1:${actualPort}/api`
@@ -183,5 +171,5 @@ export async function startServer(config, log = console) {
 export async function stopServer(config, log = console) {
   log.info('Stopping server...')
   await run('docker', ['stop', config.containerName])
-  removeMcpPort(config)
+  removeServerPortFile(config)
 }

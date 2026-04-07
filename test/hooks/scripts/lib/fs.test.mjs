@@ -1,6 +1,6 @@
-// test/fs.test.mjs
+// test/hooks/scripts/lib/fs.test.mjs
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -9,6 +9,9 @@ import {
   ensureLocalDataDirs,
   resolvePluginDataDir,
   readServerPortFile,
+  saveServerPortFile,
+  removeServerPortFile,
+  removeDatabase,
   readVersionFile,
 } from '../../../../hooks/scripts/lib/fs.mjs'
 
@@ -24,24 +27,28 @@ afterEach(() => {
 })
 
 describe('validatePath', () => {
-  it('returns null for empty string', () => {
-    expect(validatePath('')).toBeNull()
+  it('throws on empty string', () => {
+    expect(() => validatePath('')).toThrow('empty or undefined')
   })
 
-  it('returns null for whitespace-only string', () => {
-    expect(validatePath('   ')).toBeNull()
+  it('throws on whitespace-only string', () => {
+    expect(() => validatePath('   ')).toThrow('empty or undefined')
   })
 
-  it('returns null for null/undefined', () => {
-    expect(validatePath(null)).toBeNull()
-    expect(validatePath(undefined)).toBeNull()
+  it('throws on null/undefined', () => {
+    expect(() => validatePath(null)).toThrow('empty or undefined')
+    expect(() => validatePath(undefined)).toThrow('empty or undefined')
+  })
+
+  it('includes label in error message', () => {
+    expect(() => validatePath('', 'dataDir')).toThrow('dataDir is empty or undefined')
   })
 
   it('throws on null bytes', () => {
     expect(() => validatePath('/some/path\0evil')).toThrow('null bytes')
   })
 
-  it('throws on URLs', () => {
+  it('throws on HTTP URLs', () => {
     expect(() => validatePath('http://example.com')).toThrow('URL or flag')
     expect(() => validatePath('https://example.com')).toThrow('URL or flag')
   })
@@ -50,15 +57,26 @@ describe('validatePath', () => {
     expect(() => validatePath('--some-flag')).toThrow('URL or flag')
   })
 
-  it('resolves valid paths', () => {
-    const result = validatePath('/tmp/test')
-    expect(result).toBe('/tmp/test')
+  it('throws when path resolves to filesystem root', () => {
+    expect(() => validatePath('/')).toThrow('filesystem root')
+  })
+
+  it('resolves valid absolute paths', () => {
+    expect(validatePath('/tmp/test')).toBe('/tmp/test')
   })
 
   it('resolves relative paths to absolute', () => {
     const result = validatePath('relative/path')
     expect(result).toContain('relative/path')
     expect(result.startsWith('/')).toBe(true)
+  })
+
+  it('allows paths with spaces', () => {
+    expect(validatePath('/tmp/my dir/data')).toBe('/tmp/my dir/data')
+  })
+
+  it('allows dot-prefixed paths', () => {
+    expect(validatePath('/home/user/.agents-observe')).toBe('/home/user/.agents-observe')
   })
 })
 
@@ -94,6 +112,53 @@ describe('ensureLocalDataDirs', () => {
     }
     ensureLocalDataDirs(config)
     expect(existsSync(config.dataDir)).toBe(true)
+  })
+
+  it('throws when localDataRootDir is empty', () => {
+    const config = {
+      localDataRootDir: '',
+      dataDir: join(testDir, 'data'),
+      logsDir: join(testDir, 'logs'),
+    }
+    expect(() => ensureLocalDataDirs(config)).toThrow('localDataRootDir')
+  })
+
+  it('throws when dataDir is empty', () => {
+    const config = {
+      localDataRootDir: join(testDir, 'root'),
+      dataDir: '',
+      logsDir: join(testDir, 'logs'),
+    }
+    expect(() => ensureLocalDataDirs(config)).toThrow('dataDir')
+  })
+
+  it('throws when logsDir is empty', () => {
+    const config = {
+      localDataRootDir: join(testDir, 'root'),
+      dataDir: join(testDir, 'data'),
+      logsDir: '',
+    }
+    expect(() => ensureLocalDataDirs(config)).toThrow('logsDir')
+  })
+
+  it('throws when any path resolves to root', () => {
+    const config = {
+      localDataRootDir: '/',
+      dataDir: join(testDir, 'data'),
+      logsDir: join(testDir, 'logs'),
+    }
+    expect(() => ensureLocalDataDirs(config)).toThrow('filesystem root')
+  })
+
+  it('does not create any dirs if validation fails', () => {
+    const config = {
+      localDataRootDir: join(testDir, 'shouldnt-exist'),
+      dataDir: '',
+      logsDir: join(testDir, 'logs'),
+    }
+    expect(() => ensureLocalDataDirs(config)).toThrow()
+    // localDataRootDir should NOT have been created since validation runs first
+    expect(existsSync(join(testDir, 'shouldnt-exist'))).toBe(false)
   })
 })
 
@@ -208,6 +273,42 @@ describe('readServerPortFile', () => {
   })
 })
 
+describe('saveServerPortFile', () => {
+  it('writes port to file', () => {
+    const portFile = join(testDir, 'server-port')
+    saveServerPortFile({ serverPortFile: portFile }, 4981)
+    expect(readFileSync(portFile, 'utf8')).toBe('4981')
+  })
+
+  it('converts port number to string', () => {
+    const portFile = join(testDir, 'server-port')
+    saveServerPortFile({ serverPortFile: portFile }, 9999)
+    expect(readFileSync(portFile, 'utf8')).toBe('9999')
+  })
+
+  it('overwrites existing port file', () => {
+    const portFile = join(testDir, 'server-port')
+    writeFileSync(portFile, '1111')
+    saveServerPortFile({ serverPortFile: portFile }, 2222)
+    expect(readFileSync(portFile, 'utf8')).toBe('2222')
+  })
+})
+
+describe('removeServerPortFile', () => {
+  it('removes existing port file', () => {
+    const portFile = join(testDir, 'server-port')
+    writeFileSync(portFile, '4981')
+    removeServerPortFile({ serverPortFile: portFile })
+    expect(existsSync(portFile)).toBe(false)
+  })
+
+  it('does not throw when file does not exist', () => {
+    expect(() =>
+      removeServerPortFile({ serverPortFile: join(testDir, 'nonexistent') }),
+    ).not.toThrow()
+  })
+})
+
 describe('readVersionFile', () => {
   it('reads version from VERSION file at installDir root', () => {
     writeFileSync(join(testDir, 'VERSION'), '0.8.0')
@@ -221,5 +322,54 @@ describe('readVersionFile', () => {
 
   it('returns null when VERSION file does not exist', () => {
     expect(readVersionFile({ installDir: join(testDir, 'nonexistent') })).toBeNull()
+  })
+})
+
+describe('removeDatabase', () => {
+  it('removes db and journal files', () => {
+    const dataDir = join(testDir, 'data')
+    const databaseFileName = 'observe.db'
+    mkdirSync(dataDir, { recursive: true })
+    writeFileSync(join(dataDir, databaseFileName), 'data')
+    writeFileSync(join(dataDir, `${databaseFileName}-wal`), 'wal')
+    writeFileSync(join(dataDir, `${databaseFileName}-shm`), 'shm')
+
+    const { removed, missing } = removeDatabase({ dataDir, databaseFileName })
+    expect(removed).toHaveLength(3)
+    expect(removed[0]).toContain('observe.db')
+    expect(missing).toHaveLength(1) // -journal doesn't exist
+    expect(existsSync(join(dataDir, 'observe.db'))).toBe(false)
+    expect(existsSync(join(dataDir, 'observe.db-wal'))).toBe(false)
+    expect(existsSync(join(dataDir, 'observe.db-shm'))).toBe(false)
+  })
+
+  it('reports all files as missing when no db exists', () => {
+    const dataDir = join(testDir, 'empty')
+    mkdirSync(dataDir, { recursive: true })
+
+    const { removed, missing } = removeDatabase({ dataDir, databaseFileName: 'observe.db' })
+    expect(removed).toHaveLength(0)
+    expect(missing).toHaveLength(4)
+  })
+
+  it('handles partial files (only db, no journals)', () => {
+    const dataDir = join(testDir, 'data')
+    mkdirSync(dataDir, { recursive: true })
+    writeFileSync(join(dataDir, 'observe.db'), 'data')
+
+    const { removed, missing } = removeDatabase({ dataDir, databaseFileName: 'observe.db' })
+    expect(removed).toHaveLength(1)
+    expect(removed[0]).toContain('observe.db')
+    expect(missing).toHaveLength(3)
+  })
+
+  it('does not touch other files in the data dir', () => {
+    const dataDir = join(testDir, 'data')
+    mkdirSync(dataDir, { recursive: true })
+    writeFileSync(join(dataDir, 'observe.db'), 'data')
+    writeFileSync(join(dataDir, 'other-file.txt'), 'keep me')
+
+    removeDatabase({ dataDir, databaseFileName: 'observe.db' })
+    expect(existsSync(join(dataDir, 'other-file.txt'))).toBe(true)
   })
 })

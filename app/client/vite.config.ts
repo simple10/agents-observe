@@ -6,8 +6,8 @@ import { readFileSync } from 'fs'
 
 const rootPkg = JSON.parse(readFileSync(path.resolve(__dirname, '../../package.json'), 'utf-8'))
 
-const serverPort = process.env.AGENTS_OBSERVE_SERVER_PORT || '4981'
-const clientPort = Number(process.env.AGENTS_OBSERVE_CLIENT_PORT || '5174')
+const serverPort = Number(process.env.AGENTS_OBSERVE_SERVER_PORT || '4981')
+const clientPort = Number(process.env.AGENTS_OBSERVE_DEV_CLIENT_PORT || '5174')
 
 const customBanner = {
   name: 'custom-banner',

@@ -1,6 +1,7 @@
 {
   "env": {
-    "AGENTS_OBSERVE_PROJECT_SLUG": "__PROJECT_SLUG__"
+    "AGENTS_OBSERVE_PROJECT_SLUG": "__PROJECT_SLUG__",
+    "AGENTS_OBSERVE_LOG_LEVEL": "debug"
   },
   "hooks": {
     "SessionStart": [

@@ -1,53 +1,105 @@
 #!/usr/bin/env node
 
 /**
- * Starts the API server & dashboard UI in a single process.
- * Used to run the server locally without Docker.
+ * Starts the API server & dashboard UI locally instead of in docker
  *
+ * Set AGENTS_OBSERVE_RUNTIME=local|dev in env or claude settings.json to enable auto start to use this script
  * Reads all config from hooks/scripts/lib/config.mjs (central source of truth).
+ *
+ * Modes:
+ *   local — install deps, build client, start server (production-like)
+ *   dev   — install deps, start server + client with hot reload
  */
 
 import { execFileSync, spawn } from 'node:child_process'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { getConfig } from './hooks/scripts/lib/config.mjs'
-
-const rootDir = dirname(fileURLToPath(import.meta.url))
-const serverDir = resolve(rootDir, 'app/server')
-const clientDir = resolve(rootDir, 'app/client')
-const clientDistPath = resolve(clientDir, 'dist')
+import { resolve } from 'node:path'
+import {
+  getConfig,
+  getServerEnv,
+  getClientEnv,
+  initLocalDataDirs,
+} from './hooks/scripts/lib/config.mjs'
+import { saveServerPortFile, removeServerPortFile } from './hooks/scripts/lib/fs.mjs'
 
 const config = getConfig()
+const serverDir = resolve(config.installDir, 'app/server')
+const clientDir = resolve(config.installDir, 'app/client')
+const isDev = config.runtime === 'dev'
 
-function run(cmd, args, cwd) {
-  const rel = cwd.replace(rootDir + '/', '') || '.'
+function run(cmd, args, cwd, env = {}) {
+  const rel = cwd.replace(config.installDir + '/', '') || '.'
   console.log(`\n> ${cmd} ${args.join(' ')}  (in ${rel})`)
-  execFileSync(cmd, args, { cwd, stdio: 'inherit' })
+  execFileSync(cmd, args, { cwd, stdio: 'inherit', env: { ...process.env, ...env } })
 }
 
 // 1. Install dependencies
 run('npm', ['install'], serverDir)
 run('npm', ['install'], clientDir)
 
-// 2. Build client
-run('npm', ['run', 'build'], clientDir)
+// 2. Build client (skip in dev — vite serves it directly)
+if (!isDev) {
+  run('npm', ['run', 'build'], clientDir, getClientEnv(config))
+}
 
-// 3. Start server
-console.log(`\nStarting server on http://localhost:${config.serverPort} (API + UI)\n`)
+// 3. Initialize the local data dirs before starting the server
+initLocalDataDirs(config)
 
-const server = spawn('npx', ['tsx', 'src/index.ts'], {
-  cwd: serverDir,
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    AGENTS_OBSERVE_SERVER_PORT: config.serverPort,
-    AGENTS_OBSERVE_CLIENT_DIST_PATH: clientDistPath,
-    AGENTS_OBSERVE_DB_PATH: resolve(config.dataDir, 'observe.db'),
-    AGENTS_OBSERVE_LOG_LEVEL: config.logLevel,
-    AGENTS_OBSERVE_RUNTIME: 'local',
-  },
-})
+// 4. Start server
+const serverEnv = getServerEnv(config)
 
-server.on('close', (code) => process.exit(code ?? 0))
-process.on('SIGINT', () => server.kill('SIGINT'))
-process.on('SIGTERM', () => server.kill('SIGTERM'))
+saveServerPortFile(config, config.serverPort)
+
+if (isDev) {
+  console.log(`\nStarting dev server on http://localhost:${config.serverPort} (API)\n`)
+  console.log(`Starting dev client on http://localhost:${config.clientPort} (UI + proxy)\n`)
+
+  const server = spawn('npm', ['run', 'dev'], {
+    cwd: serverDir,
+    stdio: 'inherit',
+    env: { ...process.env, ...serverEnv },
+  })
+
+  const client = spawn('npm', ['run', 'dev'], {
+    cwd: clientDir,
+    stdio: 'inherit',
+    env: { ...process.env, ...getClientEnv(config) },
+  })
+
+  function cleanup() {
+    removeServerPortFile(config)
+    server.kill('SIGINT')
+    client.kill('SIGINT')
+  }
+
+  server.on('close', (code) => {
+    removeServerPortFile(config)
+    client.kill()
+    process.exit(code ?? 0)
+  })
+  client.on('close', () => {
+    server.kill()
+  })
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
+} else {
+  console.log(`\nStarting server on http://localhost:${config.serverPort} (API + UI)\n`)
+
+  const server = spawn('npx', ['tsx', 'src/index.ts'], {
+    cwd: serverDir,
+    stdio: 'inherit',
+    env: { ...process.env, ...serverEnv },
+  })
+
+  server.on('close', (code) => {
+    removeServerPortFile(config)
+    process.exit(code ?? 0)
+  })
+  process.on('SIGINT', () => {
+    removeServerPortFile(config)
+    server.kill('SIGINT')
+  })
+  process.on('SIGTERM', () => {
+    removeServerPortFile(config)
+    server.kill('SIGTERM')
+  })
+}

@@ -2,8 +2,7 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "AGENTS_OBSERVE_PROJECT_SLUG": "agents-observe",
-    "AGENTS_OBSERVE_LOG_LEVEL": "trace",
-    "AGENTS_OBSERVE_LOGS_DIR": "./logs"
+    "AGENTS_OBSERVE_LOG_LEVEL": "trace"
   },
   "hooks": {
     "PreToolUse": [
