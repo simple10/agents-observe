@@ -41,3 +41,5 @@ bak/
 .justfile.swp
 
 .tmp/
+
+.claude/worktrees/
