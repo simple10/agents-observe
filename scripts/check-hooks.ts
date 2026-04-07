@@ -1,57 +1,86 @@
 #!/usr/bin/env bun
 /**
- * Checks that all hook events documented at code.claude.com are present in
- * our local config files. Exits with code 1 if any are missing.
+ * Checks that hook events and commands are consistent across our three config files.
+ * Uses .claude/settings.json as the authoritative source.
+ *
+ * Checks:
+ * 1. All three files have the same hook events
+ * 2. Commands match structurally (same script/args after normalizing path prefixes)
+ * 3. All documented hooks from code.claude.com are present
  *
  * Usage: bun scripts/check-hooks.ts
  */
 
+import { readFileSync } from 'fs'
+
 const HOOKS_DOC_URL = 'https://code.claude.com/docs/en/hooks.md'
 
-const FILES_TO_CHECK = ['.claude/settings.json', 'hooks/hooks.json', 'settings.template.json']
+const AUTHORITATIVE = '.claude/settings.json'
+const TARGETS = ['hooks/hooks.json']
+
+// Path prefixes used in each file — stripped for comparison
+const PATH_PREFIXES = [
+  '$CLAUDE_PROJECT_DIR',
+  '${CLAUDE_PLUGIN_ROOT}',
+  '__HOOK_SCRIPT_DIR__',
+  '__HOOK_SCRIPT__',
+]
 
 // ---------------------------------------------------------------------------
-// Fetch & parse documented hooks
+// Helpers
 // ---------------------------------------------------------------------------
 
-async function fetchDocumentedHooks(): Promise<string[]> {
-  const res = await fetch(HOOKS_DOC_URL)
-  if (!res.ok) {
-    throw new Error(`Failed to fetch ${HOOKS_DOC_URL}: ${res.status} ${res.statusText}`)
-  }
-  const md = await res.text()
-
-  // The lifecycle table has rows like: | `HookName` | description |
-  // Extract PascalCase names wrapped in backticks in the first column.
-  const hooks = new Set<string>()
-  for (const line of md.split('\n')) {
-    const match = line.match(/^\|\s*`([A-Z][A-Za-z]+)`\s*\|/)
-    if (match) {
-      hooks.add(match[1])
-    }
-  }
-
-  if (hooks.size === 0) {
-    throw new Error(
-      'Could not parse any hook names from the docs page. The markdown format may have changed.',
-    )
-  }
-
-  return [...hooks]
+interface HookEntry {
+  type: string
+  command: string
 }
 
-// ---------------------------------------------------------------------------
-// Read local config and extract hook keys
-// ---------------------------------------------------------------------------
+interface HookConfig {
+  [event: string]: { matcher?: string; hooks: HookEntry[] }[]
+}
 
-async function readHookKeys(path: string): Promise<string[]> {
-  const file = Bun.file(path)
-  if (!(await file.exists())) {
-    console.warn(`  ⚠  ${path} not found, skipping`)
+function readHooks(path: string): HookConfig {
+  const json = JSON.parse(readFileSync(path, 'utf8'))
+  return json.hooks ?? {}
+}
+
+/** Normalize a command by stripping known path prefixes */
+function normalizeCommand(cmd: string): string {
+  let normalized = cmd
+  for (const prefix of PATH_PREFIXES) {
+    normalized = normalized.replace(prefix, '<ROOT>')
+  }
+  return normalized.trim()
+}
+
+/** Extract normalized commands for each event */
+function getEventCommands(hooks: HookConfig): Map<string, string[]> {
+  const result = new Map<string, string[]>()
+  for (const [event, matchers] of Object.entries(hooks)) {
+    const commands = matchers.flatMap((m) =>
+      (m.hooks || []).map((h: HookEntry) => normalizeCommand(h.command)),
+    )
+    result.set(event, commands)
+  }
+  return result
+}
+
+async function fetchDocumentedHooks(): Promise<string[]> {
+  try {
+    const res = await fetch(HOOKS_DOC_URL)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const md = await res.text()
+    const hooks = new Set<string>()
+    for (const line of md.split('\n')) {
+      const match = line.match(/^\|\s*`([A-Z][A-Za-z]+)`\s*\|/)
+      if (match) hooks.add(match[1])
+    }
+    if (hooks.size === 0) throw new Error('No hooks parsed')
+    return [...hooks]
+  } catch (err) {
+    console.warn(`  ⚠  Could not fetch documented hooks: ${err}`)
     return []
   }
-  const json = await file.json()
-  return Object.keys(json.hooks ?? {})
 }
 
 // ---------------------------------------------------------------------------
@@ -59,46 +88,95 @@ async function readHookKeys(path: string): Promise<string[]> {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log(`Fetching documented hooks from ${HOOKS_DOC_URL} …`)
-  const documented = await fetchDocumentedHooks()
-  console.log(`Found ${documented.length} documented hooks\n`)
+  let hasErrors = false
 
-  let hasMissing = false
+  const authHooks = readHooks(AUTHORITATIVE)
+  const authCommands = getEventCommands(authHooks)
+  const authEvents = new Set(Object.keys(authHooks))
 
-  for (const filePath of FILES_TO_CHECK) {
-    const localHooks = await readHookKeys(filePath)
-    if (localHooks.length === 0) continue
+  console.log(`Authority: ${AUTHORITATIVE} (${authEvents.size} events)`)
 
-    const missing = documented.filter((h) => !localHooks.includes(h))
-    const unsupported = localHooks.filter((h) => !documented.includes(h))
+  for (const targetPath of TARGETS) {
+    let targetHooks: HookConfig
+    try {
+      targetHooks = readHooks(targetPath)
+    } catch {
+      console.error(`✗ ${targetPath} — file not found or unreadable`)
+      hasErrors = true
+      continue
+    }
 
+    const targetEvents = new Set(Object.keys(targetHooks))
+    const targetCommands = getEventCommands(targetHooks)
+    let fileOk = true
+
+    // Missing events
+    const missing = [...authEvents].filter((e) => !targetEvents.has(e))
     if (missing.length > 0) {
-      hasMissing = true
-      console.error(`✗ ${filePath} is missing ${missing.length} hook(s):`)
-      for (const h of missing) {
-        console.error(`    - ${h}`)
+      hasErrors = true
+      fileOk = false
+      console.error(`✗ ${targetPath} — missing ${missing.length} event(s): ${missing.join(', ')}`)
+    }
+
+    // Extra events
+    const extra = [...targetEvents].filter((e) => !authEvents.has(e))
+    if (extra.length > 0) {
+      hasErrors = true
+      fileOk = false
+      console.error(`✗ ${targetPath} — extra ${extra.length} event(s): ${extra.join(', ')}`)
+    }
+
+    // Command structure matches
+    for (const event of authEvents) {
+      if (!targetEvents.has(event)) continue
+      const authCmds = authCommands.get(event) ?? []
+      const targetCmds = targetCommands.get(event) ?? []
+
+      if (authCmds.length !== targetCmds.length) {
+        hasErrors = true
+        fileOk = false
+        console.error(
+          `✗ ${targetPath} — ${event}: ${targetCmds.length} command(s) vs ${authCmds.length} in authority`,
+        )
+        continue
+      }
+
+      for (let i = 0; i < authCmds.length; i++) {
+        if (authCmds[i] !== targetCmds[i]) {
+          hasErrors = true
+          fileOk = false
+          console.error(`✗ ${targetPath} — ${event} command mismatch:`)
+          console.error(`    authority: ${authCmds[i]}`)
+          console.error(`    target:    ${targetCmds[i]}`)
+        }
       }
     }
 
-    if (unsupported.length > 0) {
-      hasMissing = true
-      console.error(`✗ ${filePath} has ${unsupported.length} unsupported hook(s):`)
-      for (const h of unsupported) {
-        console.error(`    - ${h}`)
-      }
-    }
-
-    if (missing.length === 0 && unsupported.length === 0) {
-      console.log(`✓ ${filePath} — all hooks present and valid`)
+    if (fileOk) {
+      console.log(`✓ ${targetPath} — matches authority`)
     }
   }
 
-  if (hasMissing) {
-    console.error('\nOne or more files have missing or unsupported hooks. Please update them.')
+  // Check against documented hooks
+  const documented = await fetchDocumentedHooks()
+  if (documented.length > 0) {
+    const missing = documented.filter((h) => !authEvents.has(h))
+    if (missing.length > 0) {
+      hasErrors = true
+      console.error(
+        `\n✗ ${AUTHORITATIVE} is missing ${missing.length} documented hook(s): ${missing.join(', ')}`,
+      )
+    } else {
+      console.log(`\n✓ All ${documented.length} documented hooks are present`)
+    }
+  }
+
+  if (hasErrors) {
+    console.error('\nHook configuration has issues. Fix them before releasing.')
     process.exit(1)
   }
 
-  console.log('\nAll files are up to date.')
+  console.log('\nAll hook configurations are consistent.')
 }
 
 main().catch((err) => {

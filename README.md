@@ -18,18 +18,9 @@ Includes powerful filtering, searching, and visualization of multi-agent session
   <img src="https://raw.githubusercontent.com/simple10/agents-observe/main/docs/assets/dashboard2.png" alt="Claude Observe Dashboard Screenshot - Expanded Row" />
 </p>
 
-The server and dashboard run locally or remotely, allowing multiple Claude Code instances to log full session data using hooks.
+## Quick Start
 
-Hooks are used instead of OTEL to capture the full picture of agent actions.
-
-## Plugin Installation
-
-### Prerequisites
-
-- [Docker](https://www.docker.com/) (required — the server runs as a container)
-- [Node.js](https://nodejs.org/) (required — hook scripts run via `node`)
-
-### Install
+Install as a `claude code` plugin:
 
 1. Add the marketplace:
 
@@ -115,16 +106,12 @@ See [justfile](./justfile) for additional commands.
 
 ### 2. Configure Claude Code hooks
 
-Generate the hooks config for your project:
-
-```bash
-just setup-hooks my-project
-```
-
-This prints a JSON snippet with all paths pre-filled. Copy it into your Claude Code settings at either:
+Copy the hooks from `.claude/settings.json` into your project's settings.in this repo into your target project's Claude Code settings:
 
 - **Project-level** (recommended): `.claude/settings.json` in your project root
 - **User-level** (all projects): `~/.claude/settings.json`
+
+Update the `$CLAUDE_PROJECT_DIR` paths to point to your agents-observe install location.
 
 **Environment variables set in the config:**
 
@@ -166,7 +153,7 @@ just logs         # Follow Docker container logs
 just start-local  # Start server locally without Docker
 
 # Utilities:
-just setup-hooks <name>  # Generate hooks config for a project
+just health              # Check server health
 just health              # Check server health
 just db-reset            # Delete the events database
 just cli <command>       # Run CLI directly (hook, health, start, stop, restart, logs)
@@ -193,7 +180,6 @@ Dockerfile                   # Production container image
 docker-compose.yml           # Container orchestration - not used by the plugin
 justfile                     # Task runner commands
 start.mjs                    # Local server entrypoint (non-Docker)
-settings.template.json       # Hooks config template for setup-hooks
 vitest.config.ts             # Test configuration
 package.json                 # Version metadata and workspace scripts
 ```
@@ -231,7 +217,7 @@ Run `/observe debug` to diagnose. It checks server health, Docker container logs
 **Events not appearing in the dashboard?**
 
 1. **Is the server running?** Run `just health` to check.
-2. **Is the hook script configured?** Run `just setup-hooks my-project` and verify the output matches your `.claude/settings.json`.
+2. **Is the hook script configured?** Copy the hooks from `.claude/settings.json` into your project's settings.
 3. **Is `AGENTS_OBSERVE_PROJECT_SLUG` set?** If `AGENTS_OBSERVE_PROJECT_SLUG` is not set, the project is auto-detected from the session transcript path.
 4. **Can the hook reach the server?** Run `just test-event` — if the event appears in the dashboard, the server is reachable.
 

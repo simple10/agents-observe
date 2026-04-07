@@ -35,7 +35,6 @@ In dev mode, client and server run as separate processes on separate ports. In p
 | `just logs` | Follow Docker container logs |
 | `just open` | Open dashboard in browser |
 | `just cli <cmd>` | Run CLI directly |
-| `just setup-hooks <slug>` | Generate hooks config for a project |
 
 ## Project Structure
 
