@@ -116,11 +116,17 @@ export class SqliteAdapter implements EventStore {
       )
     `)
 
-    // Migration: add created_at to events if missing (backfill from timestamp)
+    // Migration: add created_at, drop summary and status from events
     const eventCols = this.db.prepare("PRAGMA table_info('events')").all() as { name: string }[]
     if (!eventCols.some((c) => c.name === 'created_at')) {
       this.db.exec('ALTER TABLE events ADD COLUMN created_at INTEGER')
       this.db.exec('UPDATE events SET created_at = timestamp WHERE created_at IS NULL')
+    }
+    if (eventCols.some((c) => c.name === 'summary')) {
+      this.db.exec('ALTER TABLE events DROP COLUMN summary')
+    }
+    if (eventCols.some((c) => c.name === 'status')) {
+      this.db.exec('ALTER TABLE events DROP COLUMN status')
     }
 
     // Create indexes
