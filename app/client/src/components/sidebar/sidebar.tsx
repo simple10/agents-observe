@@ -109,7 +109,10 @@ export function Sidebar({ connected }: SidebarProps) {
       <Separator />
 
       {/* Footer */}
-      <div className="flex items-center gap-2 p-2 h-10">
+      <div className={cn(
+        'flex items-center gap-1 p-2',
+        sidebarCollapsed ? 'flex-col h-auto' : 'h-10',
+      )}>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleTheme}>
           {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </Button>
