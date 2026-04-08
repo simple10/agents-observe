@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import { Pin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
@@ -6,40 +6,30 @@ import { api } from '@/lib/api-client'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Session } from '@/types'
 
-interface PinnedSessionData extends Session {
-  projectName?: string
-  projectSlug?: string
-}
-
 export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
   const pinnedIds = useUIStore((s) => s.pinnedSessionIds)
   const selectedSessionId = useUIStore((s) => s.selectedSessionId)
   const togglePinnedSession = useUIStore((s) => s.togglePinnedSession)
-  const [sessions, setSessions] = useState<PinnedSessionData[]>([])
 
-  function selectSession(session: PinnedSessionData) {
+  const queries = useQueries({
+    queries: [...pinnedIds].map((id) => ({
+      queryKey: ['session', id],
+      queryFn: () => api.getSession(id),
+      staleTime: 30_000,
+    })),
+  })
+
+  const sessions = queries.map((q) => q.data).filter(Boolean) as Session[]
+
+  function selectSession(session: Session) {
     const isSelected = selectedSessionId === session.id
     if (isSelected) {
       useUIStore.getState().setSelectedSessionId(null)
     } else {
-      // Set the project context first, then the session
       useUIStore.getState().setSelectedProject(session.projectId, session.projectSlug || null)
       useUIStore.getState().setSelectedSessionId(session.id)
     }
   }
-
-  // Fetch session data for all pinned IDs
-  useEffect(() => {
-    if (pinnedIds.size === 0) {
-      setSessions([])
-      return
-    }
-
-    const ids = [...pinnedIds]
-    Promise.all(ids.map((id) => api.getSession(id).catch(() => null))).then((results) => {
-      setSessions(results.filter(Boolean) as PinnedSessionData[])
-    })
-  }, [pinnedIds])
 
   if (pinnedIds.size === 0) return null
 

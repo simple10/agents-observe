@@ -12,7 +12,7 @@ export function SessionBreadcrumb() {
     queryKey: ['session', selectedSessionId],
     queryFn: () => api.getSession(selectedSessionId!),
     enabled: !!selectedSessionId,
-    staleTime: 60_000,
+    staleTime: 30_000,
   })
 
   const { data: events } = useEvents(selectedSessionId)

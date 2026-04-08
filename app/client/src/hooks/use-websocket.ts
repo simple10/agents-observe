@@ -87,13 +87,15 @@ export function useWebSocket(sessionId: string | null) {
         }
       } else if (msg.type === 'session_update') {
         queryClient.invalidateQueries({ queryKey: ['sessions'] })
+        queryClient.invalidateQueries({ queryKey: ['session'] })
         if (logLevel === 'trace') {
-          console.debug('[WS] Session update → invalidating sessions cache')
+          console.debug('[WS] Session update → invalidating sessions + session caches')
         }
       } else if (msg.type === 'project_update') {
         queryClient.invalidateQueries({ queryKey: ['projects'] })
+        queryClient.invalidateQueries({ queryKey: ['session'] })
         if (logLevel === 'trace') {
-          console.debug('[WS] Project update → invalidating projects cache')
+          console.debug('[WS] Project update → invalidating projects + session caches')
         }
       }
     },

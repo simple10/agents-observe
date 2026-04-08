@@ -15,7 +15,9 @@ let shutdownTimer: ReturnType<typeof setTimeout> | null = null
 if (!autoShutdownEnabled) {
   console.log('[consumer] Auto-shutdown is disabled (AGENTS_OBSERVE_SHUTDOWN_DELAY_MS <= 0)')
 } else {
-  console.log(`[consumer] Auto-shutdown is enabled (AGENTS_OBSERVE_SHUTDOWN_DELAY_MS=${config.shutdownDelayMs})`)
+  console.log(
+    `[consumer] Auto-shutdown is enabled (AGENTS_OBSERVE_SHUTDOWN_DELAY_MS=${config.shutdownDelayMs})`,
+  )
 }
 
 /** Start the periodic sweep that evicts stale consumers. */

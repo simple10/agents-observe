@@ -9,6 +9,7 @@
 - [x] Enhance events stream expanded summaries (description + Read file.content)
 - [x] Show SubagentStop with the Stop filter
 - [x] Add AGENTS_OBSERVE_SHUTDOWN_DELAY_MS env var, refactor isDev to config
+- [x] Audit editable data auto-update (pinned sessions, breadcrumb, project names)
 
 ---
 
