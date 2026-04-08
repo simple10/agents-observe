@@ -52,7 +52,7 @@ logs:
 
 # Start local server + client in dev mode (hot reload)
 dev:
-    AGENTS_OBSERVE_RUNTIME=dev AGENTS_OBSERVE_SHUTDOWN_DELAY_MS=0 node {{ project_root }}/start.mjs
+    AGENTS_OBSERVE_RUNTIME=dev AGENTS_OBSERVE_SHUTDOWN_DELAY_MS=${AGENTS_OBSERVE_SHUTDOWN_DELAY_MS:-0} node {{ project_root }}/start.mjs
 
 # ─── Testing ────────────────────────────────────────────
 
