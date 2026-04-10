@@ -1,15 +1,18 @@
-import { useQueries } from '@tanstack/react-query'
+import { useCallback } from 'react'
+import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { Pin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 import { api } from '@/lib/api-client'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SessionItem } from './session-item'
 import type { Session } from '@/types'
 
 export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
   const pinnedIds = useUIStore((s) => s.pinnedSessionIds)
   const selectedSessionId = useUIStore((s) => s.selectedSessionId)
   const togglePinnedSession = useUIStore((s) => s.togglePinnedSession)
+  const queryClient = useQueryClient()
 
   const queries = useQueries({
     queries: [...pinnedIds].map((id) => ({
@@ -30,6 +33,15 @@ export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
       useUIStore.getState().setSelectedSessionId(session.id)
     }
   }
+
+  const handleRename = useCallback(
+    async (id: string, name: string) => {
+      await api.updateSessionSlug(id, name)
+      await queryClient.invalidateQueries({ queryKey: ['session', id] })
+      await queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    },
+    [queryClient],
+  )
 
   if (pinnedIds.size === 0) return null
 
@@ -63,41 +75,18 @@ export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 dark:text-muted-foreground/60 px-2 pb-0.5 select-none">
         Pinned
       </div>
-      {sessions.map((session) => {
-        const isSelected = selectedSessionId === session.id
-        const label = session.slug || session.id.slice(0, 8)
-
-        return (
-          <div key={session.id} className="flex items-center">
-            <button
-              className={cn(
-                'group flex items-center gap-1.5 flex-1 rounded-md px-2 py-1 text-xs transition-colors cursor-pointer',
-                isSelected
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-              )}
-              onClick={() => selectSession(session)}
-            >
-              <span
-                className={cn(
-                  'h-2 w-2 shrink-0 rounded-full',
-                  session.status === 'active'
-                    ? 'bg-green-500'
-                    : 'bg-muted-foreground/60 dark:bg-muted-foreground/40',
-                )}
-              />
-              <span className="truncate">{label}</span>
-              <Pin
-                className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100 text-primary/60 hover:text-primary transition-opacity cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  togglePinnedSession(session.id)
-                }}
-              />
-            </button>
-          </div>
-        )
-      })}
+      {sessions.map((session) => (
+        <SessionItem
+          key={session.id}
+          session={session}
+          isSelected={selectedSessionId === session.id}
+          isPinned={true}
+          onSelect={() => selectSession(session)}
+          onTogglePin={() => togglePinnedSession(session.id)}
+          onRename={handleRename}
+          cwd={typeof session.metadata?.cwd === 'string' ? session.metadata.cwd : null}
+        />
+      ))}
     </div>
   )
 }
