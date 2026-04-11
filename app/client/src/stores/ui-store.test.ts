@@ -1,5 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useUIStore } from './ui-store'
+import type { ParsedEvent } from '@/types'
+
+function makeEvent(id: number): ParsedEvent {
+  return {
+    id,
+    agentId: 'a',
+    sessionId: 's',
+    type: 'tool',
+    subtype: 'PreToolUse',
+    toolName: 'Bash',
+    toolUseId: null,
+    status: 'completed',
+    timestamp: id * 1000,
+    createdAt: id * 1000,
+    payload: {},
+  }
+}
 
 // Reset store state before each test to ensure isolation
 beforeEach(() => {
@@ -23,6 +40,9 @@ beforeEach(() => {
     expandAllCounter: 0,
     selectedEventId: null,
     autoFollow: true,
+    rewindMode: false,
+    frozenEvents: null,
+    autoFollowBeforeRewind: true,
     iconCustomizationVersion: 0,
   })
 })
@@ -372,6 +392,63 @@ describe('ui-store', () => {
       const before = useUIStore.getState().iconCustomizationVersion
       useUIStore.getState().bumpIconCustomizationVersion()
       expect(useUIStore.getState().iconCustomizationVersion).toBe(before + 1)
+    })
+  })
+
+  // ── Rewind mode ────────────────────────────────────────────
+
+  describe('rewind mode', () => {
+    it('should enter rewind mode and snapshot events', () => {
+      const events = [makeEvent(1), makeEvent(2), makeEvent(3)]
+      useUIStore.getState().enterRewindMode(events)
+      const state = useUIStore.getState()
+      expect(state.rewindMode).toBe(true)
+      expect(state.frozenEvents).toEqual(events)
+    })
+
+    it('should disable autoFollow on enter and restore on exit', () => {
+      useUIStore.setState({ autoFollow: true })
+      useUIStore.getState().enterRewindMode([])
+      expect(useUIStore.getState().autoFollow).toBe(false)
+      expect(useUIStore.getState().autoFollowBeforeRewind).toBe(true)
+
+      useUIStore.getState().exitRewindMode()
+      expect(useUIStore.getState().autoFollow).toBe(true)
+      expect(useUIStore.getState().rewindMode).toBe(false)
+      expect(useUIStore.getState().frozenEvents).toBeNull()
+    })
+
+    it('should preserve autoFollow=false across rewind', () => {
+      useUIStore.setState({ autoFollow: false })
+      useUIStore.getState().enterRewindMode([])
+      expect(useUIStore.getState().autoFollow).toBe(false)
+
+      useUIStore.getState().exitRewindMode()
+      expect(useUIStore.getState().autoFollow).toBe(false)
+    })
+
+    it('should auto-exit rewind when switching to a different session', () => {
+      useUIStore.getState().setSelectedSessionId('sess-a')
+      useUIStore.getState().enterRewindMode([makeEvent(1)])
+      expect(useUIStore.getState().rewindMode).toBe(true)
+
+      useUIStore.getState().setSelectedSessionId('sess-b')
+      expect(useUIStore.getState().rewindMode).toBe(false)
+      expect(useUIStore.getState().frozenEvents).toBeNull()
+    })
+
+    it('should NOT exit rewind when setting the same session id', () => {
+      useUIStore.getState().setSelectedSessionId('sess-a')
+      useUIStore.getState().enterRewindMode([makeEvent(1)])
+      useUIStore.getState().setSelectedSessionId('sess-a')
+      expect(useUIStore.getState().rewindMode).toBe(true)
+    })
+
+    it('should exit rewind when clearing selected session', () => {
+      useUIStore.getState().setSelectedSessionId('sess-a')
+      useUIStore.getState().enterRewindMode([makeEvent(1)])
+      useUIStore.getState().setSelectedSessionId(null)
+      expect(useUIStore.getState().rewindMode).toBe(false)
     })
   })
 })

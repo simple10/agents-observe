@@ -1,12 +1,14 @@
 import { useCallback, useRef, useMemo, useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/ui-store'
-import { useEvents } from '@/hooks/use-events'
+import { useEffectiveEvents } from '@/hooks/use-effective-events'
 import { useAgents } from '@/hooks/use-agents'
 import { useSessions } from '@/hooks/use-sessions'
 import { buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
 import { AgentLane } from './agent-lane'
+import { TimelineRewind } from './timeline-rewind'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Rewind, Play } from 'lucide-react'
 import type { Agent, ParsedEvent } from '@/types'
 
 export function ActivityTimeline() {
@@ -18,11 +20,14 @@ export function ActivityTimeline() {
     timeRange,
     setTimelineHeight,
     setTimeRange,
+    rewindMode,
+    enterRewindMode,
+    exitRewindMode,
   } = useUIStore()
 
   const { data: sessions } = useSessions(selectedProjectId)
   const effectiveSessionId = selectedSessionId || sessions?.[0]?.id || null
-  const { data: events } = useEvents(effectiveSessionId)
+  const events = useEffectiveEvents(effectiveSessionId)
   const agents = useAgents(effectiveSessionId, events)
   const resizing = useRef(false)
   const startY = useRef(0)
@@ -109,12 +114,48 @@ export function ActivityTimeline() {
 
   const ranges: Array<'1m' | '5m' | '10m' | '60m'> = ['1m', '5m', '10m', '60m']
 
+  const handleToggleRewind = () => {
+    if (rewindMode) {
+      exitRewindMode()
+    } else {
+      enterRewindMode(events || [])
+    }
+  }
+
   return (
     <TooltipProvider>
       <div ref={containerRef} className="border-b border-border" style={{ height: timelineHeight }}>
         <div className="flex items-center justify-between px-3 py-1 border-b border-border/50">
-          <span className="text-xs text-muted-foreground font-medium">Activity</span>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Activity</span>
+            {rewindMode && (
+              <span className="text-[9px] px-1.5 py-px rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                REWIND
+              </span>
+            )}
+          </div>
+          <div className="flex gap-1 items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className={
+                rewindMode
+                  ? 'h-5 px-2 text-[10px] mr-1 border-green-500 bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                  : 'h-5 px-2 text-[10px] mr-1 border-orange-500/70 text-orange-600 dark:text-orange-400 hover:bg-orange-500/10'
+              }
+              onClick={handleToggleRewind}
+              title={rewindMode ? 'Resume live view' : 'Pause and rewind'}
+            >
+              {rewindMode ? (
+                <>
+                  <Rewind className="h-2.5 w-2.5 mr-0.5" /> Rewind
+                </>
+              ) : (
+                <>
+                  <Play className="h-2.5 w-2.5 mr-0.5" /> Live
+                </>
+              )}
+            </Button>
             {ranges.map((r) => (
               <Button
                 key={r}
@@ -129,24 +170,35 @@ export function ActivityTimeline() {
           </div>
         </div>
 
-        <div data-scroll-area className="overflow-y-auto" style={{ height: timelineHeight - 32 }}>
-          {flatAgents.map(({ agent, isSubagent }, idx) => (
-            <AgentLane
-              key={agent.id}
-              agent={agent}
-              parentAgent={
-                agent.parentAgentId ? agents.find((a) => a.id === agent.parentAgentId) : null
-              }
-              events={eventsByAgent.get(agent.id) || []}
-              allEvents={events || []}
-              isSubagent={isSubagent}
-              color={getAgentColorById(agent.id, agentColorMap).textOnly}
-            />
-          ))}
-          {flatAgents.length === 0 && (
-            <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
-              No agent activity
-            </div>
+        <div
+          key={`${rewindMode}-${timeRange}`}
+          data-scroll-area
+          className={rewindMode ? 'h-full' : 'overflow-y-auto'}
+          style={{ height: timelineHeight - 32 }}
+        >
+          {rewindMode ? (
+            <TimelineRewind events={events || []} agents={agents} />
+          ) : (
+            <>
+              {flatAgents.map(({ agent, isSubagent }) => (
+                <AgentLane
+                  key={agent.id}
+                  agent={agent}
+                  parentAgent={
+                    agent.parentAgentId ? agents.find((a) => a.id === agent.parentAgentId) : null
+                  }
+                  events={eventsByAgent.get(agent.id) || []}
+                  allEvents={events || []}
+                  isSubagent={isSubagent}
+                  color={getAgentColorById(agent.id, agentColorMap).textOnly}
+                />
+              ))}
+              {flatAgents.length === 0 && (
+                <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                  No agent activity
+                </div>
+              )}
+            </>
           )}
         </div>
 

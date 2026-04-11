@@ -1,12 +1,14 @@
-import { useMemo, useRef, useEffect, useDeferredValue, useCallback } from 'react'
-import { useEvents } from '@/hooks/use-events'
+import { useMemo, useRef, useEffect, useLayoutEffect, useDeferredValue, useCallback } from 'react'
+import { useEffectiveEvents } from '@/hooks/use-effective-events'
 import { useAgents } from '@/hooks/use-agents'
+import { useDedupedEvents } from '@/hooks/use-deduped-events'
+import { getTimelineScrollTo, registerEventStreamScroll, withSyncLock } from '@/lib/scroll-sync'
 import { useUIStore } from '@/stores/ui-store'
 import { EventRow } from './event-row'
 import { eventMatchesFilters } from '@/config/filters'
 import { format } from 'timeago.js'
 import { buildAgentColorMap } from '@/lib/agent-utils'
-import type { Agent, ParsedEvent } from '@/types'
+import type { Agent } from '@/types'
 
 export function EventStream() {
   const {
@@ -19,6 +21,7 @@ export function EventStream() {
     expandAllCounter,
     expandAllEvents,
     selectedEventId,
+    rewindMode,
   } = useUIStore()
 
   // Defer filter values so the UI stays responsive during filter changes
@@ -26,7 +29,7 @@ export function EventStream() {
   const deferredToolFilters = useDeferredValue(activeToolFilters)
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
-  const { data: events } = useEvents(selectedSessionId)
+  const events = useEffectiveEvents(selectedSessionId)
 
   const agents = useAgents(selectedSessionId, events)
 
@@ -38,61 +41,9 @@ export function EventStream() {
 
   const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
 
-  // Dedupe tool events + build spawn map (subagentId → toolUseId of Agent call)
-  // spawnInfo: subagentId → { description, prompt } from the Tool:Agent call
-  const { deduped, spawnToolUseIds, spawnInfo, mergedIdMap } = useMemo(() => {
-    if (!events)
-      return {
-        deduped: [],
-        spawnToolUseIds: new Map<string, string>(),
-        spawnInfo: new Map<string, { description?: string; prompt?: string }>(),
-        mergedIdMap: new Map<number, number>(),
-      }
-    const result: ParsedEvent[] = []
-    const toolUseMap = new Map<string, number>() // toolUseId -> index in result
-    const spawns = new Map<string, string>() // subagentId -> toolUseId
-    const info = new Map<string, { description?: string; prompt?: string }>()
-    const idMap = new Map<number, number>() // merged event ID -> displayed row event ID
-
-    for (const e of events) {
-      if (e.subtype === 'PreToolUse' && e.toolUseId) {
-        toolUseMap.set(e.toolUseId, result.length)
-        result.push({ ...e }) // copy so we can mutate status
-      } else if (
-        (e.subtype === 'PostToolUse' || e.subtype === 'PostToolUseFailure') &&
-        e.toolUseId &&
-        toolUseMap.has(e.toolUseId)
-      ) {
-        const idx = toolUseMap.get(e.toolUseId)!
-        const preEvent = result[idx]
-        const prePayload = preEvent.payload as any
-        result[idx] = {
-          ...preEvent,
-          status: e.subtype === 'PostToolUseFailure' ? 'failed' : 'completed',
-          payload: e.payload,
-        }
-        // Map the PostToolUse ID to the PreToolUse row ID so scroll-to works
-        idMap.set(e.id, preEvent.id)
-        // Track Agent tool spawns + capture prompt from PreToolUse input
-        if (e.toolName === 'Agent') {
-          const agentId = (e.payload as any)?.tool_response?.agentId
-          if (agentId) {
-            spawns.set(agentId, e.toolUseId)
-            const toolInput = prePayload?.tool_input
-            if (toolInput) {
-              info.set(agentId, {
-                description: toolInput.description,
-                prompt: toolInput.prompt,
-              })
-            }
-          }
-        }
-      } else {
-        result.push(e)
-      }
-    }
-    return { deduped: result, spawnToolUseIds: spawns, spawnInfo: info, mergedIdMap: idMap }
-  }, [events])
+  // Dedupe tool events + build spawn map (shared with timeline-rewind)
+  const { deduped, spawnToolUseIds, spawnInfo, mergedIdMap, pairedPayloads } =
+    useDedupedEvents(events)
 
   // Apply all client-side filters: agent selection + static/tool filters
   const filteredEvents = useMemo(() => {
@@ -191,6 +142,69 @@ export function EventStream() {
     }
   }, [expandAllCounter])
 
+  // ── Rewind mode scroll sync ──────────────────────────────────────────
+  // Scrolling the event stream drives the timeline's horizontal scroll.
+  // Uses offsetTop (not getBoundingClientRect) to avoid layout thrashing.
+  const syncTimelineFromScroll = useCallback(() => {
+    const container = scrollRef.current
+    if (!container) return
+    const top = container.scrollTop
+    // Find the first event row whose bottom edge is below the viewport top
+    const rows = container.querySelectorAll<HTMLDivElement>('[data-event-row]')
+    for (const row of rows) {
+      if (row.offsetTop + row.offsetHeight > top) {
+        const ts = Number(row.dataset.timestamp)
+        if (!Number.isNaN(ts)) {
+          getTimelineScrollTo()?.(ts)
+        }
+        return
+      }
+    }
+  }, [])
+
+  // Attach scroll listener only while in rewind mode
+  useEffect(() => {
+    if (!rewindMode) return
+    const container = scrollRef.current
+    if (!container) return
+    const onScroll = () => {
+      withSyncLock('event-stream', syncTimelineFromScroll)
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [rewindMode, syncTimelineFromScroll])
+
+  // Register the event-stream scroll-to callback for reverse sync (Phase 5)
+  useEffect(() => {
+    if (!rewindMode) {
+      registerEventStreamScroll(null)
+      return
+    }
+    registerEventStreamScroll((eventId) => {
+      const container = scrollRef.current
+      if (!container) return
+      const row = container.querySelector<HTMLDivElement>(`[data-event-id="${eventId}"]`)
+      if (row) {
+        container.scrollTop = row.offsetTop
+      }
+    })
+    return () => registerEventStreamScroll(null)
+  }, [rewindMode])
+
+  // Initial sync when entering rewind mode: wait for timeline to mount, then
+  // sync timeline to match current event stream scroll position.
+  useLayoutEffect(() => {
+    if (!rewindMode) return
+    // Two rAF waits: one for timeline to mount, one for its scroll registration
+    const id1 = requestAnimationFrame(() => {
+      const id2 = requestAnimationFrame(() => {
+        withSyncLock('event-stream', syncTimelineFromScroll)
+      })
+      return () => cancelAnimationFrame(id2)
+    })
+    return () => cancelAnimationFrame(id1)
+  }, [rewindMode, syncTimelineFromScroll])
+
   // Auto-scroll to the selected event when filteredEvents change (i.e. filters change)
   const prevFilteredRef = useRef(filteredEvents)
   useEffect(() => {
@@ -255,6 +269,7 @@ export function EventStream() {
               agentColorMap={agentColorMap}
               showAgentLabel={showAgentLabel}
               spawnInfo={spawnInfo.get(event.agentId)}
+              pairedPayloads={pairedPayloads.get(event.id)}
               onRowRef={setEventRowRef}
             />
           ))}

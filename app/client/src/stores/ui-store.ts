@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ParsedEvent } from '@/types'
 
 // Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -92,6 +93,14 @@ interface UIState {
   autoFollow: boolean
   setAutoFollow: (enabled: boolean) => void
 
+  // Rewind mode: freezes the event/timeline view at a snapshot of events
+  rewindMode: boolean
+  frozenEvents: ParsedEvent[] | null
+  /** Pre-rewind autoFollow value, restored on exit */
+  autoFollowBeforeRewind: boolean
+  enterRewindMode: (events: ParsedEvent[]) => void
+  exitRewindMode: () => void
+
   // Session sort order in sidebar
   sessionSortOrder: 'activity' | 'created'
   setSessionSortOrder: (order: 'activity' | 'created') => void
@@ -184,6 +193,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     // Restore saved filter state for the new session, or default to "All"
     const restored = id ? (nextFilterStates.get(id) ?? DEFAULT_FILTER_STATE) : DEFAULT_FILTER_STATE
 
+    // Auto-exit rewind mode if switching to a different session — frozen events
+    // from the old session would be stale.
+    const exitingRewind = state.rewindMode && state.selectedSessionId !== id
     set({
       selectedSessionId: id,
       selectedAgentIds: [],
@@ -194,6 +206,11 @@ export const useUIStore = create<UIState>((set, get) => ({
       activeStaticFilters: restored.activeStaticFilters,
       activeToolFilters: restored.activeToolFilters,
       searchQuery: restored.searchQuery,
+      ...(exitingRewind && {
+        rewindMode: false,
+        frozenEvents: null,
+        autoFollow: state.autoFollowBeforeRewind,
+      }),
     })
     updateHash(state.selectedProjectSlug, id)
   },
@@ -259,6 +276,23 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   autoFollow: true,
   setAutoFollow: (enabled) => set({ autoFollow: enabled }),
+
+  rewindMode: false,
+  frozenEvents: null,
+  autoFollowBeforeRewind: true,
+  enterRewindMode: (events) =>
+    set((s) => ({
+      rewindMode: true,
+      frozenEvents: events,
+      autoFollowBeforeRewind: s.autoFollow,
+      autoFollow: false,
+    })),
+  exitRewindMode: () =>
+    set((s) => ({
+      rewindMode: false,
+      frozenEvents: null,
+      autoFollow: s.autoFollowBeforeRewind,
+    })),
 
   sessionSortOrder: 'activity',
   setSessionSortOrder: (order) => set({ sessionSortOrder: order }),

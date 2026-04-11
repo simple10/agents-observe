@@ -11,18 +11,18 @@ import { cn } from '@/lib/utils'
 import { getAgentDisplayName } from '@/lib/agent-utils'
 import type { ParsedEvent, Agent } from '@/types'
 import type { SpawnInfo } from './event-row'
+import type { PairedPayloads } from '@/hooks/use-deduped-events'
 
 interface EventDetailProps {
   event: ParsedEvent
   agentMap: Map<string, Agent>
   spawnInfo?: SpawnInfo
+  pairedPayloads?: PairedPayloads
 }
 
 const THREAD_SUBTYPES = ['UserPromptSubmit', 'Stop', 'SubagentStart', 'SubagentStop']
 
-export function EventDetail({ event, agentMap, spawnInfo }: EventDetailProps) {
-  const [copied, setCopied] = useState(false)
-  const [showPayload, setShowPayload] = useState(false)
+export function EventDetail({ event, agentMap, spawnInfo, pairedPayloads }: EventDetailProps) {
   const [thread, setThread] = useState<ParsedEvent[] | null>(null)
   const [loadingThread, setLoadingThread] = useState(false)
 
@@ -37,14 +37,6 @@ export function EventDetail({ event, agentMap, spawnInfo }: EventDetailProps) {
       .catch(() => setThread(null))
       .finally(() => setLoadingThread(false))
   }, [event.id, showThread])
-
-  const payloadStr = JSON.stringify(event.payload, null, 2)
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(payloadStr)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
 
   const p = event.payload as Record<string, any>
   const cwd = p.cwd as string | undefined
@@ -88,34 +80,93 @@ export function EventDetail({ event, agentMap, spawnInfo }: EventDetailProps) {
         </div>
       )}
 
-      {/* Collapsible raw payload */}
-      <div>
-        <div
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onClick={() => setShowPayload(!showPayload)}
-          role="button"
-          tabIndex={0}
+      {/* Raw payload section(s) — two for merged tool rows, one otherwise */}
+      {pairedPayloads ? (
+        <>
+          <RawPayloadSection
+            label={pairedPayloads.pre.subtype}
+            timestamp={pairedPayloads.pre.timestamp}
+            payload={pairedPayloads.pre.payload}
+          />
+          {pairedPayloads.post ? (
+            <RawPayloadSection
+              label={pairedPayloads.post.subtype}
+              timestamp={pairedPayloads.post.timestamp}
+              payload={pairedPayloads.post.payload}
+            />
+          ) : (
+            <div className="flex items-center gap-1 text-muted-foreground/60">
+              <ChevronRight className="h-3 w-3" />
+              <span>PostToolUse</span>
+              <span className="ml-2 text-[10px] italic">pending</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <RawPayloadSection label="Raw payload" timestamp={event.timestamp} payload={event.payload} />
+      )}
+    </div>
+  )
+}
+
+function formatTimeOfDay(ts: number): string {
+  return new Date(ts).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function RawPayloadSection({
+  label,
+  timestamp,
+  payload,
+}: {
+  label: string
+  timestamp: number
+  payload: Record<string, unknown>
+}) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const payloadStr = JSON.stringify(payload, null, 2)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(payloadStr)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        onClick={() => setOpen(!open)}
+        role="button"
+        tabIndex={0}
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <span>{label}</span>
+        <span className="ml-2 text-[10px] text-muted-foreground/70 dark:text-muted-foreground/60 tabular-nums">
+          {formatTimeOfDay(timestamp)}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5 ml-1"
+          onClick={(e) => {
+            e.stopPropagation()
+            handleCopy()
+          }}
         >
-          {showPayload ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          <span>Raw payload</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5 ml-1"
-            onClick={(e) => {
-              e.stopPropagation()
-              handleCopy()
-            }}
-          >
-            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          </Button>
-        </div>
-        {showPayload && (
-          <pre className="overflow-x-auto rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed mt-1">
-            {payloadStr}
-          </pre>
-        )}
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        </Button>
       </div>
+      {open && (
+        <pre className="overflow-x-auto rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed mt-1">
+          {payloadStr}
+        </pre>
+      )}
     </div>
   )
 }

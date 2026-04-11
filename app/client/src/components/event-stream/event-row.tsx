@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/ui-store'
 import { EventDetail } from './event-detail'
 import { Check, X, Loader } from 'lucide-react'
 import type { ParsedEvent, Agent } from '@/types'
+import type { PairedPayloads } from '@/hooks/use-deduped-events'
 
 export interface SpawnInfo {
   description?: string
@@ -20,6 +21,7 @@ interface EventRowProps {
   agentColorMap: Map<string, number>
   showAgentLabel: boolean
   spawnInfo?: SpawnInfo
+  pairedPayloads?: PairedPayloads
   onRowRef?: (id: number, el: HTMLDivElement | null) => void
 }
 
@@ -64,6 +66,7 @@ export const EventRow = memo(function EventRow({
   agentColorMap,
   showAgentLabel,
   spawnInfo,
+  pairedPayloads,
   onRowRef,
 }: EventRowProps) {
   const {
@@ -149,6 +152,9 @@ export const EventRow = memo(function EventRow({
   return (
     <div
       ref={combinedRef}
+      data-event-row
+      data-event-id={event.id}
+      data-timestamp={event.timestamp}
       className={cn('transition-shadow', isSelected && 'ring-1 ring-primary/40')}
     >
       <button
@@ -238,7 +244,14 @@ export const EventRow = memo(function EventRow({
         </div>
       </button>
 
-      {isExpanded && <EventDetail event={event} agentMap={agentMap} spawnInfo={spawnInfo} />}
+      {isExpanded && (
+        <EventDetail
+          event={event}
+          agentMap={agentMap}
+          spawnInfo={spawnInfo}
+          pairedPayloads={pairedPayloads}
+        />
+      )}
     </div>
   )
 })

@@ -1,10 +1,10 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
-import { getEventSummary } from '@/lib/event-summary'
 import { useUIStore } from '@/stores/ui-store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { AgentLabel } from '@/components/shared/agent-label'
+import { DotTooltipContent } from './dot-tooltip'
 import type { Agent, ParsedEvent } from '@/types'
 
 // Renders event dots inside a single animated container.
@@ -59,7 +59,6 @@ function DotContainer({
 
         const Icon = getEventIcon(event.subtype, event.toolName)
         const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
-        const summary = getEventSummary(event)
 
         return (
           <Tooltip key={event.id}>
@@ -81,8 +80,7 @@ function DotContainer({
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs max-w-64">
-              <div className="font-medium">{tooltipLabel(event)}</div>
-              {summary && <div className="opacity-80 truncate">{summary}</div>}
+              <DotTooltipContent event={event} />
             </TooltipContent>
           </Tooltip>
         )
@@ -98,19 +96,6 @@ interface AgentLaneProps {
   allEvents: ParsedEvent[]
   isSubagent: boolean
   color: string
-}
-
-// Friendly label for tooltips
-function tooltipLabel(event: ParsedEvent): string {
-  if (event.subtype === 'PreToolUse' || event.subtype === 'PostToolUse') {
-    return event.toolName || 'Tool'
-  }
-  const map: Record<string, string> = {
-    UserPromptSubmit: 'Prompt',
-    Stop: 'Stop',
-    SessionStart: 'Session Start',
-  }
-  return map[event.subtype || ''] || event.subtype || event.type
 }
 
 export function AgentLane({
