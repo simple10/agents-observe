@@ -84,7 +84,9 @@ export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
           onSelect={() => selectSession(session)}
           onTogglePin={() => togglePinnedSession(session.id)}
           onRename={handleRename}
+          onEdit={() => useUIStore.getState().setEditingSessionId(session.id)}
           cwd={typeof session.metadata?.cwd === 'string' ? session.metadata.cwd : null}
+          showCwd={false}
         />
       ))}
     </div>

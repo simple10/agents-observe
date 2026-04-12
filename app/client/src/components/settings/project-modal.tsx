@@ -586,7 +586,7 @@ function SessionRow({
   )
 }
 
-function MoveSessionModal({
+export function MoveSessionModal({
   open,
   currentProjectId,
   sessionCount,

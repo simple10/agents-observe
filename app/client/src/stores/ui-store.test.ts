@@ -40,6 +40,7 @@ beforeEach(() => {
     flashingEventId: null,
     expandAllCounter: 0,
     selectedEventId: null,
+    editingSessionId: null,
     autoFollow: true,
     rewindMode: false,
     frozenEvents: null,

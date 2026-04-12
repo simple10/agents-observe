@@ -12,9 +12,13 @@ interface SessionItemProps {
   onSelect: () => void
   onTogglePin: () => void
   onRename: (id: string, name: string) => Promise<void>
+  /** Click handler for the pencil/edit icon. Defaults to inline rename. */
+  onEdit?: () => void
   eventCountOverride?: number
   relativeTime?: string
   cwd?: string | null
+  /** Show the cwd line below the session name. Defaults to true. */
+  showCwd?: boolean
 }
 
 function shortenCwd(cwd: string): string {
@@ -28,9 +32,11 @@ export function SessionItem({
   onSelect,
   onTogglePin,
   onRename,
+  onEdit,
   eventCountOverride,
   relativeTime,
   cwd,
+  showCwd = true,
 }: SessionItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -146,7 +152,13 @@ export function SessionItem({
             {!isEditing && eventCount != null && (
               <Badge
                 variant="outline"
-                className="text-[9px] h-3.5 px-1 shrink-0 hidden @[200px]:inline-flex ml-auto @[250px]:ml-0 group-hover:!hidden"
+                className={cn(
+                  'text-[9px] h-3.5 px-1 shrink-0 hidden @[200px]:inline-flex group-hover:!hidden',
+                  // When relativeTime is shown, the time gets ml-auto and the
+                  // badge sits next to it. When there's no relativeTime, the
+                  // badge takes ml-auto so it pins to the right edge.
+                  relativeTime ? 'ml-auto @[250px]:ml-0' : 'ml-auto',
+                )}
               >
                 {eventCount}
               </Badge>
@@ -155,11 +167,18 @@ export function SessionItem({
               <Pencil
                 data-testid={`edit-session-${session.id}`}
                 className="h-3 w-3 shrink-0 ml-auto hidden group-hover:block text-muted-foreground/50 hover:text-muted-foreground transition-opacity cursor-pointer"
-                onClick={startEditing}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onEdit) {
+                    onEdit()
+                  } else {
+                    startEditing(e)
+                  }
+                }}
               />
             )}
           </div>
-          {cwd && (
+          {cwd && showCwd && (
             <div
               className="pl-[18px] pb-0.5 text-[10px] text-muted-foreground/30 dark:text-muted-foreground/20 group-hover:text-muted-foreground/70 dark:group-hover:text-muted-foreground/50 transition-colors truncate"
               dir="rtl"

@@ -81,7 +81,7 @@ beforeEach(() => {
   })
 })
 
-describe('ProjectList - Session rename', () => {
+describe('ProjectList - Session edit', () => {
   it('should render a pencil edit icon on session items', () => {
     renderWithProviders(<ProjectList collapsed={false} />)
 
@@ -89,91 +89,13 @@ describe('ProjectList - Session rename', () => {
     expect(editIcon).toBeInTheDocument()
   })
 
-  it('should enter edit mode when pencil icon is clicked', () => {
+  it('should open the session edit modal when pencil icon is clicked', () => {
     renderWithProviders(<ProjectList collapsed={false} />)
 
     const editIcon = screen.getByTestId('edit-session-sess-1')
     fireEvent.click(editIcon)
 
-    const input = screen.getByDisplayValue('my-session')
-    expect(input).toBeInTheDocument()
-    expect(input.tagName).toBe('INPUT')
-  })
-
-  it('should use truncated id as default edit value when session has no slug', () => {
-    setMockSessions([makeSession({ slug: null })])
-
-    renderWithProviders(<ProjectList collapsed={false} />)
-
-    const editIcon = screen.getByTestId('edit-session-sess-1')
-    fireEvent.click(editIcon)
-
-    const input = screen.getByDisplayValue('sess-1')
-    expect(input).toBeInTheDocument()
-  })
-
-  it('should save the new slug when Enter is pressed', async () => {
-    renderWithProviders(<ProjectList collapsed={false} />)
-
-    const editIcon = screen.getByTestId('edit-session-sess-1')
-    fireEvent.click(editIcon)
-
-    const input = screen.getByDisplayValue('my-session')
-    fireEvent.change(input, { target: { value: 'renamed-session' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(mockUpdateSessionSlug).toHaveBeenCalledWith('sess-1', 'renamed-session')
-    })
-  })
-
-  it('should cancel editing when Escape is pressed without saving', () => {
-    renderWithProviders(<ProjectList collapsed={false} />)
-
-    const editIcon = screen.getByTestId('edit-session-sess-1')
-    fireEvent.click(editIcon)
-
-    const input = screen.getByDisplayValue('my-session')
-    fireEvent.change(input, { target: { value: 'renamed-session' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-
-    // Should exit edit mode
-    expect(screen.queryByDisplayValue('renamed-session')).not.toBeInTheDocument()
-    // Should NOT have called the API
-    expect(mockUpdateSessionSlug).not.toHaveBeenCalled()
-  })
-
-  it('should save the slug on blur', async () => {
-    renderWithProviders(<ProjectList collapsed={false} />)
-
-    const editIcon = screen.getByTestId('edit-session-sess-1')
-    fireEvent.click(editIcon)
-
-    const input = screen.getByDisplayValue('my-session')
-    fireEvent.change(input, { target: { value: 'blur-saved' } })
-    fireEvent.blur(input)
-
-    await waitFor(() => {
-      expect(mockUpdateSessionSlug).toHaveBeenCalledWith('sess-1', 'blur-saved')
-    })
-  })
-
-  it('should not call API when saving an empty slug', async () => {
-    renderWithProviders(<ProjectList collapsed={false} />)
-
-    const editIcon = screen.getByTestId('edit-session-sess-1')
-    fireEvent.click(editIcon)
-
-    const input = screen.getByDisplayValue('my-session')
-    fireEvent.change(input, { target: { value: '  ' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    // Give it time to process
-    await waitFor(() => {
-      expect(screen.queryByDisplayValue('  ')).not.toBeInTheDocument()
-    })
-
-    expect(mockUpdateSessionSlug).not.toHaveBeenCalled()
+    expect(useUIStore.getState().editingSessionId).toBe('sess-1')
   })
 
   it('should not trigger session selection when clicking the pencil icon', () => {

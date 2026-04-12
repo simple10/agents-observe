@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Sidebar } from '@/components/sidebar/sidebar'
 import { MainPanel } from '@/components/main-panel/main-panel'
+import { SessionEditModal } from '@/components/settings/session-modal'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { useRouteSync } from '@/hooks/use-route-sync'
 import { useUIStore } from '@/stores/ui-store'
@@ -34,6 +35,7 @@ export function App() {
         <Sidebar connected={connected} />
         <MainPanel />
       </div>
+      <SessionEditModal />
     </ThemeProvider>
   )
 }

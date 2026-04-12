@@ -3,7 +3,6 @@ import { useProjects } from '@/hooks/use-projects'
 import { useSessions } from '@/hooks/use-sessions'
 import { useEvents } from '@/hooks/use-events'
 import { useUIStore } from '@/stores/ui-store'
-import { cn } from '@/lib/utils'
 import { ChevronDown, ChevronRight, Folder, Pencil, Clock, CalendarDays } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -148,12 +147,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
               <Tooltip key={project.id}>
                 <TooltipTrigger asChild>
                   <button
-                    className={cn(
-                      'flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer',
-                      isSelected
-                        ? 'bg-primary/10 text-primary border border-primary/30'
-                        : 'text-muted-foreground hover:bg-accent',
-                    )}
+                    className="flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer text-muted-foreground hover:bg-accent"
                     onClick={() =>
                       setSelectedProject(
                         isSelected ? null : project.id,
@@ -172,10 +166,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
           return (
             <div key={project.id}>
               <button
-                className={cn(
-                  'group flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-sm transition-colors cursor-pointer',
-                  isSelected ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-accent',
-                )}
+                className="group flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-sm transition-colors cursor-pointer text-foreground hover:bg-accent"
                 onClick={() =>
                   setSelectedProject(
                     isSelected ? null : project.id,
@@ -232,6 +223,7 @@ function SessionList({ projectId }: { projectId: number }) {
     setSessionSortOrder,
     togglePinnedSession,
     pinnedSessionIds,
+    setEditingSessionId,
   } = useUIStore()
   const queryClient = useQueryClient()
   const { data: currentEvents } = useEvents(selectedSessionId)
@@ -323,6 +315,7 @@ function SessionList({ projectId }: { projectId: number }) {
                   onSelect={() => setSelectedSessionId(isSelected ? null : session.id)}
                   onTogglePin={() => togglePinnedSession(session.id)}
                   onRename={handleRename}
+                  onEdit={() => setEditingSessionId(session.id)}
                   eventCountOverride={liveEventCount}
                   relativeTime={formatRelativeTime(
                     sessionSortOrder === 'activity'

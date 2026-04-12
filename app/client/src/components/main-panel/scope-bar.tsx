@@ -2,33 +2,19 @@ import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
 import { LogsModal } from './logs-modal'
 import { AgentCombobox } from './agent-combobox'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { ArrowDownToLine, Trash2, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api-client'
+import { ArrowDownToLine, Pencil, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 
 export function ScopeBar() {
   const {
     selectedProjectId,
     selectedSessionId,
-    setSelectedSessionId,
     autoFollow,
     setAutoFollow,
     expandedEventIds,
     collapseAllEvents,
     requestExpandAll,
+    setEditingSessionId,
   } = useUIStore()
-  const queryClient = useQueryClient()
 
   if (!selectedProjectId || !selectedSessionId) return null
 
@@ -66,52 +52,15 @@ export function ScopeBar() {
             <ChevronsUpDown className="h-3.5 w-3.5" />
           )}
         </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              title="Delete or clear session"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete or clear session?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This only affects Observe logs. Your original Claude session files are not modified.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={async () => {
-                  if (selectedSessionId) {
-                    await api.clearSessionEvents(selectedSessionId)
-                    queryClient.invalidateQueries({ queryKey: ['events'] })
-                  }
-                }}
-              >
-                Clear logs
-              </AlertDialogAction>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={async () => {
-                  if (selectedSessionId) {
-                    await api.deleteSession(selectedSessionId)
-                    setSelectedSessionId(null)
-                    queryClient.invalidateQueries({ queryKey: ['sessions'] })
-                    queryClient.invalidateQueries({ queryKey: ['events'] })
-                  }
-                }}
-              >
-                Delete session
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={() => setEditingSessionId(selectedSessionId)}
+          title="Edit session"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </div>
   )
