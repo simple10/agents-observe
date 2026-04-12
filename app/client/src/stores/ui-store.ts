@@ -72,9 +72,9 @@ interface UIState {
   setSearchQuery: (query: string) => void
 
   timelineHeight: number
-  timeRange: '1m' | '5m' | '10m' | '60m'
+  timeRange: '1m' | '5m' | '10m' | '60m' | '3h' | '24h'
   setTimelineHeight: (height: number) => void
-  setTimeRange: (range: '1m' | '5m' | '10m' | '60m') => void
+  setTimeRange: (range: '1m' | '5m' | '10m' | '60m' | '3h' | '24h') => void
 
   expandedEventIds: Set<number>
   scrollToEventId: number | null

@@ -43,11 +43,13 @@ interface TimelineRewindProps {
   agents: Agent[]
 }
 
-const RANGE_MS: Record<'1m' | '5m' | '10m' | '60m', number> = {
+const RANGE_MS: Record<string, number> = {
   '1m': 60_000,
   '5m': 300_000,
   '10m': 600_000,
   '60m': 3_600_000,
+  '3h': 10_800_000,
+  '24h': 86_400_000,
 }
 
 export function TimelineRewind({ events, agents }: TimelineRewindProps) {

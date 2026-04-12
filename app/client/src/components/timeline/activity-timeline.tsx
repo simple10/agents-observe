@@ -34,13 +34,25 @@ export function ActivityTimeline() {
   const startHeight = useRef(0)
 
   // Periodic cleanup tick: forces re-render so expired dots are removed from DOM.
+  // Only runs when there are recent events that could be expiring from view.
   // Also triggers when new events arrive.
+  const rangeMs = useMemo(() => {
+    const ranges: Record<string, number> = {
+      '1m': 60_000, '5m': 300_000, '10m': 600_000,
+      '60m': 3_600_000, '3h': 10_800_000, '24h': 86_400_000,
+    }
+    return ranges[timeRange] ?? 300_000
+  }, [timeRange])
+  const eventsLength = events?.length ?? 0
+  const lastEventTs = events && events.length > 0 ? events[events.length - 1].timestamp : 0
+  const hasRecentEvents = lastEventTs > 0 && Date.now() - lastEventTs < rangeMs + 10_000
+
   const [, setCleanupTick] = useState(0)
   useEffect(() => {
+    if (!hasRecentEvents) return
     const id = setInterval(() => setCleanupTick((t) => t + 1), 5_000)
     return () => clearInterval(id)
-  }, [])
-  const eventsLength = events?.length ?? 0
+  }, [hasRecentEvents])
   useEffect(() => {
     setCleanupTick((t) => t + 1)
   }, [eventsLength])
@@ -112,7 +124,7 @@ export function ActivityTimeline() {
 
   if (!effectiveSessionId) return null
 
-  const ranges: Array<'1m' | '5m' | '10m' | '60m'> = ['1m', '5m', '10m', '60m']
+  const ranges: Array<'1m' | '5m' | '10m' | '60m' | '3h' | '24h'> = ['1m', '5m', '10m', '60m', '3h', '24h']
 
   const handleToggleRewind = () => {
     if (rewindMode) {

@@ -166,7 +166,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
           return (
             <div key={project.id}>
               <button
-                className="group flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-sm transition-colors cursor-pointer text-foreground hover:bg-accent"
+                className="group flex items-center gap-2 w-full rounded-md px-2 py-0.5 text-sm transition-colors cursor-pointer text-foreground hover:bg-accent"
                 onClick={() =>
                   setSelectedProject(
                     isSelected ? null : project.id,
@@ -260,35 +260,8 @@ function SessionList({ projectId }: { projectId: number }) {
   }
 
   return (
-    <div className="ml-4 mt-1 space-y-0.5 border-l border-border/50">
-      <div className="flex items-center justify-end px-2 pt-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
-              onClick={() =>
-                setSessionSortOrder(sessionSortOrder === 'activity' ? 'created' : 'activity')
-              }
-            >
-              {sessionSortOrder === 'activity' ? (
-                <>
-                  <Clock className="h-3 w-3" /> Recent
-                </>
-              ) : (
-                <>
-                  <CalendarDays className="h-3 w-3" /> Created
-                </>
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">
-            {sessionSortOrder === 'activity'
-              ? 'Sorted by recent activity'
-              : 'Sorted by creation date'}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      {groups.map((group) => {
+    <div className="ml-3.5 mt-1 pb-3 border-l border-border">
+      {groups.map((group, groupIndex) => {
         const isGroupExpanded = !shouldCollapse || expandedGroups.has(group.label)
         const previewCount = group.label === 'Today' ? 10 : GROUP_PREVIEW_COUNT
         const visibleSessions = isGroupExpanded
@@ -297,9 +270,40 @@ function SessionList({ projectId }: { projectId: number }) {
         const hiddenCount = group.sessions.length - visibleSessions.length
 
         return (
-          <div key={group.label}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 dark:text-muted-foreground/60 px-2 pt-2 pb-0.5 select-none">
-              {group.label}
+          <div key={group.label} className={groupIndex > 0 ? 'mt-3' : ''}>
+            <div className="flex items-center px-2 pt-0 pb-0.5 select-none">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 dark:text-muted-foreground/30">
+                {group.label}
+              </span>
+              {groupIndex === 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="flex items-center gap-1 ml-auto text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                      onClick={() =>
+                        setSessionSortOrder(
+                          sessionSortOrder === 'activity' ? 'created' : 'activity',
+                        )
+                      }
+                    >
+                      {sessionSortOrder === 'activity' ? (
+                        <>
+                          <Clock className="h-3 w-3" /> Recent
+                        </>
+                      ) : (
+                        <>
+                          <CalendarDays className="h-3 w-3" /> Created
+                        </>
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="text-xs">
+                    {sessionSortOrder === 'activity'
+                      ? 'Sorted by recent activity'
+                      : 'Sorted by creation date'}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
             {visibleSessions.map((session) => {
               const isSelected = selectedSessionId === session.id
@@ -323,6 +327,7 @@ function SessionList({ projectId }: { projectId: number }) {
                       : session.startedAt,
                   )}
                   cwd={typeof session.metadata?.cwd === 'string' ? session.metadata.cwd : null}
+                  showCwd={false}
                 />
               )
             })}

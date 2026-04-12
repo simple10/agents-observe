@@ -79,7 +79,7 @@ function DotContainer({
                 </span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs max-w-64">
+            <TooltipContent side="left" className="text-xs max-w-64">
               <DotTooltipContent event={event} />
             </TooltipContent>
           </Tooltip>
@@ -110,7 +110,14 @@ export function AgentLane({
   const { timeRange, setScrollToEventId, iconCustomizationVersion } = useUIStore()
 
   const rangeMs = useMemo(() => {
-    const ranges = { '1m': 60_000, '5m': 300_000, '10m': 600_000, '60m': 3_600_000 }
+    const ranges = {
+      '1m': 60_000,
+      '5m': 300_000,
+      '10m': 600_000,
+      '60m': 3_600_000,
+      '3h': 10_800_000,
+      '24h': 86_400_000,
+    }
     return ranges[timeRange]
   }, [timeRange])
 
@@ -131,16 +138,28 @@ export function AgentLane({
 
   const generation = generationRef.current
 
-  const visibleEvents = useMemo(
-    () => events.filter((e) => Date.now() - e.timestamp < rangeMs),
+  const visibleEvents = useMemo(() => {
+    // Events are sorted by timestamp ascending. Binary search for the cutoff
+    // point instead of scanning the entire array — O(log n) vs O(n).
+    const cutoff = Date.now() - rangeMs
+    let lo = 0
+    let hi = events.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (events[mid].timestamp < cutoff) lo = mid + 1
+      else hi = mid
+    }
+    return lo >= events.length ? [] : events.slice(lo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events, rangeMs],
-  )
+  }, [events, rangeMs])
 
   // Tick marks based on time range
   const ticks = useMemo(() => {
     const rangeSec = rangeMs / 1000
-    const count = { '1m': 6, '5m': 5, '10m': 5, '60m': 6 }[timeRange]
+    const count =
+      ({ '1m': 6, '5m': 5, '10m': 5, '60m': 6, '3h': 6, '24h': 6 } as Record<string, number>)[
+        timeRange
+      ] ?? 6
     const stepSec = rangeSec / count
     const result: { pct: number; label: string }[] = []
     for (let i = 0; i <= count; i++) {
@@ -149,7 +168,8 @@ export function AgentLane({
       let label: string
       if (i === 0) label = 'now'
       else if (sec < 60) label = `${sec}s`
-      else label = `${Math.round(sec / 60)}m`
+      else if (sec < 3600) label = `${Math.round(sec / 60)}m`
+      else label = `${Math.round(sec / 3600)}h`
       result.push({ pct, label })
     }
     return result

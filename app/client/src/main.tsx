@@ -11,11 +11,11 @@ import './index.css'
 function handleQueryError(error: unknown) {
   if (error instanceof ApiError) {
     const description = error.path ? `${error.path} → ${error.message}` : error.message
-    toast.error('API error', { description })
+    toast.error('API error', { description, duration: Infinity })
   } else if (error instanceof Error) {
-    toast.error('Unexpected error', { description: error.message })
+    toast.error('Unexpected error', { description: error.message, duration: Infinity })
   } else {
-    toast.error('Unknown error')
+    toast.error('Unknown error', { duration: Infinity })
   }
 }
 

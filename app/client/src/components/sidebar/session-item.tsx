@@ -25,6 +25,16 @@ function shortenCwd(cwd: string): string {
   return cwd.replace(/^\/(?:Users|home)\/[^/]+/, '~')
 }
 
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
 export function SessionItem({
   session,
   isSelected,
@@ -75,8 +85,8 @@ export function SessionItem({
   }, [editValue, label, session.id, onRename])
 
   const statusLabel = session.status === 'active' ? 'Active' : 'Ended'
-  const tooltipLines = [statusLabel, cwd].filter(Boolean)
   const eventCount = eventCountOverride ?? session.eventCount
+  const lastActivityTs = session.lastActivity ?? session.startedAt
 
   return (
     <Tooltip>
@@ -145,7 +155,7 @@ export function SessionItem({
               <span className="truncate">{label}</span>
             )}
             {!isEditing && relativeTime && (
-              <span className="text-[10px] text-muted-foreground/80 dark:text-muted-foreground/60 ml-auto shrink-0 hidden @[250px]:inline group-hover:!hidden">
+              <span className="text-[10px] text-muted-foreground/60 dark:text-muted-foreground/40 ml-auto shrink-0 hidden @[275px]:inline group-hover:!hidden">
                 {relativeTime}
               </span>
             )}
@@ -154,10 +164,11 @@ export function SessionItem({
                 variant="outline"
                 className={cn(
                   'text-[9px] h-3.5 px-1 shrink-0 hidden @[200px]:inline-flex group-hover:!hidden',
+                  'text-muted-foreground/60',
                   // When relativeTime is shown, the time gets ml-auto and the
                   // badge sits next to it. When there's no relativeTime, the
                   // badge takes ml-auto so it pins to the right edge.
-                  relativeTime ? 'ml-auto @[250px]:ml-0' : 'ml-auto',
+                  relativeTime ? 'ml-auto @[275px]:ml-0' : 'ml-auto',
                 )}
               >
                 {eventCount}
@@ -188,13 +199,14 @@ export function SessionItem({
           )}
         </div>
       </TooltipTrigger>
-      {tooltipLines.length > 0 && (
-        <TooltipContent side="right" className="text-xs">
-          {tooltipLines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-        </TooltipContent>
-      )}
+      <TooltipContent side="right" className="text-xs space-y-0.5 max-w-xs">
+        <div className="truncate font-medium">{label}</div>
+        {cwd && <div className="truncate">{shortenCwd(cwd)}</div>}
+        <div className="opacity-80">
+          {statusLabel}: {formatRelativeTime(lastActivityTs)} - Created:{' '}
+          {formatRelativeTime(session.startedAt)}
+        </div>
+      </TooltipContent>
     </Tooltip>
   )
 }
