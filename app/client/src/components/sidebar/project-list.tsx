@@ -260,7 +260,7 @@ function SessionList({ projectId }: { projectId: number }) {
   }
 
   return (
-    <div className="ml-4 mt-1 space-y-0.5">
+    <div className="ml-4 mt-1 space-y-0.5 border-l border-border/50">
       <div className="flex items-center justify-end px-2 pt-1">
         <Tooltip>
           <TooltipTrigger asChild>
