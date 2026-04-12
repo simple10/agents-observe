@@ -1,5 +1,6 @@
 import { useRef, useMemo, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
+import { getRangeMs } from '@/config/time-ranges'
 import { useUIStore } from '@/stores/ui-store'
 import { useDedupedEvents } from '@/hooks/use-deduped-events'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
@@ -43,15 +44,6 @@ interface TimelineRewindProps {
   agents: Agent[]
 }
 
-const RANGE_MS: Record<string, number> = {
-  '1m': 60_000,
-  '5m': 300_000,
-  '10m': 600_000,
-  '60m': 3_600_000,
-  '3h': 10_800_000,
-  '24h': 86_400_000,
-}
-
 export function TimelineRewind({ events, agents }: TimelineRewindProps) {
   const { timeRange, selectedAgentIds, setScrollToEventId } = useUIStore()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -69,7 +61,7 @@ export function TimelineRewind({ events, agents }: TimelineRewindProps) {
     const end = deduped[deduped.length - 1].timestamp
     const viewportWidth = scrollRef.current?.clientWidth ?? 800
     const availableWidth = Math.max(200, viewportWidth - LABEL_WIDTH)
-    const rangeMs = RANGE_MS[timeRange]
+    const rangeMs = getRangeMs(timeRange)
     // pixelsPerMs chosen so one "time range" fills the available viewport width
     const pxPerMs = availableWidth / rangeMs
     const span = Math.max(1, end - start)
@@ -120,7 +112,7 @@ export function TimelineRewind({ events, agents }: TimelineRewindProps) {
   const ticks = useMemo(() => {
     if (totalWidth === 0) return []
     const result: { left: number; label: string }[] = []
-    const tickIntervalMs = RANGE_MS[timeRange] / 6 // 6 ticks per viewport width
+    const tickIntervalMs = getRangeMs(timeRange) / 6 // 6 ticks per viewport width
     const span = (deduped[deduped.length - 1]?.timestamp ?? 0) - sessionStart
     const tickCount = Math.ceil(span / tickIntervalMs)
     for (let i = 0; i <= tickCount; i++) {

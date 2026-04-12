@@ -1,6 +1,7 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
+import { getRangeMs, getRangeTicks } from '@/config/time-ranges'
 import { useUIStore } from '@/stores/ui-store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { AgentLabel } from '@/components/shared/agent-label'
@@ -109,17 +110,7 @@ export function AgentLane({
   const agentId = agent.id
   const { timeRange, setScrollToEventId, iconCustomizationVersion } = useUIStore()
 
-  const rangeMs = useMemo(() => {
-    const ranges = {
-      '1m': 60_000,
-      '5m': 300_000,
-      '10m': 600_000,
-      '60m': 3_600_000,
-      '3h': 10_800_000,
-      '24h': 86_400_000,
-    }
-    return ranges[timeRange]
-  }, [timeRange])
+  const rangeMs = useMemo(() => getRangeMs(timeRange), [timeRange])
 
   // Increment generation on scale change to reset anchor + animation
   const generationRef = useRef(0)
@@ -156,10 +147,7 @@ export function AgentLane({
   // Tick marks based on time range
   const ticks = useMemo(() => {
     const rangeSec = rangeMs / 1000
-    const count =
-      ({ '1m': 6, '5m': 5, '10m': 5, '60m': 6, '3h': 6, '24h': 6 } as Record<string, number>)[
-        timeRange
-      ] ?? 6
+    const count = getRangeTicks(timeRange)
     const stepSec = rangeSec / count
     const result: { pct: number; label: string }[] = []
     for (let i = 0; i <= count; i++) {

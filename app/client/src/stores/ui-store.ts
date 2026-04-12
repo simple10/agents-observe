@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ParsedEvent } from '@/types'
+import type { TimeRange } from '@/config/time-ranges'
 
 // Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -72,9 +73,9 @@ interface UIState {
   setSearchQuery: (query: string) => void
 
   timelineHeight: number
-  timeRange: '1m' | '5m' | '10m' | '60m' | '3h' | '24h'
+  timeRange: TimeRange
   setTimelineHeight: (height: number) => void
-  setTimeRange: (range: '1m' | '5m' | '10m' | '60m' | '3h' | '24h') => void
+  setTimeRange: (range: TimeRange) => void
 
   expandedEventIds: Set<number>
   scrollToEventId: number | null
