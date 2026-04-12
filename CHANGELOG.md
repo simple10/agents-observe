@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.8.2 — Timeline rewind, performance overhaul, and session editing
+
+This release introduces timeline rewind mode for replaying agent sessions, a session edit modal for inline renaming, and toast-based API error surfacing. Major performance work virtualizes the event stream, reduces memory retention, and eliminates expand lag — making the dashboard significantly snappier with large sessions.
+
+### Features
+
+- Timeline rewind mode for stepping through agent sessions frame by frame
+- Session edit modal for renaming sessions and projects inline
+- API errors now surface as toast notifications
+- Orphan repair and foreign-key auto-recovery for database integrity
+- Virtualized event stream for large sessions using `@tanstack/react-virtual`
+- Reduced memory retention for sessions with many events
+
+### Fixes
+
+- Pinned sessions, breadcrumbs, and project names now auto-update on rename
+- Fixed timeline CPU usage from unnecessary re-renders
+
 ## v0.8.1 — Session management and richer event details
 
 This release adds the ability to move sessions between projects, edit session names inline, and copy transcript paths — all from a new session action column. Event details now render markdown and diffs, and Bash/Read tool expansions show more context. The client bundle was also cut nearly in half.

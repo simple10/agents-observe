@@ -1,6 +1,6 @@
 {
   "name": "agents-observe",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Real-time observability dashboard for Claude Code agents",
   "author": {
     "name": "simple10"
