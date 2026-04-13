@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.8.5 — Performance fixes and API overhaul
+
+Removed WorktreeCreate hook from the plugin to prevent plugin from blocking worktree creation. Major performance improvements eliminate CPU spikes on large sessions. The REST API has been restructured with standardized error responses. New features include permission mode detection and a resume command in the session modal.
+
+### Breaking Changes
+
+- API error responses now use a standardized format — 3rd party clients parsing error bodies will need to update to the new shape
+- Project and agent endpoints have been restructured with new paths
+
+### Features
+
+- Permission mode detection with automatic client-side backfill for older sessions
+- Resume command and copy-to-clipboard in the session modal
+- `AGENTS_OBSERVE_ALLOW_DB_RESET` env var to guard the DELETE /data endpoint
+
+### Fixes
+
+- Removed WorktreeCreate hook and added safety checks to hook validation
+- Fixed WebSocket invalidation cascade causing 100%+ CPU on large sessions
+- Fixed timeline CPU usage and spinner freeze on large sessions
+- Timeline dots no longer disappear after returning from an inactive browser tab
+- Slug and name PATCH endpoints now validate non-empty strings
+
+### Other
+
+- Standardized API types, query param naming, and decoupled callbacks from REST session endpoints
+- Cleaned up legacy server API support
+
 ## v0.8.2 — Timeline rewind, performance overhaul, and session editing
 
 This release introduces timeline rewind mode for replaying agent sessions, a session edit modal for inline renaming, and toast-based API error surfacing. Major performance work virtualizes the event stream, reduces memory retention, and eliminates expand lag — making the dashboard significantly snappier with large sessions.
