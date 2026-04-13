@@ -33,6 +33,15 @@ function DotContainer({
     setAnchorTime(Date.now())
   }, [generation])
 
+  // Re-anchor when tab becomes visible so dots snap to correct positions
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setAnchorTime(Date.now())
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   // Start/restart the container animation via Web Animations API.
   // On finish, re-anchor — the math cancels out so there's zero visual
   // discontinuity (see spec-timeline-animation-bugs.md).

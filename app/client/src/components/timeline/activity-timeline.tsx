@@ -51,6 +51,15 @@ export function ActivityTimeline() {
   useEffect(() => {
     setCleanupTick((t) => t + 1)
   }, [eventsLength])
+  // Force re-render when tab becomes visible so the timeline recalculates
+  // visibleEvents with a fresh Date.now() and restarts the cleanup tick.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setCleanupTick((t) => t + 1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   const flatAgents = useMemo(() => {
     const mainAgents: { agent: Agent; isSubagent: boolean }[] = []
