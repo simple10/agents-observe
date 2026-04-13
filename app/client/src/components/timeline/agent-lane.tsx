@@ -65,7 +65,7 @@ function DotContainer({
         // Static position relative to the container. The container's
         // translateX animation slides everything left uniformly.
         const position = ((event.timestamp - anchorTime) / rangeMs) * 100 + 100
-        if (position < -5 || position > 110) return null
+        if (position < -5 || position > 205) return null
 
         const Icon = getEventIcon(event.subtype, event.toolName)
         const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
