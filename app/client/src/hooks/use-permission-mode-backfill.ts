@@ -60,10 +60,10 @@ export function usePermissionModeBackfill(
       }
     }
 
-    if (!permissionMode) return
-
-    // Mark as backfilled before the async write
+    // Mark as checked even if not found, to avoid re-scanning on every event update
     backfilledRef.current.add(session.id)
+
+    if (!permissionMode) return
 
     // Persist to server and refresh session cache
     api
@@ -72,9 +72,6 @@ export function usePermissionModeBackfill(
         queryClient.invalidateQueries({ queryKey: ['session', session.id] })
         queryClient.invalidateQueries({ queryKey: ['sessions'] })
       })
-      .catch(() => {
-        // If write fails, allow retry next time
-        backfilledRef.current.delete(session.id)
-      })
+      .catch(() => {})
   }, [session, events, agents, queryClient])
 }
