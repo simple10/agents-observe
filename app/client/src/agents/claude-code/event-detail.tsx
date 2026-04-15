@@ -201,6 +201,11 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
 
   return (
     <div className="space-y-2 text-xs">
+      {/* Show hook name when dedup is off */}
+      {!event.dedupMode && event.subtype && (
+        <DetailRow label="Hook" value={event.subtype} />
+      )}
+
       {/* Per-event-type rich detail */}
       <ToolDetail
         event={event}
