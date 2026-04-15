@@ -36,15 +36,17 @@ export class EventStore {
   // Track what we've already processed to enable incremental updates
   private lastProcessedCount = 0
   private lastDedupEnabled = true
+  private lastIconVersion = 0
 
   /**
    * Process raw events. Automatically detects whether to do a full
    * reprocess or incremental append based on what changed.
    */
-  process(rawEvents: RawEvent[], dedupEnabled: boolean): EnrichedEvent[] {
-    // Full reprocess needed if dedup setting changed or events were replaced (not appended)
+  process(rawEvents: RawEvent[], dedupEnabled: boolean, iconVersion = 0): EnrichedEvent[] {
+    // Full reprocess needed if settings changed or events were replaced (not appended)
     const needsFullReprocess =
       dedupEnabled !== this.lastDedupEnabled ||
+      iconVersion !== this.lastIconVersion ||
       rawEvents.length < this.lastProcessedCount ||
       (this.lastProcessedCount > 0 &&
         rawEvents.length > 0 &&
@@ -54,6 +56,7 @@ export class EventStore {
       this.clear()
       this.dedupEnabled = dedupEnabled
       this.lastDedupEnabled = dedupEnabled
+      this.lastIconVersion = iconVersion
       for (const raw of rawEvents) {
         this.processOne(raw)
       }
@@ -189,5 +192,6 @@ export class EventStore {
     this.agentIndex.clear()
     this.currentTurns.clear()
     this.pendingUpdates = []
+    this.lastProcessedCount = 0
   }
 }
