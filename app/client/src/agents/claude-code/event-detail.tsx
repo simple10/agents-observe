@@ -513,12 +513,13 @@ function ToolDetail({
   }
 
   if (event.subtype === 'TaskCreated' || event.subtype === 'TaskCompleted') {
+    const subject = payload.task_subject as string | undefined
+    const description = (payload.task_description || payload.description) as string | undefined
     return (
       <div className="space-y-1">
-        {payload.description && <DetailRow label="Task" value={payload.description as string} />}
-        {payload.task_description && (
-          <DetailRow label="Task" value={payload.task_description as string} />
-        )}
+        {subject && <DetailRow label="Subject" value={subject} />}
+        {payload.task_id && <DetailRow label="Task ID" value={String(payload.task_id)} />}
+        {description && <DetailCode label="Description" value={description} />}
         {payload.status && <DetailRow label="Status" value={payload.status as string} />}
       </div>
     )

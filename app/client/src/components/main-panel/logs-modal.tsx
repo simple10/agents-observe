@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
   ArrowDownToLine,
+  CloudDownload,
   ClipboardCopy,
   X,
   LoaderCircle,
@@ -106,6 +107,26 @@ export function LogsModal() {
                 <ClipboardCopy className="h-3 w-3" />
               )}
               {copiedAll ? 'Copied' : 'Copy all'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => {
+                if (!events) return
+                const json = JSON.stringify(events, null, 2)
+                const blob = new Blob([json], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `logs-${selectedSessionId}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+              title="Download logs as JSON"
+              disabled={loading || !events}
+            >
+              <CloudDownload className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"

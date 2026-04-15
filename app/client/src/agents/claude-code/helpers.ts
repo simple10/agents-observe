@@ -82,9 +82,9 @@ export function getEventSummary(event: RawEvent): string {
       return 'Permission requested'
     }
     case 'TaskCreated':
-      return oneLine(p.description || p.task_description || '')
+      return oneLine(p.task_subject || p.description || p.task_description || '')
     case 'TaskCompleted':
-      return oneLine(p.description || p.task_description || 'Task done')
+      return oneLine(p.task_subject || p.description || p.task_description || 'Task done')
     case 'TeammateIdle':
       return p.teammate_name || 'Teammate idle'
     case 'InstructionsLoaded':
