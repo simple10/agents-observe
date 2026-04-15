@@ -515,12 +515,49 @@ function ToolDetail({
   if (event.subtype === 'TaskCreated' || event.subtype === 'TaskCompleted') {
     const subject = payload.task_subject as string | undefined
     const description = (payload.task_description || payload.description) as string | undefined
+    const taskGrouped = event.groupId ? dataApi.getGroupedEvents(event.groupId) : []
     return (
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {subject && <DetailRow label="Subject" value={subject} />}
         {payload.task_id && <DetailRow label="Task ID" value={String(payload.task_id)} />}
         {description && <DetailCode label="Description" value={description} />}
-        {payload.status && <DetailRow label="Status" value={payload.status as string} />}
+        {taskGrouped.length > 1 && (
+          <div>
+            <div className="text-muted-foreground mb-1 font-medium">Task history:</div>
+            <div className="space-y-0.5 rounded border border-border/50 bg-muted/20 p-1.5">
+              {taskGrouped.map((e) => {
+                const ep = e.payload as Record<string, any>
+                const statusChange = ep.tool_response?.statusChange || ep.tool_input?.status
+                const label = e.subtype === 'TaskCreated'
+                  ? 'Created'
+                  : e.subtype === 'TaskCompleted'
+                    ? 'Completed'
+                    : e.toolName === 'TaskUpdate'
+                      ? `Updated → ${typeof statusChange === 'object' ? statusChange.to : statusChange || '?'}`
+                      : e.label || e.subtype || 'Event'
+                return (
+                  <div
+                    key={e.id}
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-0.5 rounded text-[11px]',
+                      e.id === event.id ? 'bg-primary/10 font-medium' : 'text-muted-foreground',
+                    )}
+                  >
+                    <span className="w-20 shrink-0 truncate">{label}</span>
+                    <span className="text-[9px] text-muted-foreground/70 tabular-nums shrink-0">
+                      {new Date(e.timestamp).toLocaleTimeString('en-US', {
+                        hour12: false,
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
