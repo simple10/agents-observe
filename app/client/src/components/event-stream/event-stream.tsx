@@ -131,21 +131,24 @@ export function EventStream() {
   const scrolledSessionRef = useRef<string | null>(null)
 
   // Scroll to bottom when:
-  // 1. Session changes and events load (always — initial view)
+  // 1. Session changes and events from the NEW session load (initial view)
   // 2. New events arrive and autoFollow is on
-  // Double rAF: first lets the browser paint after the deferred render,
-  // second ensures the virtualizer has measured the new items.
   useEffect(() => {
     if (filteredEvents.length === 0) return
+
+    // Verify events belong to the current session before marking as scrolled
+    const eventsMatchSession = filteredEvents[0]?.sessionId === selectedSessionId
+    if (!eventsMatchSession) return
+
     const needsInitialScroll = scrolledSessionRef.current !== selectedSessionId
     if (needsInitialScroll || autoFollow) {
-      const id1 = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
-        })
-      })
+      // setTimeout(0) pushes scroll to after React's commit + virtualizer measurement.
+      // rAF alone isn't enough because useDeferredValue can span multiple frames.
+      const timer = setTimeout(() => {
+        virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
+      }, 0)
       if (needsInitialScroll) scrolledSessionRef.current = selectedSessionId
-      return () => cancelAnimationFrame(id1)
+      return () => clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents.length, selectedSessionId, autoFollow])
