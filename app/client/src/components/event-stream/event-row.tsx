@@ -50,7 +50,7 @@ export const EventRow = memo(function EventRow({
   const isCompleted = event.status === 'completed'
 
   // Get the agent class registration for the RowSummary and EventDetail components
-  const agentClass = agent?.agentClass ?? null
+  const agentClass = agent?.agentClass || 'claude-code'
   const registration = AgentRegistry.get(agentClass)
   const RowSummary = registration.RowSummary
   const EventDetail = registration.EventDetail
