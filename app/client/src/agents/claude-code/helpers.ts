@@ -3,6 +3,9 @@
 import type { RawEvent } from '../types'
 
 /** Extract the binary/command name from a bash command string. */
+// Valid binary name: alphanumeric, hyphens, dots, underscores — no shell special chars
+const VALID_BINARY_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+
 export function extractBashBinary(cmd: string): string | null {
   const first = cmd.split('\n')[0].trim()
   const tokens = first.split(/\s+/)
@@ -12,13 +15,18 @@ export function extractBashBinary(cmd: string): string | null {
       skipNext = false
       continue
     }
+    // Skip env vars (FOO=bar), shell operators, subshell markers
     if (token.includes('=') || token === '&&' || token === ';' || token === '||') continue
+    if (token.startsWith('$(') || token.startsWith('`')) continue
     if (token === 'cd') {
       skipNext = true
       continue
     }
+    // Skip shell keywords that aren't binaries
+    if (token === 'for' || token === 'do' || token === 'done' || token === 'if' || token === 'then' || token === 'else' || token === 'fi' || token === 'while' || token === 'case' || token === 'esac') continue
     const bin = token.replace(/^.*\//, '')
-    if (bin && bin !== '(' && bin !== '{') return bin
+    // Validate: must look like a real binary name
+    if (bin && VALID_BINARY_RE.test(bin)) return bin
   }
   return null
 }
