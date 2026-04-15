@@ -692,11 +692,13 @@ function ToolDetail({
         </div>
       )
     case 'Agent': {
-      const spawnedAgentId = payload.tool_response?.agentId as string | undefined
+      const postPayload = pairedEvent?.payload as Record<string, any> | undefined
+      const toolResponse = postPayload?.tool_response || payload.tool_response
+      const spawnedAgentId = (toolResponse?.agentId || postPayload?.tool_response?.agentId) as string | undefined
       const spawnedAgent = spawnedAgentId ? getAgent(spawnedAgentId) : undefined
       const agentAssignedName = spawnedAgent ? getAgentDisplayName(spawnedAgent) : null
       const agentRawName = ti.name as string | undefined
-      const agentResult = extractResult(payload.tool_response)
+      const agentResult = extractResult(toolResponse)
       return (
         <div className="space-y-1.5">
           <AgentIdentity
