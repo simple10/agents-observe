@@ -5,7 +5,7 @@
 
 import { useState, lazy, Suspense } from 'react'
 import Markdown from 'react-markdown'
-import { Copy, Check, ChevronDown, ChevronRight, Loader, FileText, Code } from 'lucide-react'
+import { Copy, Check, ChevronDown, ChevronRight, Loader, FileText, Code, CircleDot } from 'lucide-react'
 
 const ReactDiffViewer = lazy(() => import('react-diff-viewer-continued'))
 import { cn } from '@/lib/utils'
@@ -548,6 +548,26 @@ function ToolDetail({
                       e.id === event.id ? 'bg-primary/10 font-medium' : 'text-muted-foreground',
                     )}
                   >
+                    <span
+                      className={cn(
+                        'shrink-0',
+                        statusTo === 'completed'
+                          ? 'text-green-600 dark:text-green-500'
+                          : statusTo === 'in_progress'
+                            ? 'text-yellow-600 dark:text-yellow-500/70'
+                            : e.subtype === 'TaskCompleted'
+                              ? 'text-green-600 dark:text-green-500'
+                              : 'text-muted-foreground/50',
+                      )}
+                    >
+                      {statusTo === 'completed' || e.subtype === 'TaskCompleted' ? (
+                        <Check className="h-3 w-3" />
+                      ) : statusTo === 'in_progress' ? (
+                        <Loader className="h-3 w-3" />
+                      ) : (
+                        <CircleDot className="h-3 w-3" />
+                      )}
+                    </span>
                     <span className="shrink-0">{label}</span>
                     {detail && (
                       <span className="truncate flex-1 min-w-0 text-[10px] text-muted-foreground/60">
