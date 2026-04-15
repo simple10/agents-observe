@@ -303,8 +303,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   autoFollow: true,
   setAutoFollow: (enabled) => set({ autoFollow: enabled }),
 
-  dedupEnabled: true,
-  setDedupEnabled: (enabled) => set({ dedupEnabled: enabled }),
+  dedupEnabled: localStorage.getItem('agents-observe-dedup') !== 'off',
+  setDedupEnabled: (enabled) => {
+    localStorage.setItem('agents-observe-dedup', enabled ? 'on' : 'off')
+    window.location.reload()
+  },
 
   rewindMode: false,
   frozenEvents: null,
