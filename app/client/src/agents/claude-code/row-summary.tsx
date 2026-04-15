@@ -26,6 +26,10 @@ export function ClaudeCodeRowSummary({ event }: EventProps) {
 
   return (
     <>
+      {/* Show hook subtype when dedup is off so you know exactly what this event is */}
+      {!event.dedupMode && event.subtype && (
+        <span className="text-[10px] text-muted-foreground/40 shrink-0">{event.subtype}</span>
+      )}
       {isTool && toolName && (
         <span className="text-xs font-medium text-blue-700 dark:text-blue-400 shrink-0">
           {toolName.startsWith('mcp__') ? 'MCP' : toolName}

@@ -31,6 +31,7 @@ function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult
     toolUseId: raw.toolUseId,
     icon: null,
     iconColor: 'text-muted-foreground',
+    dedupMode: ctx.dedupEnabled,
     dotColor: 'bg-muted-foreground',
     iconColorHex: null,
     status: 'completed',

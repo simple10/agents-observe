@@ -46,14 +46,7 @@ export function EventProcessingProvider({
       }
     }
 
-    const enriched = store.processBatch(rawEvents)
-
-    if (!dedupEnabled) {
-      for (const e of enriched) {
-        e.displayEventStream = true
-        e.displayTimeline = true
-      }
-    }
+    const enriched = store.processBatch(rawEvents, dedupEnabled)
 
     return {
       events: enriched,

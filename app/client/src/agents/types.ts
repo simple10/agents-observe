@@ -39,6 +39,9 @@ export interface EnrichedEvent {
   }
   searchText: string
 
+  // Whether this event was processed with dedup enabled
+  dedupMode: boolean
+
   // Original payload (same reference, no copy)
   payload: Record<string, unknown>
 
@@ -50,6 +53,9 @@ export interface EnrichedEvent {
 // Processing context — mutable API available during processEvent
 // ---------------------------------------------------------------------------
 export interface ProcessingContext {
+  // Settings
+  dedupEnabled: boolean
+
   // Read
   getGroupedEvents(groupId: string): EnrichedEvent[]
   getAgentEvents(agentId: string): EnrichedEvent[]

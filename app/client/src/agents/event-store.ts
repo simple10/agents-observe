@@ -14,6 +14,7 @@ export class EventStore {
   private agentIndex = new Map<string, EnrichedEvent[]>()
   private currentTurns = new Map<string, string>()
   private pendingUpdates: Array<{ eventId: number; changes: Partial<EnrichedEvent> }> = []
+  private dedupEnabled = true
 
   // Agent class lookup — set by the framework from the agents query
   private agentClassMap = new Map<string, string>()
@@ -36,8 +37,9 @@ export class EventStore {
    * Process a batch of raw events (initial load).
    * Clears existing state and processes all events in order.
    */
-  processBatch(rawEvents: RawEvent[]): EnrichedEvent[] {
+  processBatch(rawEvents: RawEvent[], dedupEnabled: boolean): EnrichedEvent[] {
     this.clear()
+    this.dedupEnabled = dedupEnabled
     for (const raw of rawEvents) {
       this.processOne(raw)
     }
@@ -113,6 +115,7 @@ export class EventStore {
 
   private createProcessingContext(): ProcessingContext {
     return {
+      dedupEnabled: this.dedupEnabled,
       getGroupedEvents: (groupId) => this.groupIndex.get(groupId) ?? [],
       getAgentEvents: (agentId) => this.agentIndex.get(agentId) ?? [],
       getCurrentTurn: (agentId) => this.currentTurns.get(agentId) ?? null,

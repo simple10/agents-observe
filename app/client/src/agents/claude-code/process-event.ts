@@ -120,99 +120,96 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
   // Resolve icon and color
   const icon = getEventIcon(subtype, toolName)
   const { iconColor, dotColor, customHex } = getEventColor(subtype, toolName)
+  const dedup = ctx.dedupEnabled
 
-  // Turn tracking
-  let turnId = ctx.getCurrentTurn(raw.agentId)
-  if (subtype === 'UserPromptSubmit' || subtype === 'SubagentStart') {
-    turnId = `turn-${raw.id}`
-    ctx.setCurrentTurn(raw.agentId, turnId)
-  } else if (
-    subtype === 'Stop' ||
-    subtype === 'SessionEnd' ||
-    subtype === 'SubagentStop' ||
-    subtype === 'stop_hook_summary'
-  ) {
-    // Keep the current turnId for this event, then clear
-    ctx.clearCurrentTurn(raw.agentId)
+  // Turn tracking (only when dedup is on)
+  let turnId: string | null = null
+  if (dedup) {
+    turnId = ctx.getCurrentTurn(raw.agentId)
+    if (subtype === 'UserPromptSubmit' || subtype === 'SubagentStart') {
+      turnId = `turn-${raw.id}`
+      ctx.setCurrentTurn(raw.agentId, turnId)
+    } else if (
+      subtype === 'Stop' ||
+      subtype === 'SessionEnd' ||
+      subtype === 'SubagentStop' ||
+      subtype === 'stop_hook_summary'
+    ) {
+      ctx.clearCurrentTurn(raw.agentId)
+    }
   }
 
-  // Group ID for pairing (tool use events)
+  // Group ID, display flags, status override (only when dedup is on)
   let groupId: string | null = null
   let displayEventStream = true
   let displayTimeline = true
   let statusOverride: EnrichedEvent['status'] | null = null
 
-  // Task grouping: group by task_id, hide TaskUpdate/TaskCompleted tool events
-  const taskId = (p.task_id ?? p.tool_input?.taskId ?? p.tool_response?.taskId) as
-    | string
-    | undefined
-  if (taskId) {
-    groupId = `task-${taskId}`
-  }
-
-  if (subtype === 'TaskCreated') {
-    statusOverride = 'pending'
-  } else if (subtype === 'TaskCompleted') {
-    // Hide TaskCompleted — update the TaskCreated event's status instead
-    const grouped = groupId ? ctx.getGroupedEvents(groupId) : []
-    const createdEvent = grouped.find((e) => e.subtype === 'TaskCreated')
-    if (createdEvent) {
-      displayEventStream = false
-      displayTimeline = false
-      ctx.updateEvent(createdEvent.id, { status: 'completed' })
+  if (dedup) {
+    // Task grouping: group by task_id, hide TaskUpdate/TaskCompleted tool events
+    const taskId = (p.task_id ?? p.tool_input?.taskId ?? p.tool_response?.taskId) as
+      | string
+      | undefined
+    if (taskId) {
+      groupId = `task-${taskId}`
     }
-  }
 
-  // TaskCreate tool calls — hide from stream (TaskCreated hook event is the canonical display)
-  if (toolName === 'TaskCreate') {
-    displayEventStream = false
-    displayTimeline = false
-  }
-
-  // TaskUpdate tool calls — hide from stream, update TaskCreated status
-  if (toolName === 'TaskUpdate') {
-    const updateTaskId = p.tool_input?.taskId as string | undefined
-    if (updateTaskId) {
-      groupId = `task-${updateTaskId}`
-      displayEventStream = false
-      displayTimeline = false
-
-      const grouped = ctx.getGroupedEvents(groupId)
+    if (subtype === 'TaskCreated') {
+      statusOverride = 'pending'
+    } else if (subtype === 'TaskCompleted') {
+      const grouped = groupId ? ctx.getGroupedEvents(groupId) : []
       const createdEvent = grouped.find((e) => e.subtype === 'TaskCreated')
       if (createdEvent) {
-        const newStatus = p.tool_input?.status as string | undefined
-        if (newStatus === 'completed') {
-          ctx.updateEvent(createdEvent.id, { status: 'completed' })
-        } else if (newStatus === 'in_progress') {
-          ctx.updateEvent(createdEvent.id, { status: 'running' })
+        displayEventStream = false
+        displayTimeline = false
+        ctx.updateEvent(createdEvent.id, { status: 'completed' })
+      }
+    }
+
+    if (toolName === 'TaskCreate') {
+      displayEventStream = false
+      displayTimeline = false
+    }
+
+    if (toolName === 'TaskUpdate') {
+      const updateTaskId = p.tool_input?.taskId as string | undefined
+      if (updateTaskId) {
+        groupId = `task-${updateTaskId}`
+        displayEventStream = false
+        displayTimeline = false
+
+        const grouped = ctx.getGroupedEvents(groupId)
+        const createdEvent = grouped.find((e) => e.subtype === 'TaskCreated')
+        if (createdEvent) {
+          const newStatus = p.tool_input?.status as string | undefined
+          if (newStatus === 'completed') {
+            ctx.updateEvent(createdEvent.id, { status: 'completed' })
+          } else if (newStatus === 'in_progress') {
+            ctx.updateEvent(createdEvent.id, { status: 'running' })
+          }
         }
       }
     }
-  }
 
-  if (subtype === 'PreToolUse' && toolUseId) {
-    // Tool use grouping (don't override task grouping)
-    if (!groupId) groupId = toolUseId
-  } else if ((subtype === 'PostToolUse' || subtype === 'PostToolUseFailure') && toolUseId) {
-    if (!groupId) groupId = toolUseId
+    if (subtype === 'PreToolUse' && toolUseId) {
+      if (!groupId) groupId = toolUseId
+    } else if ((subtype === 'PostToolUse' || subtype === 'PostToolUseFailure') && toolUseId) {
+      if (!groupId) groupId = toolUseId
 
-    // Check if there's a corresponding PreToolUse to merge into
-    const grouped = ctx.getGroupedEvents(groupId)
-    const preEvent = grouped.find((e) => e.subtype === 'PreToolUse')
-    if (preEvent) {
-      // Hide this PostToolUse from the stream — it merges into the Pre
-      displayEventStream = false
-      displayTimeline = false
+      const grouped = ctx.getGroupedEvents(groupId)
+      const preEvent = grouped.find((e) => e.subtype === 'PreToolUse')
+      if (preEvent) {
+        displayEventStream = false
+        displayTimeline = false
 
-      // Update the PreToolUse with completion status and result info
-      const newStatus = subtype === 'PostToolUseFailure' ? 'failed' : 'completed'
-      const resultText = extractResultText(p.tool_response)
-      ctx.updateEvent(preEvent.id, {
-        status: newStatus,
-        searchText: preEvent.searchText + ' ' + (resultText?.toLowerCase() ?? ''),
-      })
+        const newStatus = subtype === 'PostToolUseFailure' ? 'failed' : 'completed'
+        const resultText = extractResultText(p.tool_response)
+        ctx.updateEvent(preEvent.id, {
+          status: newStatus,
+          searchText: preEvent.searchText + ' ' + (resultText?.toLowerCase() ?? ''),
+        })
+      }
     }
-    // If no PreToolUse found, show this PostToolUse normally
   }
 
   // Build the enriched event
@@ -239,6 +236,7 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     iconColor,
     dotColor,
     iconColorHex: customHex ?? null,
+    dedupMode: dedup,
     status: statusOverride ?? deriveStatus(subtype),
     filterTags: getFilterTags(subtype, toolName, displayEventStream),
     searchText: buildSearchText(raw, summary),
