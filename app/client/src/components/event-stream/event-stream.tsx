@@ -9,6 +9,7 @@ import { getTimelineScrollTo, registerEventStreamScroll, withSyncLock } from '@/
 import { api } from '@/lib/api-client'
 import { useUIStore } from '@/stores/ui-store'
 import { EventRow } from './event-row'
+import { eventMatchesFilters } from '@/config/filters'
 import { format } from 'timeago.js'
 import { buildAgentColorMap } from '@/lib/agent-utils'
 import { QueryBoundary } from '@/components/shared/query-boundary'
@@ -72,17 +73,10 @@ export function EventStream() {
       filtered = filtered.filter((e) => selectedAgentIds.includes(e.agentId))
     }
 
-    // Static filters (by filterTags)
-    if (deferredStaticFilters.length > 0) {
+    // Static + tool name filters (reuse existing filter logic which checks subtype/toolName)
+    if (deferredStaticFilters.length > 0 || deferredToolFilters.length > 0) {
       filtered = filtered.filter((e) =>
-        deferredStaticFilters.some((f) => e.filterTags.includes(f.toLowerCase())),
-      )
-    }
-
-    // Tool filters (by filterTags)
-    if (deferredToolFilters.length > 0) {
-      filtered = filtered.filter((e) =>
-        deferredToolFilters.some((f) => e.filterTags.includes(f)),
+        eventMatchesFilters(e as any, deferredStaticFilters, deferredToolFilters),
       )
     }
 
