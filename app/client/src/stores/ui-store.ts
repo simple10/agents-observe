@@ -31,7 +31,7 @@ function updateHash(projectSlug: string | null, sessionId: string | null) {
   } else if (sessionId) {
     hash = `/${sessionId}`
   }
-  window.history.replaceState(null, '', `#${hash}`)
+  window.history.pushState(null, '', `#${hash}`)
 }
 
 interface SessionFilterState {
