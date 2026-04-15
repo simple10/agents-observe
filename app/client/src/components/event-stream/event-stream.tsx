@@ -39,7 +39,8 @@ export function EventStream() {
   const displayQuery = useMemo(
     () => ({
       data: rawEvents,
-      isLoading: eventsQuery.isLoading || (eventsQuery.data !== undefined && rawEvents === undefined),
+      isLoading:
+        eventsQuery.isLoading || (eventsQuery.data !== undefined && rawEvents === undefined),
       isError: eventsQuery.isError,
       error: eventsQuery.error,
     }),
@@ -132,14 +133,19 @@ export function EventStream() {
   // Scroll to bottom when:
   // 1. Session changes and events load (always — initial view)
   // 2. New events arrive and autoFollow is on
+  // Double rAF: first lets the browser paint after the deferred render,
+  // second ensures the virtualizer has measured the new items.
   useEffect(() => {
     if (filteredEvents.length === 0) return
     const needsInitialScroll = scrolledSessionRef.current !== selectedSessionId
     if (needsInitialScroll || autoFollow) {
-      requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
+      const id1 = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
+        })
       })
       if (needsInitialScroll) scrolledSessionRef.current = selectedSessionId
+      return () => cancelAnimationFrame(id1)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents.length, selectedSessionId, autoFollow])
@@ -252,7 +258,14 @@ export function EventStream() {
     }, 1200)
     return () => clearTimeout(timeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToEventId, filteredEvents, enrichedEvents, dataApi, setScrollToEventId, setFlashingEventId])
+  }, [
+    scrollToEventId,
+    filteredEvents,
+    enrichedEvents,
+    dataApi,
+    setScrollToEventId,
+    setFlashingEventId,
+  ])
 
   if (!selectedSessionId) {
     return (
