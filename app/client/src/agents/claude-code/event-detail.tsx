@@ -527,14 +527,19 @@ function ToolDetail({
             <div className="space-y-0.5 rounded border border-border/50 bg-muted/20 p-1.5">
               {taskGrouped.map((e) => {
                 const ep = e.payload as Record<string, any>
-                const statusChange = ep.tool_response?.statusChange || ep.tool_input?.status
+                const ti = ep.tool_input || {}
+                const statusChange = ep.tool_response?.statusChange
+                const statusTo = statusChange?.to || ti.status
+                const activeForm = ti.activeForm as string | undefined
+                const desc = (ti.description || ti.subject || ep.task_description) as string | undefined
                 const label = e.subtype === 'TaskCreated'
                   ? 'Created'
                   : e.subtype === 'TaskCompleted'
                     ? 'Completed'
                     : e.toolName === 'TaskUpdate'
-                      ? `Updated → ${typeof statusChange === 'object' ? statusChange.to : statusChange || '?'}`
+                      ? `Updated → ${statusTo || '?'}`
                       : e.label || e.subtype || 'Event'
+                const detail = activeForm || desc
                 return (
                   <div
                     key={e.id}
@@ -544,7 +549,12 @@ function ToolDetail({
                     )}
                   >
                     <span className="shrink-0">{label}</span>
-                    <span className="text-[9px] text-muted-foreground/70 tabular-nums shrink-0">
+                    {detail && (
+                      <span className="truncate flex-1 min-w-0 text-[10px] text-muted-foreground/60">
+                        {detail}
+                      </span>
+                    )}
+                    <span className="text-[9px] text-muted-foreground/70 tabular-nums shrink-0 ml-auto">
                       {new Date(e.timestamp).toLocaleTimeString('en-US', {
                         hour12: false,
                         hour: '2-digit',
