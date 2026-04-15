@@ -104,6 +104,10 @@ interface UIState {
   autoFollow: boolean
   setAutoFollow: (enabled: boolean) => void
 
+  // Dedup toggle — when off, all events are shown (no merging)
+  dedupEnabled: boolean
+  setDedupEnabled: (enabled: boolean) => void
+
   // Rewind mode: freezes the event/timeline view at a snapshot of events
   rewindMode: boolean
   frozenEvents: ParsedEvent[] | null
@@ -294,6 +298,9 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   autoFollow: true,
   setAutoFollow: (enabled) => set({ autoFollow: enabled }),
+
+  dedupEnabled: true,
+  setDedupEnabled: (enabled) => set({ dedupEnabled: enabled }),
 
   rewindMode: false,
   frozenEvents: null,

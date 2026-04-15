@@ -3,6 +3,7 @@
 // and provides enriched events + data API.
 
 import { useMemo, useRef } from 'react'
+import { useUIStore } from '@/stores/ui-store'
 import { EventStore } from './event-store'
 import type { EnrichedEvent, FrameworkDataApi } from './types'
 import type { ParsedEvent, Agent } from '@/types'
@@ -21,11 +22,10 @@ export function useEventProcessing(
   agents: Agent[],
 ): ProcessedEventsResult {
   const storeRef = useRef<EventStore>(new EventStore())
+  const dedupEnabled = useUIStore((s) => s.dedupEnabled)
 
   return useMemo(() => {
     const store = storeRef.current
-
-    // Update agent class mapping before processing
     store.setAgents(agents)
 
     if (!rawEvents || rawEvents.length === 0) {
@@ -35,13 +35,20 @@ export function useEventProcessing(
       }
     }
 
-    // Process all events (batch mode)
-    // TODO: optimize with incremental processing for WebSocket events
+    // Process all events through agent registry
     const enriched = store.processBatch(rawEvents)
+
+    // When dedup is off, show all events
+    if (!dedupEnabled) {
+      for (const e of enriched) {
+        e.displayEventStream = true
+        e.displayTimeline = true
+      }
+    }
 
     return {
       events: enriched,
       dataApi: store.createDataApi(),
     }
-  }, [rawEvents, agents])
+  }, [rawEvents, agents, dedupEnabled])
 }

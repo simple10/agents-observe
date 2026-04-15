@@ -2,7 +2,7 @@ import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
 import { LogsModal } from './logs-modal'
 import { AgentCombobox } from './agent-combobox'
-import { ArrowDownToLine, Pencil, BarChart3, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { ArrowDownToLine, Pencil, BarChart3, ChevronsDownUp, ChevronsUpDown, Layers, Layers2 } from 'lucide-react'
 
 export function ScopeBar() {
   const {
@@ -14,6 +14,8 @@ export function ScopeBar() {
     collapseAllEvents,
     requestExpandAll,
     setEditingSessionId,
+    dedupEnabled,
+    setDedupEnabled,
   } = useUIStore()
 
   if (!selectedProjectId || !selectedSessionId) return null
@@ -32,6 +34,20 @@ export function ScopeBar() {
           title={autoFollow ? 'Auto-follow enabled' : 'Auto-follow disabled'}
         >
           <ArrowDownToLine className="h-3.5 w-3.5" />
+        </Button>
+        {/* Dedup toggle */}
+        <Button
+          variant={dedupEnabled ? 'default' : 'ghost'}
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setDedupEnabled(!dedupEnabled)}
+          title={dedupEnabled ? 'Dedup enabled — hiding merged events' : 'Dedup disabled — showing all events'}
+        >
+          {dedupEnabled ? (
+            <Layers className="h-3.5 w-3.5" />
+          ) : (
+            <Layers2 className="h-3.5 w-3.5" />
+          )}
         </Button>
         {/* Expand/Collapse */}
         <Button
