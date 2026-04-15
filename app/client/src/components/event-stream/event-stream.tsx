@@ -111,7 +111,6 @@ export function EventStream() {
 
   const showAgentLabel = agents.length > 1
   const scrollRef = useRef<HTMLDivElement>(null)
-  const hasInitiallyScrolled = useRef(false)
 
   const virtualizer = useVirtualizer({
     count: filteredEvents.length,
@@ -127,26 +126,24 @@ export function EventStream() {
   const virtualItems = virtualizer.getVirtualItems()
   const totalSize = virtualizer.getTotalSize()
 
-  // Auto-scroll to bottom on session load or switch
-  useEffect(() => {
-    hasInitiallyScrolled.current = false
-  }, [selectedSessionId])
+  // Track the previous session so we can detect switches
+  const prevSessionRef = useRef(selectedSessionId)
+  const sessionChanged = prevSessionRef.current !== selectedSessionId
+  if (sessionChanged) prevSessionRef.current = selectedSessionId
 
+  // Scroll to bottom when:
+  // 1. Session changes and events load (always — initial view)
+  // 2. New events arrive and autoFollow is on
   useEffect(() => {
-    if (!hasInitiallyScrolled.current && filteredEvents.length > 0) {
-      virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
-      hasInitiallyScrolled.current = true
+    if (filteredEvents.length === 0) return
+    if (sessionChanged || autoFollow) {
+      // Use rAF to ensure the virtualizer has measured after the render
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredEvents.length, selectedSessionId])
-
-  // Auto-scroll to bottom when new events arrive (if autoFollow is enabled)
-  useEffect(() => {
-    if (autoFollow && filteredEvents.length > 0) {
-      virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFollow, filteredEvents.length, selectedSessionId])
+  }, [filteredEvents.length, selectedSessionId, autoFollow])
 
   // Expand all events when requested from the scope bar
   useEffect(() => {
