@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@ta
 import { Toaster, toast } from 'sonner'
 import { App } from './App'
 import { ApiError } from './lib/api-client'
+import './agents/init'
 import './index.css'
 
 // Show a toast for any uncaught query/mutation error so the user immediately

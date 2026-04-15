@@ -3,13 +3,12 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useQuery } from '@tanstack/react-query'
 import { useEffectiveEvents } from '@/hooks/use-effective-events'
 import { useAgents } from '@/hooks/use-agents'
-import { useDedupedEvents } from '@/hooks/use-deduped-events'
+import { useEventProcessing } from '@/agents/use-event-processing'
 import { usePermissionModeBackfill } from '@/hooks/use-permission-mode-backfill'
 import { getTimelineScrollTo, registerEventStreamScroll, withSyncLock } from '@/lib/scroll-sync'
 import { api } from '@/lib/api-client'
 import { useUIStore } from '@/stores/ui-store'
 import { EventRow } from './event-row'
-import { eventMatchesFilters } from '@/config/filters'
 import { format } from 'timeago.js'
 import { buildAgentColorMap } from '@/lib/agent-utils'
 import { QueryBoundary } from '@/components/shared/query-boundary'
@@ -36,10 +35,6 @@ export function EventStream() {
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   const eventsQuery = useEffectiveEvents(selectedSessionId)
-  // Defer the event list so React can yield to the browser during the heavy
-  // dedupe/filter/render pipeline. On the initial transition from undefined
-  // to a large array, React keeps the spinner visible while processing.
-  // During streaming, React can skip intermediate values to batch updates.
   const events = useDeferredValue(eventsQuery.data)
   const displayQuery = useMemo(
     () => ({
@@ -54,7 +49,6 @@ export function EventStream() {
   const agents = useAgents(selectedSessionId, events)
 
   // Backfill permission_mode into session metadata if missing.
-  // Long staleTime — this only needs to run once per session, not on every WS update.
   const { data: sessionForBackfill } = useQuery({
     queryKey: ['session-backfill', selectedSessionId],
     queryFn: () => api.getSession(selectedSessionId!),
@@ -63,62 +57,45 @@ export function EventStream() {
   })
   usePermissionModeBackfill(sessionForBackfill, events, agents)
 
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>()
-    agents.forEach((a) => map.set(a.id, a))
-    return map
-  }, [agents])
-
   const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
 
-  // Dedupe tool events + build spawn map (shared with timeline-rewind)
-  const { deduped, spawnToolUseIds, spawnInfo, mergedIdMap, pairedPayloads } =
-    useDedupedEvents(events)
+  // Process raw events through agent class registry
+  const { events: enrichedEvents, dataApi } = useEventProcessing(events, agents)
 
-  // Apply all client-side filters: agent selection + static/tool filters
+  // Apply all client-side filters on enriched events
   const filteredEvents = useMemo(() => {
-    let filtered = deduped
+    // Start with events that processEvent marked as displayable
+    let filtered = enrichedEvents.filter((e) => e.displayEventStream)
 
-    // Agent chip filtering (client-side, includes spawning Tool:Agent calls)
+    // Agent chip filtering
     if (selectedAgentIds.length > 0) {
-      const spawnIds = new Set<string>()
-      for (const agentId of selectedAgentIds) {
-        const toolUseId = spawnToolUseIds.get(agentId)
-        if (toolUseId) spawnIds.add(toolUseId)
-      }
-      filtered = filtered.filter(
-        (e) =>
-          selectedAgentIds.includes(e.agentId) ||
-          (e.toolUseId != null && spawnIds.has(e.toolUseId)),
-      )
+      filtered = filtered.filter((e) => selectedAgentIds.includes(e.agentId))
     }
 
-    // Static + dynamic tool filters
-    if (deferredStaticFilters.length > 0 || deferredToolFilters.length > 0) {
+    // Static filters (by filterTags)
+    if (deferredStaticFilters.length > 0) {
       filtered = filtered.filter((e) =>
-        eventMatchesFilters(e, deferredStaticFilters, deferredToolFilters),
+        deferredStaticFilters.some((f) => e.filterTags.includes(f.toLowerCase())),
       )
     }
 
-    // Text search — case-insensitive substring match across key fields and payload
-    // Skip search if query is only whitespace (don't trim — users may want leading/trailing spaces)
+    // Tool filters (by filterTags)
+    if (deferredToolFilters.length > 0) {
+      filtered = filtered.filter((e) =>
+        deferredToolFilters.some((f) => e.filterTags.includes(f)),
+      )
+    }
+
+    // Text search — uses pre-computed searchText (no JSON.stringify)
     if (deferredSearchQuery && deferredSearchQuery.trim().length > 0) {
       const q = deferredSearchQuery.toLowerCase()
-      filtered = filtered.filter((e) => {
-        if (e.toolName?.toLowerCase().includes(q)) return true
-        if (e.subtype?.toLowerCase().includes(q)) return true
-        if (e.type?.toLowerCase().includes(q)) return true
-        // Search stringified payload
-        if (JSON.stringify(e.payload).toLowerCase().includes(q)) return true
-        return false
-      })
+      filtered = filtered.filter((e) => e.searchText.includes(q))
     }
 
     return filtered
   }, [
-    deduped,
+    enrichedEvents,
     selectedAgentIds,
-    spawnToolUseIds,
     deferredStaticFilters,
     deferredToolFilters,
     deferredSearchQuery,
@@ -132,20 +109,14 @@ export function EventStream() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const hasInitiallyScrolled = useRef(false)
 
-  // Virtualizer: only renders rows in (and near) the viewport, so sessions
-  // with thousands of events don't destroy performance.
   const virtualizer = useVirtualizer({
     count: filteredEvents.length,
     getScrollElement: () => scrollRef.current,
-    // Better height estimate for expanded rows reduces layout shift when
-    // scrolling through many expanded items (the gap between 36px estimate
-    // and 200px+ actual caused visible jumps as items were measured).
     estimateSize: (index) => {
       const event = filteredEvents[index]
       return event && expandedEventIds.has(event.id) ? 200 : 36
     },
     overscan: 10,
-    // Keep a stable key per event so height measurements survive list changes
     getItemKey: (index) => filteredEvents[index]?.id ?? index,
   })
 
@@ -181,14 +152,10 @@ export function EventStream() {
   }, [expandAllCounter])
 
   // ── Rewind mode scroll sync ──────────────────────────────────────────
-  // Scrolling the event stream drives the timeline's horizontal scroll.
-  // Uses the virtualizer's own knowledge of item positions instead of the
-  // DOM, since most rows aren't mounted with virtualization enabled.
   const syncTimelineFromScroll = useCallback(() => {
     const container = scrollRef.current
     if (!container) return
     const top = container.scrollTop
-    // Find the first virtual item whose bottom edge is below the viewport top
     const items = virtualizer.getVirtualItems()
     for (const item of items) {
       if (item.start + item.size > top) {
@@ -202,7 +169,6 @@ export function EventStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents])
 
-  // Attach scroll listener only while in rewind mode
   useEffect(() => {
     if (!rewindMode) return
     const container = scrollRef.current
@@ -214,11 +180,6 @@ export function EventStream() {
     return () => container.removeEventListener('scroll', onScroll)
   }, [rewindMode, syncTimelineFromScroll])
 
-  // Register the event-stream scroll-to callback for reverse sync.
-  // Uses virtualizer.scrollToIndex so the target row gets mounted and measured.
-  // Must re-register when filteredEvents changes so the callback sees the
-  // current filtered array (otherwise findIndex works on a stale list after
-  // a filter change in rewind mode).
   useEffect(() => {
     if (!rewindMode) {
       registerEventStreamScroll(null)
@@ -231,15 +192,11 @@ export function EventStream() {
       }
     })
     return () => registerEventStreamScroll(null)
-    // virtualizer is stable across renders; intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rewindMode, filteredEvents])
 
-  // Initial sync when entering rewind mode: wait for timeline to mount, then
-  // sync timeline to match current event stream scroll position.
   useEffect(() => {
     if (!rewindMode) return
-    // Two rAF waits: one for timeline to mount, one for its scroll registration
     let id2: number | null = null
     const id1 = requestAnimationFrame(() => {
       id2 = requestAnimationFrame(() => {
@@ -252,7 +209,6 @@ export function EventStream() {
     }
   }, [rewindMode, syncTimelineFromScroll])
 
-  // Auto-scroll to the selected event when filteredEvents change (i.e. filters change)
   const prevFilteredRef = useRef(filteredEvents)
   useEffect(() => {
     if (selectedEventId != null && filteredEvents !== prevFilteredRef.current) {
@@ -265,34 +221,38 @@ export function EventStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents, selectedEventId])
 
-  // Scroll to a requested event (set via setScrollToEventId — e.g. timeline dot click).
-  // Resolves merged events (PostToolUse → displayed PreToolUse row), scrolls the
-  // virtualizer to the target row, then sets flashingEventId so the row pulses.
-  // Flash state lives in the store so it survives row unmount/remount during
-  // virtualized scrolling — important in rewind mode where target rows can be far.
+  // Scroll to a requested event — resolves grouped events (PostToolUse → displayed PreToolUse)
   const setFlashingEventId = useUIStore((s) => s.setFlashingEventId)
   useEffect(() => {
     if (scrollToEventId == null) return
-    // Always clear so the next click of the same dot retriggers
     setScrollToEventId(null)
-    // Resolve merged event IDs (PostToolUse id → PreToolUse row id) inline,
-    // so a single render handles both the remap and the scroll.
-    const resolvedId = mergedIdMap.get(scrollToEventId) ?? scrollToEventId
+
+    // Resolve merged event IDs: if the target event is hidden (displayEventStream=false),
+    // find the displayed event in its group
+    let resolvedId = scrollToEventId
+    const targetIdx = filteredEvents.findIndex((e) => e.id === scrollToEventId)
+    if (targetIdx < 0) {
+      // Not in filtered events — might be a hidden PostToolUse. Search enriched events.
+      const hidden = enrichedEvents.find((e) => e.id === scrollToEventId)
+      if (hidden?.groupId) {
+        const grouped = dataApi.getGroupedEvents(hidden.groupId)
+        const displayed = grouped.find((e) => e.displayEventStream)
+        if (displayed) resolvedId = displayed.id
+      }
+    }
+
     const idx = filteredEvents.findIndex((e) => e.id === resolvedId)
     if (idx < 0) return
     virtualizer.scrollToIndex(idx, { align: 'center' })
     setFlashingEventId(resolvedId)
     const timeout = setTimeout(() => {
-      // Only clear if we're still flashing this same event (avoid clobbering
-      // a newer flash triggered during the timeout window).
       if (useUIStore.getState().flashingEventId === resolvedId) {
         setFlashingEventId(null)
       }
-    }, 1200) // matches 3 × 0.4s flash-ring keyframe
+    }, 1200)
     return () => clearTimeout(timeout)
-    // virtualizer is stable; intentionally omitted from deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToEventId, filteredEvents, mergedIdMap, setScrollToEventId, setFlashingEventId])
+  }, [scrollToEventId, filteredEvents, enrichedEvents, dataApi, setScrollToEventId, setFlashingEventId])
 
   if (!selectedSessionId) {
     return (
@@ -359,11 +319,9 @@ export function EventStream() {
                       >
                         <EventRow
                           event={event}
-                          agentMap={agentMap}
+                          dataApi={dataApi}
                           agentColorMap={agentColorMap}
                           showAgentLabel={showAgentLabel}
-                          spawnInfo={spawnInfo.get(event.agentId)}
-                          pairedPayloads={pairedPayloads.get(event.id)}
                         />
                       </div>
                     )

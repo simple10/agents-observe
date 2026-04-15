@@ -1,27 +1,17 @@
 import { memo } from 'react'
 import { cn } from '@/lib/utils'
-import { getEventIcon, getEventColor } from '@/config/event-icons'
-import { getEventSummary } from '@/lib/event-summary'
 import { getAgentColorById } from '@/lib/agent-utils'
 import { AgentLabel } from '@/components/shared/agent-label'
+import { AgentRegistry } from '@/agents/registry'
 import { useUIStore } from '@/stores/ui-store'
-import { EventDetail } from './event-detail'
-import { Check, X, Loader } from 'lucide-react'
-import type { ParsedEvent, Agent } from '@/types'
-import type { PairedPayloads } from '@/hooks/use-deduped-events'
-
-export interface SpawnInfo {
-  description?: string
-  prompt?: string
-}
+import { Check, X, Loader, Pin } from 'lucide-react'
+import type { EnrichedEvent, FrameworkDataApi } from '@/agents/types'
 
 interface EventRowProps {
-  event: ParsedEvent
-  agentMap: Map<string, Agent>
+  event: EnrichedEvent
+  dataApi: FrameworkDataApi
   agentColorMap: Map<string, number>
   showAgentLabel: boolean
-  spawnInfo?: SpawnInfo
-  pairedPayloads?: PairedPayloads
 }
 
 function formatTime(ts: number): string {
@@ -33,81 +23,44 @@ function formatTime(ts: number): string {
   })
 }
 
-// Friendly display labels for subtypes
-const LABEL_MAP: Record<string, string> = {
-  UserPromptSubmit: 'Prompt',
-  stop_hook_summary: 'Stop',
-  StopFailure: 'Error',
-  SubagentStart: 'SubStart',
-  SubagentStop: 'SubStop',
-  SessionStart: 'Session',
-  SessionEnd: 'Session',
-  PostToolUseFailure: 'ToolErr',
-  PermissionRequest: 'Permit',
-  TaskCreated: 'Task',
-  TaskCompleted: 'Task',
-  TeammateIdle: 'Team',
-  InstructionsLoaded: 'Config',
-  ConfigChange: 'Config',
-  CwdChanged: 'CwdChg',
-  FileChanged: 'FileChg',
-  PreCompact: 'Compact',
-  PostCompact: 'Compact',
-  Elicitation: 'MCP',
-  ElicitationResult: 'MCP',
-  WorktreeCreate: 'Worktree',
-  WorktreeRemove: 'Worktree',
-}
-
 export const EventRow = memo(function EventRow({
   event,
-  agentMap,
+  dataApi,
   agentColorMap,
   showAgentLabel,
-  spawnInfo,
-  pairedPayloads,
 }: EventRowProps) {
-  // Individual selectors so only rows with changing slices re-render.
-  // Destructuring from useUIStore() subscribes to the full store state and
-  // causes every row to re-render on any store update — a huge perf hit
-  // with thousands of rows.
   const isExpanded = useUIStore((s) => s.expandedEventIds.has(event.id))
   const isSelected = useUIStore((s) => s.selectedEventId === event.id)
-  // Boolean selector (not the raw id) so only the target row re-renders when
-  // flashingEventId changes. Subscribing to the raw id causes all 1000+ rows
-  // to re-render on every flash. The flash state lives in the store (not in
-  // local React state) so it survives row unmount/remount during virtualizer
-  // scrolling — important in rewind mode where target rows can be far away.
   const isFlashing = useUIStore((s) => s.flashingEventId === event.id)
   const toggleExpandedEvent = useUIStore((s) => s.toggleExpandedEvent)
   const setSelectedEventId = useUIStore((s) => s.setSelectedEventId)
 
-  const agent = agentMap.get(event.agentId)
+  const agent = dataApi.getAgent(event.agentId)
   const isSubagent = agent?.parentAgentId != null
-  const parentAgent = agent?.parentAgentId ? agentMap.get(agent.parentAgentId) : null
+  const parentAgent = agent?.parentAgentId ? dataApi.getAgent(agent.parentAgentId) : undefined
   const agentColors = getAgentColorById(event.agentId, agentColorMap)
-  const Icon = getEventIcon(event.subtype, event.toolName)
-  const { iconColor, customHex } = getEventColor(event.subtype, event.toolName)
 
-  const isTool =
-    event.subtype === 'PreToolUse' ||
-    event.subtype === 'PostToolUse' ||
-    event.subtype === 'PostToolUseFailure'
+  // Icon and color from the enriched event (set by processEvent)
+  const Icon = event.icon || Pin
+  const iconColor = event.iconColor || 'text-muted-foreground'
+  const customHex = event.iconColorHex
+
+  const isTool = event.subtype === 'PreToolUse' || event.subtype === 'PostToolUse' || event.subtype === 'PostToolUseFailure'
   const isFailure = event.subtype === 'PostToolUseFailure' || event.status === 'failed'
   const isCompleted = event.status === 'completed'
 
-  const rawLabel = isTool ? 'Tool' : event.subtype || event.type
-  const displayLabel = LABEL_MAP[rawLabel] || rawLabel
-  const displaySummary = getEventSummary(event)
+  // Get the agent class registration for the RowSummary and EventDetail components
+  const agentClass = agent?.agentClass ?? null
+  const registration = AgentRegistry.get(agentClass)
+  const RowSummary = registration.RowSummary
+  const EventDetail = registration.EventDetail
 
   const handleRowClick = (e: React.MouseEvent) => {
-    // Middle-click or ctrl/meta+click: select/deselect the row
     if (e.button === 1 || e.ctrlKey || e.metaKey) {
       e.preventDefault()
       setSelectedEventId(isSelected ? null : event.id)
       return
     }
-    // Normal click: toggle expand
     toggleExpandedEvent(event.id)
   }
 
@@ -132,6 +85,7 @@ export const EventRow = memo(function EventRow({
           if (e.button === 1) e.preventDefault()
         }}
       >
+        {/* Agent label (framework-owned) */}
         {showAgentLabel && (
           <div
             className={cn(
@@ -141,14 +95,16 @@ export const EventRow = memo(function EventRow({
           >
             {isSubagent ? '↳ ' : ''}
             {agent ? (
-              <AgentLabel agent={agent} parentAgent={parentAgent} />
+              <AgentLabel agent={agent} parentAgent={parentAgent ?? null} />
             ) : (
               event.agentId.slice(0, 8)
             )}
           </div>
         )}
 
+        {/* Event row content */}
         <div className="flex items-center gap-2 w-full min-w-0">
+          {/* Icon (framework-owned, from enriched event) */}
           <span
             className={cn('shrink-0', !customHex && iconColor)}
             style={customHex ? { color: customHex } : undefined}
@@ -156,12 +112,16 @@ export const EventRow = memo(function EventRow({
           >
             <Icon className="h-4 w-4" />
           </span>
+
+          {/* Label (framework-owned) */}
           <span
             className="text-xs font-medium w-16 shrink-0 truncate text-muted-foreground"
             title={event.subtype || event.type}
           >
-            {displayLabel}
+            {event.label}
           </span>
+
+          {/* Status indicator for tools (framework-owned) */}
           {isTool && (
             <span
               className={cn(
@@ -182,37 +142,22 @@ export const EventRow = memo(function EventRow({
               )}
             </span>
           )}
-          {isTool && event.toolName && (
-            <span className="text-xs font-medium text-blue-700 dark:text-blue-400 shrink-0">
-              {event.toolName}
-            </span>
-          )}
-          {displaySummary.includes('\n') ? (
-            <div className="text-xs text-muted-foreground flex-1 min-w-0">
-              {displaySummary.split('\n').map((line, i) => (
-                <div key={i} className="truncate">
-                  {line}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">
-              {displaySummary}
-            </span>
-          )}
+
+          {/* Summary line (agent-class-owned) */}
+          <RowSummary event={event} dataApi={dataApi} />
+
+          {/* Timestamp (framework-owned) */}
           <span className="text-[10px] text-muted-foreground/80 dark:text-muted-foreground/60 tabular-nums shrink-0">
             {formatTime(event.timestamp)}
           </span>
         </div>
       </button>
 
+      {/* Expanded detail (agent-class-owned) */}
       {isExpanded && (
-        <EventDetail
-          event={event}
-          agentMap={agentMap}
-          spawnInfo={spawnInfo}
-          pairedPayloads={pairedPayloads}
-        />
+        <div className="px-3 py-2 bg-muted/10 border-t border-border/30">
+          <EventDetail event={event} dataApi={dataApi} />
+        </div>
       )}
     </div>
   )
