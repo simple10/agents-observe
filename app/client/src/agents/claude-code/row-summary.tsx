@@ -28,6 +28,9 @@ export function ClaudeCodeRowSummary({ event }: EventProps) {
           {toolName.startsWith('mcp__') ? 'MCP' : toolName}
         </span>
       )}
+      {isTool && toolName?.startsWith('mcp__') && (
+        <span className="text-[10px] text-muted-foreground/50 shrink-0">{toolName}</span>
+      )}
       {binary && (
         <span className="text-[10px] text-muted-foreground/50 shrink-0">{binary}</span>
       )}
