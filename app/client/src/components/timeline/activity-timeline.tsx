@@ -146,7 +146,7 @@ export function ActivityTimeline() {
 
   return (
     <TooltipProvider>
-      <div ref={containerRef} className="border-b border-border" style={{ height: timelineHeight }}>
+      <div ref={containerRef} className="border-b border-border overflow-hidden" style={{ height: timelineHeight }}>
         <div className="flex items-center justify-between px-3 py-1 border-b border-border/50">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground font-medium">Activity</span>
