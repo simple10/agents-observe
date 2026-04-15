@@ -78,6 +78,8 @@ export function EventFilterBar() {
     const cats = new Set<string>()
     for (const e of agentFilteredEvents) {
       if (e.filterTags.static) cats.add(e.filterTags.static)
+      // 'Errors' is cross-cutting — check status and payload
+      if (e.status === 'failed' || (e.payload as any)?.error) cats.add('Errors')
     }
     return cats
   }, [agentFilteredEvents])

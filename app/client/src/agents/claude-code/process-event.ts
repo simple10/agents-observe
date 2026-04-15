@@ -54,19 +54,25 @@ function getFilterTags(
         dynamic.push(toolName)
       }
     }
-    // MCP tools go under 'MCP' category
+    // MCP tools → MCP category
     if (toolName?.startsWith('mcp__')) return { static: 'MCP', dynamic }
+    // Agent tool → Agents category (not Tools)
+    if (toolName === 'Agent') return { static: 'Agents', dynamic }
+    // TaskCreate/TaskUpdate tools → Tasks category
+    if (toolName === 'TaskCreate' || toolName === 'TaskUpdate') return { static: 'Tasks', dynamic }
     return { static: 'Tools', dynamic }
   }
 
   if (subtype === 'UserPromptSubmit') return { static: 'Prompts', dynamic: [] }
-  if (subtype === 'SubagentStart' || subtype === 'SubagentStop' || subtype === 'TeammateIdle')
+  if (subtype === 'SubagentStart' || subtype === 'TeammateIdle')
     return { static: 'Agents', dynamic: [] }
   if (subtype === 'TaskCreated' || subtype === 'TaskCompleted')
     return { static: 'Tasks', dynamic: [] }
-  if (subtype === 'SessionStart' || subtype === 'SessionEnd' || subtype === 'Stop' || subtype === 'StopFailure' || subtype === 'stop_hook_summary')
+  if (subtype === 'SessionStart' || subtype === 'SessionEnd')
     return { static: 'Session', dynamic: [] }
-  if (subtype === 'PermissionRequest' || subtype === 'PermissionDenied')
+  if (subtype === 'Stop' || subtype === 'StopFailure' || subtype === 'SubagentStop' || subtype === 'stop_hook_summary')
+    return { static: 'Stop', dynamic: [] }
+  if (subtype === 'PermissionRequest')
     return { static: 'Permissions', dynamic: [] }
   if (subtype === 'Notification')
     return { static: 'Notifications', dynamic: [] }

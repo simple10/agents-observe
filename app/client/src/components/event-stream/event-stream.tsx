@@ -74,9 +74,13 @@ export function EventStream() {
 
     // Static category filters (row 1: Prompts, Tools, Agents, etc.)
     if (deferredStaticFilters.length > 0) {
-      filtered = filtered.filter(
-        (e) => e.filterTags.static !== null && deferredStaticFilters.includes(e.filterTags.static),
-      )
+      filtered = filtered.filter((e) => {
+        // 'Errors' is a cross-cutting filter — matches any event with failed status or error payload
+        if (deferredStaticFilters.includes('Errors')) {
+          if (e.status === 'failed' || (e.payload as any)?.error) return true
+        }
+        return e.filterTags.static !== null && deferredStaticFilters.includes(e.filterTags.static)
+      })
     }
 
     // Dynamic tool filters (row 2: Bash, Read, Edit, etc.)
