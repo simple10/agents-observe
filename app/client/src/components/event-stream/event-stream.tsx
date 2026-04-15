@@ -128,6 +128,17 @@ export function EventStream() {
   const virtualItems = virtualizer.getVirtualItems()
   const totalSize = virtualizer.getTotalSize()
 
+  // Reset scroll position when switching sessions so the virtualizer
+  // doesn't render at the old (potentially huge) scroll offset.
+  const prevSessionForScrollRef = useRef(selectedSessionId)
+  useEffect(() => {
+    if (prevSessionForScrollRef.current !== selectedSessionId) {
+      prevSessionForScrollRef.current = selectedSessionId
+      const container = scrollRef.current
+      if (container) container.scrollTop = 0
+    }
+  }, [selectedSessionId])
+
   // Track whether we've scrolled for the current session
   const scrolledSessionRef = useRef<string | null>(null)
 
