@@ -323,7 +323,7 @@ export function EventStream() {
                 </span>
               )}
             </div>
-            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            <div key={selectedSessionId} ref={scrollRef} className="flex-1 overflow-y-auto">
               {filteredEvents.length === 0 ? (
                 <EmptyState text="No events match the current filters" />
               ) : (
