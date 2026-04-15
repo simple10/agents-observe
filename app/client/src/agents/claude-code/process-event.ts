@@ -33,32 +33,51 @@ const LABELS: Record<string, string> = {
   stop_hook_summary: 'Stop',
 }
 
-// Filter tag mapping — which categories an event belongs to
-function getFilterTags(subtype: string | null, toolName: string | null): string[] {
-  const tags: string[] = []
+/** Map event to filter categories. Returns null for hidden events. */
+function getFilterTags(
+  subtype: string | null,
+  toolName: string | null,
+  display: boolean,
+): EnrichedEvent['filterTags'] {
+  if (!display) return { static: null, dynamic: [] }
 
-  if (subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure') {
-    tags.push('tool')
-    if (toolName) tags.push(toolName)
-  } else if (subtype === 'UserPromptSubmit') {
-    tags.push('prompt')
-  } else if (subtype === 'SubagentStart' || subtype === 'SubagentStop' || subtype === 'TeammateIdle') {
-    tags.push('agent')
-  } else if (subtype === 'TaskCreated' || subtype === 'TaskCompleted') {
-    tags.push('task')
-  } else if (subtype === 'SessionStart' || subtype === 'SessionEnd' || subtype === 'Stop' || subtype === 'StopFailure' || subtype === 'stop_hook_summary') {
-    tags.push('session')
-  } else if (subtype === 'PermissionRequest' || subtype === 'PermissionDenied') {
-    tags.push('permission')
-  } else if (subtype === 'Notification') {
-    tags.push('notification')
-  } else if (subtype === 'Elicitation' || subtype === 'ElicitationResult') {
-    tags.push('mcp')
-  } else if (subtype === 'InstructionsLoaded' || subtype === 'ConfigChange' || subtype === 'CwdChanged' || subtype === 'FileChanged') {
-    tags.push('config')
+  const isTool = subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure'
+
+  if (isTool) {
+    const dynamic: string[] = []
+    if (toolName) {
+      // Normalize MCP tool names: mcp__chrome-devtools__click → mcp__chrome-devtools
+      if (toolName.startsWith('mcp__')) {
+        const match = toolName.match(/^(mcp__[^_]+(?:_[^_]+)*?)__/)
+        dynamic.push(match ? match[1] : toolName)
+      } else {
+        dynamic.push(toolName)
+      }
+    }
+    // MCP tools go under 'MCP' category
+    if (toolName?.startsWith('mcp__')) return { static: 'MCP', dynamic }
+    return { static: 'Tools', dynamic }
   }
 
-  return tags
+  if (subtype === 'UserPromptSubmit') return { static: 'Prompts', dynamic: [] }
+  if (subtype === 'SubagentStart' || subtype === 'SubagentStop' || subtype === 'TeammateIdle')
+    return { static: 'Agents', dynamic: [] }
+  if (subtype === 'TaskCreated' || subtype === 'TaskCompleted')
+    return { static: 'Tasks', dynamic: [] }
+  if (subtype === 'SessionStart' || subtype === 'SessionEnd' || subtype === 'Stop' || subtype === 'StopFailure' || subtype === 'stop_hook_summary')
+    return { static: 'Session', dynamic: [] }
+  if (subtype === 'PermissionRequest' || subtype === 'PermissionDenied')
+    return { static: 'Permissions', dynamic: [] }
+  if (subtype === 'Notification')
+    return { static: 'Notifications', dynamic: [] }
+  if (subtype === 'Elicitation' || subtype === 'ElicitationResult')
+    return { static: 'MCP', dynamic: [] }
+  if (subtype === 'PreCompact' || subtype === 'PostCompact')
+    return { static: 'Compaction', dynamic: [] }
+  if (subtype === 'InstructionsLoaded' || subtype === 'ConfigChange' || subtype === 'CwdChanged' || subtype === 'FileChanged')
+    return { static: 'Config', dynamic: [subtype] }
+
+  return { static: null, dynamic: subtype ? [subtype] : [] }
 }
 
 function deriveStatus(subtype: string | null): EnrichedEvent['status'] {
@@ -152,7 +171,7 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     dotColor,
     iconColorHex: customHex ?? null,
     status: deriveStatus(subtype),
-    filterTags: getFilterTags(subtype, toolName),
+    filterTags: getFilterTags(subtype, toolName, displayEventStream),
     searchText: buildSearchText(raw, summary),
 
     // Original payload

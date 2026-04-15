@@ -33,7 +33,10 @@ export interface EnrichedEvent {
   dotColor: string | null
   iconColorHex: string | null
   status: 'running' | 'completed' | 'failed' | 'pending'
-  filterTags: string[]
+  filterTags: {
+    static: string | null // category: 'Prompts', 'Tools', 'Agents', etc. (null if hidden)
+    dynamic: string[] // specific filters: ['Bash'], ['Read'], etc.
+  }
   searchText: string
 
   // Original payload (same reference, no copy)

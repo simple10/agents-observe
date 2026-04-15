@@ -28,7 +28,7 @@ function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult
     dotColor: 'bg-muted-foreground',
     iconColorHex: null,
     status: 'completed',
-    filterTags: raw.toolName ? ['tool', raw.toolName] : [raw.type || 'event'],
+    filterTags: { static: null, dynamic: raw.toolName ? [raw.toolName] : [] },
     searchText: [raw.subtype, raw.toolName, raw.type, JSON.stringify(raw.payload)]
       .filter(Boolean)
       .join(' ')

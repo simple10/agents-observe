@@ -1,15 +1,27 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useUIStore } from '@/stores/ui-store'
 import { useEvents } from '@/hooks/use-events'
+import { useAgents } from '@/hooks/use-agents'
+import { useEventProcessing } from '@/agents/use-event-processing'
 import { cn } from '@/lib/utils'
 import { Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import {
-  STATIC_FILTERS,
-  getDynamicFilterNames,
-  getDynamicDisplayName,
-  getFiltersWithMatches,
-} from '@/config/filters'
+
+// Framework-defined static filter categories (always shown in this order)
+const STATIC_CATEGORIES = [
+  'Prompts',
+  'Tools',
+  'Agents',
+  'Tasks',
+  'Session',
+  'MCP',
+  'Permissions',
+  'Notifications',
+  'Stop',
+  'Compaction',
+  'Errors',
+  'Config',
+]
 
 export function EventFilterBar() {
   const {
@@ -28,7 +40,6 @@ export function EventFilterBar() {
   const [localSearch, setLocalSearch] = useState(searchQuery)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Sync local state when store changes externally (e.g., session switch restores saved query)
   useEffect(() => {
     setLocalSearch(searchQuery)
   }, [searchQuery])
@@ -37,36 +48,56 @@ export function EventFilterBar() {
     setLocalSearch(value)
     clearTimeout(debounceRef.current)
     if (value === '') {
-      // Clear immediately — no reason to delay
       setSearchQuery('')
     } else {
       debounceRef.current = setTimeout(() => setSearchQuery(value), 350)
     }
   }
 
-  const { data: events } = useEvents(selectedSessionId)
+  const { data: rawEvents } = useEvents(selectedSessionId)
+  const agents = useAgents(selectedSessionId, rawEvents)
+  const { events: enrichedEvents } = useEventProcessing(rawEvents, agents)
 
-  const agentFilteredEvents = useMemo(() => {
-    if (!events) return []
-    return selectedAgentIds.length > 0
-      ? events.filter((e) => selectedAgentIds.includes(e.agentId))
-      : events
-  }, [events, selectedAgentIds])
+  // Only consider displayed events for filter state
+  const displayedEvents = useMemo(
+    () => enrichedEvents.filter((e) => e.displayEventStream),
+    [enrichedEvents],
+  )
 
-  const dynamicNames = useMemo(
-    () => getDynamicFilterNames(agentFilteredEvents),
-    [agentFilteredEvents],
+  // Apply agent selection filter before computing available filters
+  const agentFilteredEvents = useMemo(
+    () =>
+      selectedAgentIds.length > 0
+        ? displayedEvents.filter((e) => selectedAgentIds.includes(e.agentId))
+        : displayedEvents,
+    [displayedEvents, selectedAgentIds],
   )
-  const filtersWithMatches = useMemo(
-    () => getFiltersWithMatches(agentFilteredEvents),
-    [agentFilteredEvents],
-  )
+
+  // Which static categories have at least one event
+  const activeCategories = useMemo(() => {
+    const cats = new Set<string>()
+    for (const e of agentFilteredEvents) {
+      if (e.filterTags.static) cats.add(e.filterTags.static)
+    }
+    return cats
+  }, [agentFilteredEvents])
+
+  // Collect all unique dynamic filter names
+  const dynamicNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const e of agentFilteredEvents) {
+      for (const tag of e.filterTags.dynamic) {
+        names.add(tag)
+      }
+    }
+    return Array.from(names).sort()
+  }, [agentFilteredEvents])
 
   const hasAnyFilter = activeStaticFilters.length > 0 || activeToolFilters.length > 0
 
   return (
     <div className="flex flex-col gap-1 px-3 py-1.5 border-b border-border">
-      {/* Row 1: Static filters + search */}
+      {/* Row 1: Static category filters + search */}
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-xs text-muted-foreground">Filters:</span>
@@ -81,12 +112,12 @@ export function EventFilterBar() {
           >
             All
           </button>
-          {STATIC_FILTERS.map((filter) => {
-            const isActive = activeStaticFilters.includes(filter.label)
-            const hasMatches = filtersWithMatches.has(filter.label)
+          {STATIC_CATEGORIES.map((category) => {
+            const isActive = activeStaticFilters.includes(category)
+            const hasMatches = activeCategories.has(category)
             return (
               <button
-                key={filter.label}
+                key={category}
                 className={cn(
                   'rounded-full px-2.5 py-0.5 text-xs transition-colors border',
                   isActive
@@ -95,9 +126,9 @@ export function EventFilterBar() {
                       ? 'bg-secondary text-secondary-foreground border-primary/40 hover:bg-accent'
                       : 'bg-secondary text-muted-foreground/70 dark:text-muted-foreground/50 border-transparent hover:bg-accent hover:text-secondary-foreground',
                 )}
-                onClick={() => toggleStaticFilter(filter.label)}
+                onClick={() => toggleStaticFilter(category)}
               >
-                {filter.label}
+                {category}
               </button>
             )
           })}
@@ -151,7 +182,7 @@ export function EventFilterBar() {
               )}
               onClick={() => toggleToolFilter(name)}
             >
-              {getDynamicDisplayName(name)}
+              {name}
             </button>
           ))}
         </div>
