@@ -127,7 +127,7 @@ export function EventStream() {
   const virtualItems = virtualizer.getVirtualItems()
   const totalSize = virtualizer.getTotalSize()
 
-  // Auto-scroll to bottom on first load of a session
+  // Auto-scroll to bottom on session load or switch
   useEffect(() => {
     hasInitiallyScrolled.current = false
   }, [selectedSessionId])
@@ -138,7 +138,7 @@ export function EventStream() {
       hasInitiallyScrolled.current = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredEvents.length])
+  }, [filteredEvents.length, selectedSessionId])
 
   // Auto-scroll to bottom when new events arrive (if autoFollow is enabled)
   useEffect(() => {
@@ -146,7 +146,7 @@ export function EventStream() {
       virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFollow, filteredEvents.length])
+  }, [autoFollow, filteredEvents.length, selectedSessionId])
 
   // Expand all events when requested from the scope bar
   useEffect(() => {
