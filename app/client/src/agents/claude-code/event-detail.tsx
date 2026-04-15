@@ -543,7 +543,7 @@ function ToolDetail({
                       e.id === event.id ? 'bg-primary/10 font-medium' : 'text-muted-foreground',
                     )}
                   >
-                    <span className="w-20 shrink-0 truncate">{label}</span>
+                    <span className="shrink-0">{label}</span>
                     <span className="text-[9px] text-muted-foreground/70 tabular-nums shrink-0">
                       {new Date(e.timestamp).toLocaleTimeString('en-US', {
                         hour12: false,
