@@ -133,22 +133,21 @@ export function EventStream() {
   // Scroll to bottom when:
   // 1. Session changes and events from the NEW session load (initial view)
   // 2. New events arrive and autoFollow is on
+  // Uses direct scrollTop instead of virtualizer.scrollToIndex to avoid
+  // timing issues with deferred rendering and virtualizer measurement.
   useEffect(() => {
     if (filteredEvents.length === 0) return
 
-    // Verify events belong to the current session before marking as scrolled
     const eventsMatchSession = filteredEvents[0]?.sessionId === selectedSessionId
     if (!eventsMatchSession) return
 
     const needsInitialScroll = scrolledSessionRef.current !== selectedSessionId
     if (needsInitialScroll || autoFollow) {
-      // setTimeout(0) pushes scroll to after React's commit + virtualizer measurement.
-      // rAF alone isn't enough because useDeferredValue can span multiple frames.
-      const timer = setTimeout(() => {
-        virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
-      }, 0)
+      const container = scrollRef.current
+      if (container) {
+        container.scrollTop = container.scrollHeight
+      }
       if (needsInitialScroll) scrolledSessionRef.current = selectedSessionId
-      return () => clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents.length, selectedSessionId, autoFollow])
