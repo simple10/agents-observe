@@ -35,18 +35,7 @@ export function EventStream() {
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   const eventsQuery = useEffectiveEvents(selectedSessionId)
-  const rawEvents = useDeferredValue(eventsQuery.data)
-  const displayQuery = useMemo(
-    () => ({
-      data: rawEvents,
-      isLoading:
-        eventsQuery.isLoading || (eventsQuery.data !== undefined && rawEvents === undefined),
-      isError: eventsQuery.isError,
-      error: eventsQuery.error,
-    }),
-    [rawEvents, eventsQuery.data, eventsQuery.isLoading, eventsQuery.isError, eventsQuery.error],
-  )
-
+  const rawEvents = eventsQuery.data
   const agents = useAgents(selectedSessionId, rawEvents)
 
   // Backfill permission_mode into session metadata if missing.
@@ -62,6 +51,18 @@ export function EventStream() {
 
   // Use shared processed events from context (single EventStore for both stream + timeline)
   const { events: enrichedEvents, dataApi } = useProcessedEvents()
+
+  // Display query — drives the QueryBoundary loading/empty states.
+  // Based on enrichedEvents so it's in sync with what we actually render.
+  const displayQuery = useMemo(
+    () => ({
+      data: enrichedEvents.length > 0 ? enrichedEvents : eventsQuery.data,
+      isLoading: eventsQuery.isLoading,
+      isError: eventsQuery.isError,
+      error: eventsQuery.error,
+    }),
+    [enrichedEvents, eventsQuery.data, eventsQuery.isLoading, eventsQuery.isError, eventsQuery.error],
+  )
 
   // Apply all client-side filters on enriched events
   const filteredEvents = useMemo(() => {
@@ -133,8 +134,6 @@ export function EventStream() {
   // Scroll to bottom when:
   // 1. Session changes and events from the NEW session load (initial view)
   // 2. New events arrive and autoFollow is on
-  // Uses direct scrollTop instead of virtualizer.scrollToIndex to avoid
-  // timing issues with deferred rendering and virtualizer measurement.
   useEffect(() => {
     if (filteredEvents.length === 0) return
 
@@ -143,10 +142,7 @@ export function EventStream() {
 
     const needsInitialScroll = scrolledSessionRef.current !== selectedSessionId
     if (needsInitialScroll || autoFollow) {
-      const container = scrollRef.current
-      if (container) {
-        container.scrollTop = container.scrollHeight
-      }
+      virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
       if (needsInitialScroll) scrolledSessionRef.current = selectedSessionId
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
