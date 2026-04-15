@@ -33,25 +33,44 @@ export class EventStore {
     }
   }
 
-  /**
-   * Process a batch of raw events (initial load).
-   * Clears existing state and processes all events in order.
-   */
-  processBatch(rawEvents: RawEvent[], dedupEnabled: boolean): EnrichedEvent[] {
-    this.clear()
-    this.dedupEnabled = dedupEnabled
-    for (const raw of rawEvents) {
-      this.processOne(raw)
-    }
-    return this.events
-  }
+  // Track what we've already processed to enable incremental updates
+  private lastProcessedCount = 0
+  private lastDedupEnabled = true
 
   /**
-   * Process a single new raw event (incremental from WebSocket).
-   * Returns the full events array (with any mutations applied).
+   * Process raw events. Automatically detects whether to do a full
+   * reprocess or incremental append based on what changed.
    */
-  processIncremental(raw: RawEvent): EnrichedEvent[] {
-    this.processOne(raw)
+  process(rawEvents: RawEvent[], dedupEnabled: boolean): EnrichedEvent[] {
+    // Full reprocess needed if dedup setting changed or events were replaced (not appended)
+    const needsFullReprocess =
+      dedupEnabled !== this.lastDedupEnabled ||
+      rawEvents.length < this.lastProcessedCount ||
+      (this.lastProcessedCount > 0 &&
+        rawEvents.length > 0 &&
+        rawEvents[0]?.id !== this.events[0]?.id)
+
+    if (needsFullReprocess) {
+      this.clear()
+      this.dedupEnabled = dedupEnabled
+      this.lastDedupEnabled = dedupEnabled
+      for (const raw of rawEvents) {
+        this.processOne(raw)
+      }
+      this.lastProcessedCount = rawEvents.length
+      return this.events
+    }
+
+    // Incremental: only process newly appended events
+    this.dedupEnabled = dedupEnabled
+    const newEvents = rawEvents.slice(this.lastProcessedCount)
+    if (newEvents.length === 0) return this.events
+    for (const raw of newEvents) {
+      this.processOne(raw)
+    }
+    this.lastProcessedCount = rawEvents.length
+    // Return a new array reference so React detects the change
+    this.events = [...this.events]
     return this.events
   }
 

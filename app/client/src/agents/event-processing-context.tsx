@@ -46,7 +46,7 @@ export function EventProcessingProvider({
       }
     }
 
-    const enriched = store.processBatch(rawEvents, dedupEnabled)
+    const enriched = store.process(rawEvents, dedupEnabled)
 
     return {
       events: enriched,
