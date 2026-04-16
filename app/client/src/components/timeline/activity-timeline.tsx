@@ -142,24 +142,29 @@ export function ActivityTimeline() {
 
   const ranges = TIME_RANGE_KEYS
 
-  const [isTransitioning, setIsTransitioning] = useState(false)
+  const transitionSpinnerRef = useRef<HTMLDivElement>(null)
 
   const handleToggleRewind = () => {
-    if (rewindMode) {
-      setIsTransitioning(true)
-      // Paint spinner, then do heavy work on next frame
-      requestAnimationFrame(() => {
-        exitRewindMode()
-        setIsTransitioning(false)
-      })
-    } else {
-      setIsTransitioning(true)
-      // Paint spinner first, then mount heavy TimelineRewind on next frame
-      requestAnimationFrame(() => {
-        enterRewindMode(events || [])
-        setIsTransitioning(false)
-      })
+    // Show spinner via direct DOM manipulation (bypasses React scheduling)
+    const spinner = transitionSpinnerRef.current
+    if (spinner) {
+      spinner.style.width = '12px'
+      spinner.style.marginRight = '4px'
+      spinner.style.visibility = 'visible'
     }
+    // setTimeout lets the browser paint the spinner before the main thread locks
+    setTimeout(() => {
+      if (rewindMode) {
+        exitRewindMode()
+      } else {
+        enterRewindMode(events || [])
+      }
+      if (spinner) {
+        spinner.style.width = '0'
+        spinner.style.marginRight = '0'
+        spinner.style.visibility = 'hidden'
+      }
+    }, 50)
   }
 
   return (
@@ -179,6 +184,22 @@ export function ActivityTimeline() {
             )}
           </div>
           <div className="flex gap-1 items-center">
+            {/* GPU-animated spinner — always in DOM, shown/hidden via direct DOM manipulation */}
+            <div
+              ref={transitionSpinnerRef}
+              style={{
+                width: 0,
+                height: 12,
+                border: '2px solid currentColor',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                willChange: 'transform',
+                animation: 'spin 1s linear infinite',
+                visibility: 'hidden',
+                overflow: 'hidden',
+              }}
+              className="text-muted-foreground"
+            />
             <Button
               variant="outline"
               size="sm"
@@ -190,23 +211,7 @@ export function ActivityTimeline() {
               onClick={handleToggleRewind}
               title={rewindMode ? 'Resume live view' : 'Pause and rewind'}
             >
-              {isTransitioning ? (
-                <>
-                  <div
-                    style={{
-                      width: 10,
-                      height: 10,
-                      border: '1.5px solid currentColor',
-                      borderTopColor: 'transparent',
-                      borderRadius: '50%',
-                      willChange: 'transform',
-                      animation: 'spin 1s linear infinite',
-                    }}
-                    className="mr-0.5"
-                  />
-                  {rewindMode ? 'Live' : 'Rewind'}
-                </>
-              ) : rewindMode ? (
+              {rewindMode ? (
                 <>
                   <Rewind className="h-2.5 w-2.5 mr-0.5" /> Rewind
                 </>
