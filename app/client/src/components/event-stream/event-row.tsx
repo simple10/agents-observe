@@ -4,7 +4,8 @@ import { getAgentColorById } from '@/lib/agent-utils'
 import { AgentLabel } from '@/components/shared/agent-label'
 import { AgentRegistry } from '@/agents/registry'
 import { useUIStore } from '@/stores/ui-store'
-import { Check, X, Loader, Pin } from 'lucide-react'
+import { getEventIcon, getEventColor } from '@/agents/claude-code/icons'
+import { Check, X, Loader } from 'lucide-react'
 import type { EnrichedEvent, FrameworkDataApi } from '@/agents/types'
 
 interface EventRowProps {
@@ -40,10 +41,12 @@ export const EventRow = memo(function EventRow({
   const parentAgent = agent?.parentAgentId ? dataApi.getAgent(agent.parentAgentId) : undefined
   const agentColors = getAgentColorById(event.agentId, agentColorMap)
 
-  // Icon and color from the enriched event (set by processEvent)
-  const Icon = event.icon || Pin
-  const iconColor = event.iconColor || 'text-muted-foreground'
-  const customHex = event.iconColorHex
+  // Resolve icon and color at render time (not from enriched event) so
+  // icon customization changes propagate instantly without full reprocess.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useUIStore((s) => s.iconCustomizationVersion) // subscribe to trigger re-render
+  const Icon = getEventIcon(event.subtype, event.toolName)
+  const { iconColor, customHex } = getEventColor(event.subtype, event.toolName)
 
   const isFailure = event.status === 'failed'
   const isCompleted = event.status === 'completed'

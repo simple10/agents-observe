@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/ui-store'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { AgentLabel } from '@/components/shared/agent-label'
 import { AgentRegistry } from '@/agents/registry'
-import { Pin } from 'lucide-react'
+import { getEventIcon, getEventColor } from '@/agents/claude-code/icons'
 import type { Agent } from '@/types'
 import type { EnrichedEvent } from '@/agents/types'
 
@@ -56,10 +56,9 @@ function DotContainer({
         const position = ((event.timestamp - anchorTime) / rangeMs) * 100 + 100
         if (position < -5 || position > 205) return null
 
-        // Get icon and color from the enriched event
-        const Icon = event.icon || Pin
-        const dotColor = event.dotColor || 'bg-muted-foreground'
-        const customHex = event.iconColorHex
+        // Resolve icon/color at render time for instant customization updates
+        const Icon = getEventIcon(event.subtype, event.toolName)
+        const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
 
         return (
           <Tooltip key={event.id}>

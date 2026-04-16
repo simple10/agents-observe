@@ -34,7 +34,6 @@ export function EventProcessingProvider({
 }) {
   const storeRef = useRef<EventStore>(new EventStore())
   const dedupEnabled = useUIStore((s) => s.dedupEnabled)
-  const iconVersion = useUIStore((s) => s.iconCustomizationVersion)
 
   const value = useMemo(() => {
     const store = storeRef.current
@@ -47,14 +46,13 @@ export function EventProcessingProvider({
       }
     }
 
-    // iconVersion forces full reprocess when icon/color customizations change
-    const enriched = store.process(rawEvents, dedupEnabled, iconVersion)
+    const enriched = store.process(rawEvents, dedupEnabled)
 
     return {
       events: enriched,
       dataApi: store.createDataApi(),
     }
-  }, [rawEvents, agents, dedupEnabled, iconVersion])
+  }, [rawEvents, agents, dedupEnabled])
 
   return <EventProcessingContext.Provider value={value}>{children}</EventProcessingContext.Provider>
 }
