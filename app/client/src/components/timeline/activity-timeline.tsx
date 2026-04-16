@@ -142,11 +142,23 @@ export function ActivityTimeline() {
 
   const ranges = TIME_RANGE_KEYS
 
+  const [isTransitioning, setIsTransitioning] = useState(false)
+
   const handleToggleRewind = () => {
     if (rewindMode) {
-      exitRewindMode()
+      setIsTransitioning(true)
+      // Paint spinner, then do heavy work on next frame
+      requestAnimationFrame(() => {
+        exitRewindMode()
+        setIsTransitioning(false)
+      })
     } else {
-      enterRewindMode(events || [])
+      setIsTransitioning(true)
+      // Paint spinner first, then mount heavy TimelineRewind on next frame
+      requestAnimationFrame(() => {
+        enterRewindMode(events || [])
+        setIsTransitioning(false)
+      })
     }
   }
 
@@ -178,7 +190,23 @@ export function ActivityTimeline() {
               onClick={handleToggleRewind}
               title={rewindMode ? 'Resume live view' : 'Pause and rewind'}
             >
-              {rewindMode ? (
+              {isTransitioning ? (
+                <>
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      border: '1.5px solid currentColor',
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      willChange: 'transform',
+                      animation: 'spin 1s linear infinite',
+                    }}
+                    className="mr-0.5"
+                  />
+                  {rewindMode ? 'Live' : 'Rewind'}
+                </>
+              ) : rewindMode ? (
                 <>
                   <Rewind className="h-2.5 w-2.5 mr-0.5" /> Rewind
                 </>
