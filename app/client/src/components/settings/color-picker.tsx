@@ -56,8 +56,9 @@ export function ColorPicker({
                 style={{ backgroundColor: preset.swatch }}
                 title={preset.label}
                 onClick={() => {
-                  onSelect(key)
+                  const selected = key
                   setOpen(false)
+                  requestAnimationFrame(() => onSelect(selected))
                 }}
               >
                 {isSelected && <Check className="h-3.5 w-3.5 text-white drop-shadow-sm" />}

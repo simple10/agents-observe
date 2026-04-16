@@ -94,9 +94,12 @@ export function IconPicker({
                   )}
                   title={formatIconName(name)}
                   onClick={() => {
-                    onSelect(toPascalCase(name))
+                    const selected = toPascalCase(name)
                     setOpen(false)
                     setSearch('')
+                    // Defer the customization save so the popover closes first
+                    // before the re-render storm from iconCustomizationVersion bump
+                    requestAnimationFrame(() => onSelect(selected))
                   }}
                 >
                   <DynamicIcon name={name} className="h-4 w-4 text-foreground" />
