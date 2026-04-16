@@ -718,7 +718,8 @@ function ToolDetail({
       )
     }
     case 'Read': {
-      const readResponse = payload.tool_response as Record<string, any> | undefined
+      const postPayload = (pairedEvent?.payload || payload) as Record<string, any>
+      const readResponse = postPayload.tool_response as Record<string, any> | undefined
       const fileContent = readResponse?.file?.content ?? readResponse?.content
       const fileType = readResponse?.type as string | undefined
       const displayContent = typeof fileContent === 'string' ? fileContent : result
@@ -743,7 +744,11 @@ function ToolDetail({
           {result && <DetailCode label="Result" value={formatResult(result)} />}
         </div>
       )
-    case 'Edit':
+    case 'Edit': {
+      const editPostPayload = (pairedEvent?.payload || payload) as Record<string, any>
+      const editResponse = editPostPayload.tool_response as Record<string, any> | undefined
+      const patchLines = editResponse?.structuredPatch?.lines as string | undefined
+      const editResult = patchLines || result
       return (
         <div className="space-y-1.5">
           <DetailRow label="File" value={relativePath(ti.file_path, cwd)} />
@@ -755,9 +760,10 @@ function ToolDetail({
               {ti.new_string && <DetailCode label="New" value={ti.new_string} />}
             </>
           )}
-          {result && <DetailCode label="Result" value={formatResult(result)} />}
+          {editResult && <DetailCode label="Result" value={formatResult(editResult)} diff={!!patchLines} />}
         </div>
       )
+    }
     case 'Grep':
       return (
         <div className="space-y-1.5">
