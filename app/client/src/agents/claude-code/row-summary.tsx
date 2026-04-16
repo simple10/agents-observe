@@ -1,6 +1,7 @@
 // Claude Code agent class — row summary component.
 // Renders the summary line for a collapsed event row (the agent-owned section).
 
+import { getEventColor } from './icons'
 import type { EventProps } from '../types'
 
 /**
@@ -32,7 +33,7 @@ export function ClaudeCodeRowSummary({ event }: EventProps) {
       )}
       {isTool && toolName && (
         <span
-          className={`text-xs font-medium shrink-0 ${event.iconColor || 'text-blue-700 dark:text-blue-400'}`}
+          className={`text-xs font-medium shrink-0 ${getEventColor(event.subtype, event.toolName).iconColor || 'text-blue-700 dark:text-blue-400'}`}
         >
           {toolName.startsWith('mcp__') ? 'MCP' : toolName}
         </span>
