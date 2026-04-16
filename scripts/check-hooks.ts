@@ -12,7 +12,7 @@
  * 4. No blacklisted hooks are registered (hooks that replace default behavior)
  * 5. AI-assisted analysis of hook docs for additional exclusions
  *
- * Usage: bun scripts/check-hooks.ts [--skip-ai]
+ * Usage: bun scripts/check-hooks.ts [--skip-ai] [--output-prompt]
  */
 
 import { readFileSync } from 'fs'
@@ -37,6 +37,21 @@ const PATH_PREFIXES = [
 ]
 
 const SKIP_AI = process.argv.includes('--skip-ai')
+const OUTPUT_PROMPT = process.argv.includes('--output-prompt')
+const HELP = process.argv.includes('--help') || process.argv.includes('-h')
+
+if (HELP) {
+  console.log(`Usage: bun scripts/check-hooks.ts [options]
+
+Checks that hook events and commands are consistent across our config files,
+and ensures we don't register hooks that would cause unintended side effects.
+
+Options:
+  --skip-ai         Skip AI-assisted analysis of hook docs (faster, no claude CLI)
+  --output-prompt   Print only the AI-analysis prompt (for piping to a file) and exit
+  -h, --help        Show this help message and exit`)
+  process.exit(0)
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,12 +110,9 @@ async function fetchDocumentedHooks(): Promise<string[]> {
   }
 }
 
-/**
- * Ask Claude CLI to analyze the hooks documentation and identify hooks
- * that an observability-only plugin should NOT register.
- */
-function aiAnalyzeHooks(hooksDocMd: string): string[] {
-  const prompt = `You are analyzing Claude Code hook documentation for a plugin called "agents-observe" that is purely an observability/logging plugin. It should ONLY register hooks where it can safely observe events WITHOUT affecting Claude Code's behavior.
+/** Build the prompt sent to the claude CLI for hook-safety analysis. */
+function buildAiPrompt(hooksDocMd: string): string {
+  return `You are analyzing Claude Code hook documentation for a plugin called "agents-observe" that is purely an observability/logging plugin. It should ONLY register hooks where it can safely observe events WITHOUT affecting Claude Code's behavior.
 
 Analyze the hook documentation below and return a JSON object with a single key "exclude" containing an array of hook event names that this plugin should NOT register. A hook should be excluded if:
 - It replaces default Claude Code behavior (e.g., the hook takes ownership of an action like creating a worktree)
@@ -114,11 +126,19 @@ Return ONLY the JSON object, no other text.
 <hooks-documentation>
 ${hooksDocMd}
 </hooks-documentation>`
+}
+
+/**
+ * Ask Claude CLI to analyze the hooks documentation and identify hooks
+ * that an observability-only plugin should NOT register.
+ */
+function aiAnalyzeHooks(hooksDocMd: string): string[] {
+  const prompt = buildAiPrompt(hooksDocMd)
 
   try {
     const proc = spawnSync(
       'claude',
-      ['-p', prompt, '--output-format', 'json', '--debug'],
+      ['-p', prompt, '--model', 'claude-opus-4-7', '--output-format', 'json', '--debug'],
       {
         encoding: 'utf8',
         timeout: 120_000,
@@ -156,7 +176,20 @@ ${hooksDocMd}
 // ---------------------------------------------------------------------------
 
 async function main() {
+  if (OUTPUT_PROMPT) {
+    const res = await fetch(HOOKS_DOC_URL)
+    if (!res.ok) {
+      console.error(`Failed to fetch hooks doc: HTTP ${res.status}`)
+      process.exit(1)
+    }
+    const md = await res.text()
+    process.stdout.write(buildAiPrompt(md))
+    return
+  }
+
   let hasErrors = false
+
+  console.log('Checking claude hooks against:', HOOKS_DOC_URL)
 
   const authHooks = readHooks(AUTHORITATIVE)
   const authCommands = getEventCommands(authHooks)
