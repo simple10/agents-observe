@@ -242,7 +242,10 @@ export function ActivityTimeline() {
           style={{ height: timelineHeight - 32 }}
         >
           {rewindMode ? (
-            <TimelineRewind events={frozenEvents || events || []} agents={frozenAgentsRef.current} />
+            <TimelineRewind
+              events={frozenEvents || events || []}
+              agents={frozenAgentsRef.current}
+            />
           ) : (
             <>
               {flatAgents.map(({ agent, isSubagent }) => (

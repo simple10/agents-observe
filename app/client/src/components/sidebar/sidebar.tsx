@@ -117,12 +117,7 @@ export function Sidebar({ connected }: SidebarProps) {
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleTheme}>
           {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => openSettings()}
-        >
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openSettings()}>
           <Settings className="h-3.5 w-3.5" />
         </Button>
         {!sidebarCollapsed && (

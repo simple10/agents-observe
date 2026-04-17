@@ -44,9 +44,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => setModeState((t) => (t === 'dark' || t === 'system' ? 'light' : 'dark'))
 
   return (
-    <ThemeContext.Provider value={{ mode, setMode, resolved }}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={{ mode, setMode, resolved }}>{children}</ThemeContext.Provider>
   )
 }
 

@@ -44,7 +44,10 @@ interface TimelineRewindProps {
   agents: Agent[]
 }
 
-export const TimelineRewind = memo(function TimelineRewind({ events, agents }: TimelineRewindProps) {
+export const TimelineRewind = memo(function TimelineRewind({
+  events,
+  agents,
+}: TimelineRewindProps) {
   const { timeRange, selectedAgentIds, setScrollToEventId } = useUIStore()
   const scrollRef = useRef<HTMLDivElement>(null)
 

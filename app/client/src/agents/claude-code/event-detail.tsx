@@ -202,9 +202,7 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
   return (
     <div className="space-y-2 text-xs">
       {/* Show hook name when dedup is off */}
-      {!event.dedupMode && event.subtype && (
-        <DetailRow label="Hook" value={event.subtype} />
-      )}
+      {!event.dedupMode && event.subtype && <DetailRow label="Hook" value={event.subtype} />}
 
       {/* Per-event-type rich detail */}
       <ToolDetail
@@ -760,7 +758,9 @@ function ToolDetail({
               {ti.new_string && <DetailCode label="New" value={ti.new_string} />}
             </>
           )}
-          {editResult && <DetailCode label="Result" value={formatResult(editResult)} diff={!!patchLines} />}
+          {editResult && (
+            <DetailCode label="Result" value={formatResult(editResult)} diff={!!patchLines} />
+          )}
         </div>
       )
     }
