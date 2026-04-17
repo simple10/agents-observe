@@ -149,6 +149,24 @@ export function EventStream() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredEvents.length, autoFollow])
 
+  // When the browser tab is re-activated, rAF throttling while hidden can
+  // leave the virtualizer scrolled short of the end. Re-issue scrollToBottom
+  // on visibility change so autoFollow catches up with events that arrived
+  // while the tab was backgrounded.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!autoFollow) return
+      if (filteredEvents.length === 0) return
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(filteredEvents.length - 1, { align: 'end' })
+      })
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFollow, filteredEvents.length])
+
   // Expand all events when requested from the scope bar
   useEffect(() => {
     if (expandAllCounter > 0 && filteredEvents.length > 0) {
