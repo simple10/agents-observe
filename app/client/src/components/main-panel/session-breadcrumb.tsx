@@ -1,9 +1,9 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, Folder, Check, Copy } from 'lucide-react'
+import { ChevronRight, Folder } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { useUIStore } from '@/stores/ui-store'
 import { useEvents } from '@/hooks/use-events'
+import { CopyButton } from '@/components/shared/copy-button'
 
 export function SessionBreadcrumb() {
   const { selectedSessionId, selectedProjectId, setSelectedSessionId, dedupEnabled, openSettings } =
@@ -17,9 +17,6 @@ export function SessionBreadcrumb() {
   })
 
   const { data: events } = useEvents(selectedSessionId)
-
-  const [cwdCopied, setCwdCopied] = useState(false)
-  const [transcriptCopied, setTranscriptCopied] = useState(false)
 
   if (!selectedProjectId || !selectedSessionId || !session) return null
 
@@ -41,30 +38,27 @@ export function SessionBreadcrumb() {
         {projectName}
       </button>
       <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-      <span className="text-foreground truncate max-w-[200px]" title={selectedSessionId}>
-        {sessionName}
-      </span>
+      {transcriptPath ? (
+        <CopyButton
+          text={transcriptPath}
+          label={sessionName}
+          title={`Click to copy: ${transcriptPath}`}
+          className="max-w-[200px] text-foreground"
+        />
+      ) : (
+        <span className="text-foreground truncate max-w-[200px]" title={selectedSessionId}>
+          {sessionName}
+        </span>
+      )}
       {cwd && (
         <>
           <span className="opacity-30 mx-0.5">|</span>
-          <button
-            className="flex items-center gap-1 truncate opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
-            onClick={() => {
-              navigator.clipboard.writeText(cwd)
-              setCwdCopied(true)
-              setTimeout(() => setCwdCopied(false), 2000)
-            }}
+          <CopyButton
+            text={cwd}
+            label={cwd.split('/').slice(-2).join('/')}
+            icon={<Folder className="h-3 w-3 shrink-0" />}
             title={`Click to copy: ${cwd}`}
-          >
-            {cwdCopied ? (
-              <Check className="h-3 w-3 shrink-0 text-green-500" />
-            ) : (
-              <Folder className="h-3 w-3 shrink-0" />
-            )}
-            <span className="truncate">
-              {cwdCopied ? 'Copied!' : cwd.split('/').slice(-2).join('/')}
-            </span>
-          </button>
+          />
         </>
       )}
       <button
@@ -78,25 +72,6 @@ export function SessionBreadcrumb() {
       >
         {dedupEnabled ? 'Dedup Events' : 'Raw Events'}
       </button>
-      {transcriptPath && (
-        <button
-          className="shrink-0 opacity-0 group-hover/breadcrumb:opacity-40 hover:!opacity-100 transition-opacity cursor-pointer"
-          onClick={() => {
-            navigator.clipboard.writeText(transcriptPath)
-            setTranscriptCopied(true)
-            setTimeout(() => setTranscriptCopied(false), 2000)
-          }}
-          title={
-            transcriptCopied ? 'Copied transcript path!' : `Copy transcript: ${transcriptPath}`
-          }
-        >
-          {transcriptCopied ? (
-            <Check className="h-3 w-3 text-green-500" />
-          ) : (
-            <Copy className="h-3 w-3" />
-          )}
-        </button>
-      )}
     </div>
   )
 }
