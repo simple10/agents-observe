@@ -153,7 +153,15 @@ export function SessionItem({
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <span className="truncate">{label}</span>
+              <span
+                className="truncate"
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  startEditing(e)
+                }}
+              >
+                {label}
+              </span>
             )}
             {!isEditing && relativeTime && (
               <span className="text-[10px] text-muted-foreground/60 dark:text-muted-foreground/40 ml-auto shrink-0 hidden @[275px]:inline group-hover:!hidden">
