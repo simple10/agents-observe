@@ -329,14 +329,19 @@ router.post('/events', async (c) => {
     // Build response -- request local data if the server is missing info
     const requests: Array<{ cmd: string; args: Record<string, unknown>; callback: string }> = []
 
-    // Request session slug if missing
+    // Request session info (slug + git) when the session still has no slug.
+    // The hook dispatches to an agent-specific reader based on agentClass.
     if (parsed.raw.transcript_path) {
       const session = await store.getSessionById(parsed.sessionId)
       if (session && !session.slug) {
         requests.push({
-          cmd: 'getSessionSlug',
-          args: { transcript_path: parsed.raw.transcript_path },
-          callback: `/api/callbacks/session-slug/${encodeURIComponent(parsed.sessionId)}`,
+          cmd: 'getSessionInfo',
+          args: {
+            transcript_path: parsed.raw.transcript_path,
+            agentClass,
+            cwd: eventCwd,
+          },
+          callback: `/api/callbacks/session-info/${encodeURIComponent(parsed.sessionId)}`,
         })
       }
     }

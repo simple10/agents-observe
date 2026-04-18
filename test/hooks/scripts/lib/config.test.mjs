@@ -334,18 +334,18 @@ describe('config', () => {
 
   it('defaults allowedCallbacks to all handlers', async () => {
     const cfg = await loadConfig()
-    expect(cfg.allowedCallbacks.has('getSessionSlug')).toBe(true)
+    expect(cfg.allowedCallbacks.has('getSessionInfo')).toBe(true)
   })
 
   it('restricts allowedCallbacks from env var', async () => {
-    process.env.AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS = 'getSessionSlug'
+    process.env.AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS = 'getSessionInfo'
     const cfg = await loadConfig()
     expect(cfg.allowedCallbacks.size).toBe(1)
-    expect(cfg.allowedCallbacks.has('getSessionSlug')).toBe(true)
+    expect(cfg.allowedCallbacks.has('getSessionInfo')).toBe(true)
   })
 
   it('filters out unknown callback names', async () => {
-    process.env.AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS = 'getSessionSlug,nonexistent'
+    process.env.AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS = 'getSessionInfo,nonexistent'
     const cfg = await loadConfig()
     expect(cfg.allowedCallbacks.size).toBe(1)
   })

@@ -1,46 +1,38 @@
-import { readFileSync } from 'node:fs'
 import { postJson } from './http.mjs'
+import * as claudeCode from './agents/claude-code.mjs'
+import * as codex from './agents/codex.mjs'
+
+/** Agent-specific callback modules keyed by agentClass. */
+const AGENT_LIBS = {
+  'claude-code': claudeCode,
+  codex: codex,
+}
 
 /* Array of all available callbacks */
-export const ALL_CALLBACK_HANDLERS = ['getSessionSlug']
+export const ALL_CALLBACK_HANDLERS = ['getSessionInfo']
 
 /* Callbacks are functions invoked by the server via requests in API server response */
 const callbackHandlers = {
   /**
-   * Looks up the session "slug" from claude's transcript jsonl file.
-   * Sends slug back to server to update the UI.
+   * Ask the agent-specific lib to extract session metadata (slug +
+   * git info) from the transcript jsonl. The server picks an agentClass
+   * and passes it in `args`; we dispatch to the matching module and
+   * post the result back to the callback URL.
+   *
+   * Contract: each agent's getSessionInfo returns
+   *   { slug: string|null, git: { branch: string|null, repository_url: string|null } }
+   * or null when it can't read the transcript at all.
    */
-  getSessionSlug({ transcript_path }, { log }) {
-    if (!transcript_path) {
-      log.debug('getSessionSlug: no transcript_path provided')
+  getSessionInfo(args, ctx) {
+    const agentClass = args.agentClass
+    const agent = agentClass ? AGENT_LIBS[agentClass] : null
+    if (!agent || typeof agent.getSessionInfo !== 'function') {
+      ctx.log.debug(
+        `getSessionInfo: no agent handler for agentClass="${agentClass ?? ''}"; skipping`,
+      )
       return null
     }
-    let content
-    try {
-      content = readFileSync(transcript_path, 'utf8')
-    } catch (err) {
-      log.warn(`getSessionSlug: cannot read transcript ${transcript_path}: ${err.message}`)
-      return null
-    }
-    let pos = 0
-    while (pos < content.length) {
-      const nextNewline = content.indexOf('\n', pos)
-      const end = nextNewline === -1 ? content.length : nextNewline
-      const line = content.slice(pos, end).trim()
-      pos = end + 1
-      if (!line || !line.includes('"slug"')) continue
-      try {
-        const entry = JSON.parse(line)
-        if (entry.slug) {
-          log.debug(`getSessionSlug: found slug="${entry.slug}"`)
-          return { slug: entry.slug }
-        }
-      } catch {
-        continue
-      }
-    }
-    log.debug(`getSessionSlug: no slug found in ${transcript_path}`)
-    return null
+    return agent.getSessionInfo(args, ctx)
   },
 }
 

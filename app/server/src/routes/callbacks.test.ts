@@ -13,17 +13,19 @@ type Env = {
 describe('callback routes', () => {
   let app: Hono<Env>
   const updateSessionSlug = vi.fn()
+  const patchSessionMetadata = vi.fn()
   const broadcastToAll = vi.fn()
 
   beforeEach(async () => {
     vi.resetModules()
     updateSessionSlug.mockReset()
+    patchSessionMetadata.mockReset()
     broadcastToAll.mockReset()
 
     const { default: callbacksRouter } = await import('./callbacks')
     app = new Hono<Env>()
     app.use('*', async (c, next) => {
-      c.set('store', { updateSessionSlug } as unknown as EventStore)
+      c.set('store', { updateSessionSlug, patchSessionMetadata } as unknown as EventStore)
       c.set('broadcastToAll', broadcastToAll)
       c.set('broadcastToSession', () => {})
       await next()
@@ -31,48 +33,88 @@ describe('callback routes', () => {
     app.route('/api', callbacksRouter)
   })
 
-  describe('POST /api/callbacks/session-slug/:sessionId', () => {
-    test('updates slug and broadcasts', async () => {
-      const res = await app.request('/api/callbacks/session-slug/sess-123', {
+  describe('POST /api/callbacks/session-info/:sessionId', () => {
+    test('sets slug when provided and merges git into metadata', async () => {
+      const res = await app.request('/api/callbacks/session-info/sess-123', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: 'my-session' }),
+        body: JSON.stringify({
+          slug: 'my-session',
+          git: { branch: 'main', repository_url: 'git@ex:r.git' },
+        }),
       })
       expect(res.status).toBe(200)
-      const body = await res.json()
-      expect(body).toEqual({ ok: true })
       expect(updateSessionSlug).toHaveBeenCalledWith('sess-123', 'my-session')
+      expect(patchSessionMetadata).toHaveBeenCalledWith('sess-123', {
+        git: { branch: 'main', repository_url: 'git@ex:r.git' },
+      })
       expect(broadcastToAll).toHaveBeenCalledWith({
         type: 'session_update',
         data: { id: 'sess-123', slug: 'my-session' },
       })
     })
 
-    test('returns 400 when slug is missing', async () => {
-      const res = await app.request('/api/callbacks/session-slug/sess-123', {
+    test('falls back to uuidPrefix-<branch> as the slug when no explicit slug provided', async () => {
+      const res = await app.request('/api/callbacks/session-info/019d9d13-24c6-76f0', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: null,
+          git: { branch: 'feat/x', repository_url: 'git@ex:r.git' },
+        }),
+      })
+      expect(res.status).toBe(200)
+      // Prefix is everything before the first '-' so sessions on the
+      // same branch don't collide.
+      expect(updateSessionSlug).toHaveBeenCalledWith('019d9d13-24c6-76f0', '019d9d13-feat/x')
+      expect(patchSessionMetadata).toHaveBeenCalledWith('019d9d13-24c6-76f0', {
+        git: { branch: 'feat/x', repository_url: 'git@ex:r.git' },
+      })
+    })
+
+    test('does not overwrite slug when only repository_url is provided (no branch fallback)', async () => {
+      const res = await app.request('/api/callbacks/session-info/sess-123', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: null,
+          git: { branch: null, repository_url: 'git@ex:r.git' },
+        }),
+      })
+      expect(res.status).toBe(200)
+      expect(updateSessionSlug).not.toHaveBeenCalled()
+      expect(patchSessionMetadata).toHaveBeenCalledWith('sess-123', {
+        git: { repository_url: 'git@ex:r.git' },
+      })
+      // No slug changed, no broadcast
+      expect(broadcastToAll).not.toHaveBeenCalled()
+    })
+
+    test('skips metadata patch when no git fields are present', async () => {
+      const res = await app.request('/api/callbacks/session-info/sess-123', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: 'just-slug', git: null }),
+      })
+      expect(res.status).toBe(200)
+      expect(updateSessionSlug).toHaveBeenCalledWith('sess-123', 'just-slug')
+      expect(patchSessionMetadata).not.toHaveBeenCalled()
+    })
+
+    test('returns 400 when neither slug nor git info is present', async () => {
+      const res = await app.request('/api/callbacks/session-info/sess-123', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
       expect(res.status).toBe(400)
-      const body = await res.json()
-      expect(body.error.message).toBe('Missing slug')
       expect(updateSessionSlug).not.toHaveBeenCalled()
-    })
-
-    test('returns 400 when slug is not a string', async () => {
-      const res = await app.request('/api/callbacks/session-slug/sess-123', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: 42 }),
-      })
-      expect(res.status).toBe(400)
-      expect(updateSessionSlug).not.toHaveBeenCalled()
+      expect(patchSessionMetadata).not.toHaveBeenCalled()
     })
 
     test('decodes URL-encoded session IDs', async () => {
       const encoded = encodeURIComponent('sess-with-special/chars')
-      const res = await app.request(`/api/callbacks/session-slug/${encoded}`, {
+      const res = await app.request(`/api/callbacks/session-info/${encoded}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug: 'decoded-test' }),

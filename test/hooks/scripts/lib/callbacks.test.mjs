@@ -31,8 +31,8 @@ function startTestServer(handler) {
 }
 
 describe('ALL_CALLBACK_HANDLERS', () => {
-  it('includes getSessionSlug', () => {
-    expect(ALL_CALLBACK_HANDLERS).toContain('getSessionSlug')
+  it('includes getSessionInfo', () => {
+    expect(ALL_CALLBACK_HANDLERS).toContain('getSessionInfo')
   })
 })
 
@@ -47,7 +47,7 @@ describe('handleCallbackRequests', () => {
   it('skips handlers not in allowedCallbacks', async () => {
     const log = makeLog()
     const config = { allowedCallbacks: new Set(), baseOrigin: '' }
-    await handleCallbackRequests([{ cmd: 'getSessionSlug', args: {} }], { config, log })
+    await handleCallbackRequests([{ cmd: 'getSessionInfo', args: {} }], { config, log })
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Blocked callback'))
   })
 
@@ -66,11 +66,11 @@ describe('handleCallbackRequests', () => {
   })
 })
 
-describe('getSessionSlug callback', () => {
+describe('getSessionInfo callback dispatch', () => {
   let testDir
 
   function setup() {
-    testDir = join(tmpdir(), `callbacks-test-${Date.now()}`)
+    testDir = join(tmpdir(), `callbacks-test-${Date.now()}-${Math.random()}`)
     mkdirSync(testDir, { recursive: true })
     return testDir
   }
@@ -79,88 +79,126 @@ describe('getSessionSlug callback', () => {
     if (testDir) rmSync(testDir, { recursive: true, force: true })
   }
 
-  it('extracts slug from transcript file', async () => {
+  it('dispatches to the claude-code lib when agentClass=claude-code', async () => {
     setup()
     const transcriptPath = join(testDir, 'transcript.jsonl')
-    writeFileSync(transcriptPath, '{"type":"system"}\n{"slug":"my-session-slug"}\n')
+    writeFileSync(transcriptPath, '{"type":"system"}\n{"slug":"my-slug","gitBranch":"main"}\n')
 
     const log = makeLog()
+    const received = []
     const { server, baseOrigin } = await startTestServer((req, res) => {
       let body = ''
       req.on('data', (c) => {
         body += c
       })
       req.on('end', () => {
+        received.push(JSON.parse(body))
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true }))
       })
     })
 
-    const config = {
-      allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS),
-      baseOrigin,
-    }
+    const config = { allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS), baseOrigin }
 
     await handleCallbackRequests(
       [
         {
-          cmd: 'getSessionSlug',
-          callback: '/api/sessions/123/metadata',
-          args: { transcript_path: transcriptPath },
+          cmd: 'getSessionInfo',
+          callback: '/api/callbacks/session-info/s1',
+          args: {
+            transcript_path: transcriptPath,
+            agentClass: 'claude-code',
+            cwd: '/tmp/x',
+          },
         },
       ],
       { config, log },
     )
 
-    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('my-session-slug'))
+    expect(received).toHaveLength(1)
+    expect(received[0]).toEqual({
+      slug: 'my-slug',
+      git: { branch: 'main', repository_url: null },
+    })
     server.close()
     cleanup()
   })
 
-  it('returns null when transcript_path is missing', async () => {
-    const log = makeLog()
-    const config = {
-      allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS),
-      baseOrigin: 'http://localhost',
-    }
-
-    await handleCallbackRequests([{ cmd: 'getSessionSlug', args: {} }], { config, log })
-
-    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('no transcript_path'))
-  })
-
-  it('returns null when transcript file does not exist', async () => {
-    const log = makeLog()
-    const config = {
-      allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS),
-      baseOrigin: 'http://localhost',
-    }
-
-    await handleCallbackRequests(
-      [{ cmd: 'getSessionSlug', args: { transcript_path: '/nonexistent/file.jsonl' } }],
-      { config, log },
-    )
-
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('cannot read transcript'))
-  })
-
-  it('returns null when transcript has no slug', async () => {
+  it('dispatches to the codex lib when agentClass=codex', async () => {
     setup()
     const transcriptPath = join(testDir, 'transcript.jsonl')
-    writeFileSync(transcriptPath, '{"type":"system"}\n{"type":"message"}\n')
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          git: { branch: 'feat/x', repository_url: 'git@github.com:ex/r.git' },
+        },
+      }) + '\n',
+    )
 
     const log = makeLog()
-    const config = {
-      allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS),
-      baseOrigin: 'http://localhost',
-    }
+    const received = []
+    const { server, baseOrigin } = await startTestServer((req, res) => {
+      let body = ''
+      req.on('data', (c) => {
+        body += c
+      })
+      req.on('end', () => {
+        received.push(JSON.parse(body))
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      })
+    })
+
+    const config = { allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS), baseOrigin }
 
     await handleCallbackRequests(
-      [{ cmd: 'getSessionSlug', args: { transcript_path: transcriptPath } }],
+      [
+        {
+          cmd: 'getSessionInfo',
+          callback: '/api/callbacks/session-info/s1',
+          args: {
+            transcript_path: transcriptPath,
+            agentClass: 'codex',
+          },
+        },
+      ],
       { config, log },
     )
 
-    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('no slug found'))
+    expect(received).toHaveLength(1)
+    expect(received[0]).toEqual({
+      slug: null,
+      git: { branch: 'feat/x', repository_url: 'git@github.com:ex/r.git' },
+    })
+    server.close()
     cleanup()
+  })
+
+  it('returns null when agentClass is unknown (no dispatch, no POST)', async () => {
+    const log = makeLog()
+    let posted = 0
+    const { server, baseOrigin } = await startTestServer((_req, res) => {
+      posted++
+      res.writeHead(200)
+      res.end()
+    })
+    const config = { allowedCallbacks: new Set(ALL_CALLBACK_HANDLERS), baseOrigin }
+
+    await handleCallbackRequests(
+      [
+        {
+          cmd: 'getSessionInfo',
+          callback: '/api/callbacks/session-info/s1',
+          args: { transcript_path: '/tmp/x.jsonl', agentClass: 'not-a-real-agent' },
+        },
+      ],
+      { config, log },
+    )
+
+    expect(posted).toBe(0)
+    expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('no agent handler'))
+    server.close()
   })
 })
