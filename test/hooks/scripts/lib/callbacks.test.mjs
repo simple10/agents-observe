@@ -116,9 +116,13 @@ describe('getSessionInfo callback dispatch', () => {
     )
 
     expect(received).toHaveLength(1)
+    // Hook dispatcher mirrors agentClass + cwd from the request into
+    // the response so the server doesn't have to look them up.
     expect(received[0]).toEqual({
       slug: 'my-slug',
       git: { branch: 'main', repository_url: null },
+      agentClass: 'claude-code',
+      cwd: '/tmp/x',
     })
     server.close()
     cleanup()
@@ -171,6 +175,9 @@ describe('getSessionInfo callback dispatch', () => {
     expect(received[0]).toEqual({
       slug: null,
       git: { branch: 'feat/x', repository_url: 'git@github.com:ex/r.git' },
+      agentClass: 'codex',
+      // cwd wasn't in args, so the dispatcher mirrors back null.
+      cwd: null,
     })
     server.close()
     cleanup()

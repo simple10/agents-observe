@@ -76,10 +76,19 @@ export async function handleCallbackRequests(requests, { config, log }) {
     log.debug(`Callback ${req.cmd} result: ${JSON.stringify(result)}`)
 
     if (result && req.callback) {
+      // Mirror the request's agentClass + cwd into the response so the
+      // server doesn't need to re-look them up — this keeps the request
+      // and its response tightly coupled (the server processes exactly
+      // what this invocation reported, not whatever the db says now).
+      const payload = {
+        ...result,
+        agentClass: req.args?.agentClass ?? null,
+        cwd: req.args?.cwd ?? null,
+      }
       const callbackUrl = `${config.baseOrigin}${req.callback}`
       log.debug(`Posting callback response to ${callbackUrl}`)
 
-      const resp = await postJson(callbackUrl, result)
+      const resp = await postJson(callbackUrl, payload)
       log.trace(`Callback response status: ${resp.status}`)
     }
   }

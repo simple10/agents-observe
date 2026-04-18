@@ -54,22 +54,65 @@ describe('callback routes', () => {
       })
     })
 
-    test('falls back to uuidPrefix-<branch> as the slug when no explicit slug provided', async () => {
+    test('auto-names slug as uuidPrefix-<branch>:<agentShortName> for claude-code', async () => {
       const res = await app.request('/api/callbacks/session-info/019d9d13-24c6-76f0', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slug: null,
           git: { branch: 'feat/x', repository_url: 'git@ex:r.git' },
+          agentClass: 'claude-code',
         }),
       })
       expect(res.status).toBe(200)
-      // Prefix is everything before the first '-' so sessions on the
-      // same branch don't collide.
-      expect(updateSessionSlug).toHaveBeenCalledWith('019d9d13-24c6-76f0', '019d9d13-feat/x')
+      // claude-code -> "claude"; prefix is the first UUID segment.
+      expect(updateSessionSlug).toHaveBeenCalledWith('019d9d13-24c6-76f0', '019d9d13-feat/x:claude')
       expect(patchSessionMetadata).toHaveBeenCalledWith('019d9d13-24c6-76f0', {
         git: { branch: 'feat/x', repository_url: 'git@ex:r.git' },
       })
+    })
+
+    test('auto-names slug with :codex suffix when agent class is codex', async () => {
+      const res = await app.request('/api/callbacks/session-info/019d9d13-24c6-76f0', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: null,
+          git: { branch: 'feat/x', repository_url: null },
+          agentClass: 'codex',
+        }),
+      })
+      expect(res.status).toBe(200)
+      expect(updateSessionSlug).toHaveBeenCalledWith('019d9d13-24c6-76f0', '019d9d13-feat/x:codex')
+    })
+
+    test('omits agent suffix when agentClass is absent from the body', async () => {
+      const res = await app.request('/api/callbacks/session-info/019d9d13-24c6-76f0', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: null,
+          git: { branch: 'feat/x', repository_url: null },
+        }),
+      })
+      expect(res.status).toBe(200)
+      expect(updateSessionSlug).toHaveBeenCalledWith('019d9d13-24c6-76f0', '019d9d13-feat/x')
+    })
+
+    test('uses explicit slug verbatim even when agentClass is present', async () => {
+      // explicitSlug wins verbatim — no suffix tacked on even if the
+      // hook mirrored an agentClass back to us.
+      const res = await app.request('/api/callbacks/session-info/sess-123', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: 'human-picked-name',
+          git: { branch: 'feat/x', repository_url: null },
+          agentClass: 'claude-code',
+        }),
+      })
+      expect(res.status).toBe(200)
+      expect(updateSessionSlug).toHaveBeenCalledWith('sess-123', 'human-picked-name')
     })
 
     test('does not overwrite slug when only repository_url is provided (no branch fallback)', async () => {
