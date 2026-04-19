@@ -31,6 +31,7 @@ import {
   Hash,
   Terminal,
   Shield,
+  ExternalLink,
 } from 'lucide-react'
 import { MoveSessionModal } from './project-modal'
 import { AgentLabel } from '@/components/shared/agent-label'
@@ -79,7 +80,7 @@ export function SessionEditModal() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'details' | 'stats'>(editingSessionTab)
+  const [activeTab, setActiveTab] = useState<'details' | 'stats' | 'labels'>(editingSessionTab)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Reset local state when modal opens/closes or session changes
@@ -265,7 +266,7 @@ export function SessionEditModal() {
           {/* Tabs */}
           {session && (
             <div className="border-t flex">
-              {(['details', 'stats'] as const).map((tab) => (
+              {(['details', 'stats', 'labels'] as const).map((tab) => (
                 <button
                   key={tab}
                   className={`flex-1 py-2 text-xs font-medium transition-colors cursor-pointer ${
@@ -275,7 +276,7 @@ export function SessionEditModal() {
                   }`}
                   onClick={() => setActiveTab(tab)}
                 >
-                  {tab === 'details' ? 'Details' : 'Stats'}
+                  {tab === 'details' ? 'Details' : tab === 'stats' ? 'Stats' : 'Labels'}
                 </button>
               ))}
             </div>
@@ -360,40 +361,44 @@ export function SessionEditModal() {
                   wrap
                 />
               )}
+              <div className="pt-3 mt-2 border-t flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMoveOpen(true)}
+                  disabled={busy}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+                  Move to project
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmAction('clear')}
+                  disabled={busy}
+                >
+                  <Eraser className="h-3.5 w-3.5 mr-1.5" />
+                  Clear logs
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-muted-foreground hover:text-destructive"
+                  onClick={() => setConfirmAction('delete')}
+                  disabled={busy}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Delete session
+                </Button>
+              </div>
             </div>
           )}
 
           {/* Stats tab */}
           {session && activeTab === 'stats' && <SessionStats sessionId={session.id} />}
 
-          {/* Action buttons */}
-          {session && (
-            <div className="border-t px-5 py-3 flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setMoveOpen(true)} disabled={busy}>
-                <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
-                Move to project
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfirmAction('clear')}
-                disabled={busy}
-              >
-                <Eraser className="h-3.5 w-3.5 mr-1.5" />
-                Clear logs
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto text-muted-foreground hover:text-destructive"
-                onClick={() => setConfirmAction('delete')}
-                disabled={busy}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                Delete session
-              </Button>
-            </div>
-          )}
+          {/* Labels tab */}
+          {session && activeTab === 'labels' && <SessionLabelsTab sessionId={session.id} />}
         </DialogContent>
       </Dialog>
 
@@ -863,6 +868,112 @@ function SessionStats({ sessionId }: { sessionId: string }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function SessionLabelsTab({ sessionId }: { sessionId: string }) {
+  const labels = useUIStore((s) => s.labels)
+  const labelMemberships = useUIStore((s) => s.labelMemberships)
+  const createLabel = useUIStore((s) => s.createLabel)
+  const toggleSessionLabel = useUIStore((s) => s.toggleSessionLabel)
+  const openLabelsModal = useUIStore((s) => s.openLabelsModal)
+  const setEditingSessionId = useUIStore((s) => s.setEditingSessionId)
+
+  const [input, setInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const sortedLabels = useMemo(
+    () => [...labels].sort((a, b) => a.name.localeCompare(b.name)),
+    [labels],
+  )
+
+  const addLabel = () => {
+    const trimmed = input.trim()
+    if (!trimmed) return
+    const lower = trimmed.toLowerCase()
+    if (labels.some((l) => l.name.toLowerCase() === lower)) {
+      setError('A label with that name already exists')
+      return
+    }
+    const created = createLabel(trimmed)
+    if (!created) {
+      setError('Could not create label')
+      return
+    }
+    toggleSessionLabel(created.id, sessionId)
+    setInput('')
+    setError(null)
+  }
+
+  return (
+    <div className="px-5 py-4 text-xs overflow-y-auto max-h-[50vh]">
+      {sortedLabels.length === 0 ? (
+        <p className="text-muted-foreground mb-3">No labels yet. Create one below.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {sortedLabels.map((label) => {
+            const selected = labelMemberships.get(label.id)?.has(sessionId) ?? false
+            return (
+              <div key={label.id} className="flex items-stretch rounded-md overflow-hidden border">
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleSessionLabel(label.id, sessionId)}
+                  className={`px-2 py-1 text-[11px] transition-colors cursor-pointer ${
+                    selected
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background text-foreground hover:bg-accent'
+                  }`}
+                >
+                  {label.name}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Open "${label.name}" in Labels modal`}
+                  title="Open in Labels modal"
+                  onClick={() => {
+                    setEditingSessionId(null)
+                    openLabelsModal(label.id)
+                  }}
+                  className={`px-1.5 flex items-center border-l transition-colors cursor-pointer ${
+                    selected
+                      ? 'bg-primary/90 text-primary-foreground hover:bg-primary border-primary-foreground/20'
+                      : 'bg-background text-muted-foreground hover:bg-accent hover:text-foreground border-border'
+                  }`}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Input
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value)
+            if (error) setError(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              addLabel()
+            }
+          }}
+          placeholder="New label name..."
+          className="h-8 text-xs"
+        />
+        <Button variant="outline" size="sm" onClick={addLabel} disabled={!input.trim()}>
+          Add
+        </Button>
+      </div>
+      {error && <p className="text-[11px] text-destructive mt-1.5">{error}</p>}
+      <p className="text-[10px] text-muted-foreground/70 mt-3">
+        Labels are saved in this browser only.
+      </p>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SettingsModal } from '@/components/settings/settings-modal'
 import { ChangelogModal } from '@/components/changelog-modal'
+import { LabelsModal } from '@/components/labels/labels-modal'
 
 interface SidebarProps {
   connected: boolean
@@ -153,6 +154,7 @@ export function Sidebar({ connected }: SidebarProps) {
       </div>
 
       <SettingsModal />
+      <LabelsModal />
       <ChangelogModal open={changelogOpen} onOpenChange={setChangelogOpen} />
 
       {/* Resize handle */}

@@ -6,6 +6,12 @@ export interface Project {
   sessionCount?: number
 }
 
+export interface Label {
+  id: string
+  name: string
+  createdAt: number
+}
+
 export interface Session {
   id: string
   projectId: number
@@ -65,6 +71,7 @@ export interface RecentSession {
   projectSlug: string
   projectName: string
   slug: string | null
+  transcriptPath?: string | null
   status: string
   startedAt: number
   stoppedAt: number | null

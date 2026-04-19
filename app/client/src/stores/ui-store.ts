@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ParsedEvent } from '@/types'
+import type { Label, ParsedEvent } from '@/types'
 import type { TimeRange } from '@/config/time-ranges'
 
 // Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
@@ -101,8 +101,22 @@ interface UIState {
 
   // Session being edited in the SessionEditModal (null = closed)
   editingSessionId: string | null
-  editingSessionTab: 'details' | 'stats'
-  setEditingSessionId: (id: string | null, tab?: 'details' | 'stats') => void
+  editingSessionTab: 'details' | 'stats' | 'labels'
+  setEditingSessionId: (id: string | null, tab?: 'details' | 'stats' | 'labels') => void
+
+  // Labels — user-defined bookmarks across sessions (localStorage only)
+  labels: Label[]
+  labelMemberships: Map<string, Set<string>> // labelId → sessionIds
+  createLabel: (name: string) => Label | null
+  renameLabel: (id: string, name: string) => boolean
+  deleteLabel: (id: string) => void
+  toggleSessionLabel: (labelId: string, sessionId: string) => void
+  getLabelsForSession: (sessionId: string) => Label[]
+  labelsModalOpen: boolean
+  labelsModalScrollToId: string | null
+  openLabelsModal: (scrollToLabelId?: string) => void
+  closeLabelsModal: () => void
+  clearLabelsModalScrollTarget: () => void
 
   // Settings modal
   settingsOpen: boolean
@@ -163,6 +177,61 @@ function loadPinnedSessions(): Set<string> {
 
 function savePinnedSessions(ids: Set<string>) {
   localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify([...ids]))
+}
+
+const LABELS_STORAGE_KEY = 'agents-observe-labels'
+const LABEL_MEMBERSHIP_STORAGE_KEY = 'agents-observe-label-memberships'
+
+function loadLabels(): Label[] {
+  try {
+    const raw = localStorage.getItem(LABELS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (l): l is Label =>
+        l &&
+        typeof l.id === 'string' &&
+        typeof l.name === 'string' &&
+        typeof l.createdAt === 'number',
+    )
+  } catch {
+    return []
+  }
+}
+
+function saveLabels(labels: Label[]) {
+  localStorage.setItem(LABELS_STORAGE_KEY, JSON.stringify(labels))
+}
+
+function loadLabelMemberships(): Map<string, Set<string>> {
+  try {
+    const raw = localStorage.getItem(LABEL_MEMBERSHIP_STORAGE_KEY)
+    if (!raw) return new Map()
+    const parsed = JSON.parse(raw) as Record<string, string[]>
+    const map = new Map<string, Set<string>>()
+    for (const [labelId, sessionIds] of Object.entries(parsed)) {
+      if (Array.isArray(sessionIds)) map.set(labelId, new Set(sessionIds))
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
+function saveLabelMemberships(memberships: Map<string, Set<string>>) {
+  const obj: Record<string, string[]> = {}
+  for (const [labelId, sessionIds] of memberships) {
+    obj[labelId] = [...sessionIds]
+  }
+  localStorage.setItem(LABEL_MEMBERSHIP_STORAGE_KEY, JSON.stringify(obj))
+}
+
+function genLabelId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `label-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 const { projectSlug: initialProjectSlug, sessionId: initialSessionId } = parseHash()
@@ -360,6 +429,61 @@ export const useUIStore = create<UIState>((set, get) => ({
       return { pinnedSessionIds: next }
     }),
   isSessionPinned: (id) => get().pinnedSessionIds.has(id),
+
+  labels: loadLabels(),
+  labelMemberships: loadLabelMemberships(),
+  createLabel: (name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    const state = get()
+    const lower = trimmed.toLowerCase()
+    if (state.labels.some((l) => l.name.toLowerCase() === lower)) return null
+    const label: Label = { id: genLabelId(), name: trimmed, createdAt: Date.now() }
+    const nextLabels = [...state.labels, label]
+    saveLabels(nextLabels)
+    set({ labels: nextLabels })
+    return label
+  },
+  renameLabel: (id, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return false
+    const state = get()
+    const lower = trimmed.toLowerCase()
+    if (state.labels.some((l) => l.id !== id && l.name.toLowerCase() === lower)) return false
+    const nextLabels = state.labels.map((l) => (l.id === id ? { ...l, name: trimmed } : l))
+    saveLabels(nextLabels)
+    set({ labels: nextLabels })
+    return true
+  },
+  deleteLabel: (id) =>
+    set((s) => {
+      const nextLabels = s.labels.filter((l) => l.id !== id)
+      const nextMemberships = new Map(s.labelMemberships)
+      nextMemberships.delete(id)
+      saveLabels(nextLabels)
+      saveLabelMemberships(nextMemberships)
+      return { labels: nextLabels, labelMemberships: nextMemberships }
+    }),
+  toggleSessionLabel: (labelId, sessionId) =>
+    set((s) => {
+      const nextMemberships = new Map(s.labelMemberships)
+      const existing = new Set(nextMemberships.get(labelId) ?? [])
+      if (existing.has(sessionId)) existing.delete(sessionId)
+      else existing.add(sessionId)
+      nextMemberships.set(labelId, existing)
+      saveLabelMemberships(nextMemberships)
+      return { labelMemberships: nextMemberships }
+    }),
+  getLabelsForSession: (sessionId) => {
+    const state = get()
+    return state.labels.filter((l) => state.labelMemberships.get(l.id)?.has(sessionId))
+  },
+  labelsModalOpen: false,
+  labelsModalScrollToId: null,
+  openLabelsModal: (scrollToLabelId) =>
+    set({ labelsModalOpen: true, labelsModalScrollToId: scrollToLabelId ?? null }),
+  closeLabelsModal: () => set({ labelsModalOpen: false, labelsModalScrollToId: null }),
+  clearLabelsModalScrollTarget: () => set({ labelsModalScrollToId: null }),
 
   iconCustomizationVersion: 0,
   bumpIconCustomizationVersion: () =>

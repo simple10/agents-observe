@@ -3,7 +3,7 @@ import { useProjects } from '@/hooks/use-projects'
 import { useSessions } from '@/hooks/use-sessions'
 import { useEvents } from '@/hooks/use-events'
 import { useUIStore } from '@/stores/ui-store'
-import { ChevronDown, ChevronRight, Folder, Pencil, Clock, CalendarDays } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, Pencil, Clock, CalendarDays, Tag } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useQueryClient } from '@tanstack/react-query'
@@ -121,6 +121,8 @@ function groupSessionsByDate(sessions: Session[], sortBy: 'activity' | 'created'
 export function ProjectList({ collapsed }: ProjectListProps) {
   const { data: projects } = useProjects()
   const { selectedProjectId, setSelectedProject } = useUIStore()
+  const labelCount = useUIStore((s) => s.labels.length)
+  const openLabelsModal = useUIStore((s) => s.openLabelsModal)
 
   const [modalProjectId, setModalProjectId] = useState<number | null>(null)
   const modalProject = projects?.find((p) => p.id === modalProjectId) ?? null
@@ -130,20 +132,48 @@ export function ProjectList({ collapsed }: ProjectListProps) {
     setModalProjectId(project.id)
   }, [])
 
+  const header = !collapsed && (
+    <div className="flex items-center px-2 py-1">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Projects</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Open labels"
+            onClick={() => openLabelsModal()}
+            className="ml-auto cursor-pointer"
+          >
+            <Badge
+              variant="secondary"
+              className="text-[10px] h-4 px-1 gap-0.5 hover:bg-secondary/70"
+            >
+              <Tag className="h-2.5 w-2.5" />
+              {labelCount}
+            </Badge>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="text-xs">
+          Labels
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  )
+
   if (!projects?.length) {
     return (
-      <div className="text-xs text-muted-foreground p-2">{collapsed ? '' : 'No projects yet'}</div>
+      <TooltipProvider>
+        {header}
+        <div className="text-xs text-muted-foreground p-2">
+          {collapsed ? '' : 'No projects yet'}
+        </div>
+      </TooltipProvider>
     )
   }
 
   return (
     <TooltipProvider>
       <div className="space-y-1">
-        {!collapsed && (
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
-            Projects
-          </div>
-        )}
+        {header}
         {projects.map((project) => {
           const isSelected = selectedProjectId === project.id
           const displayLabel = project.name

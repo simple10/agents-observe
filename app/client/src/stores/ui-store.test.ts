@@ -454,4 +454,93 @@ describe('ui-store', () => {
       expect(useUIStore.getState().rewindMode).toBe(false)
     })
   })
+
+  describe('labels', () => {
+    beforeEach(() => {
+      localStorage.removeItem('agents-observe-labels')
+      localStorage.removeItem('agents-observe-label-memberships')
+      useUIStore.setState({
+        labels: [],
+        labelMemberships: new Map(),
+        labelsModalOpen: false,
+      })
+    })
+
+    it('creates a label with trimmed name', () => {
+      const label = useUIStore.getState().createLabel('  bugs  ')
+      expect(label?.name).toBe('bugs')
+      expect(useUIStore.getState().labels).toHaveLength(1)
+    })
+
+    it('rejects empty label names', () => {
+      expect(useUIStore.getState().createLabel('   ')).toBeNull()
+      expect(useUIStore.getState().labels).toHaveLength(0)
+    })
+
+    it('rejects case-insensitive duplicate label names', () => {
+      useUIStore.getState().createLabel('Bugs')
+      expect(useUIStore.getState().createLabel('bugs')).toBeNull()
+      expect(useUIStore.getState().createLabel('BUGS')).toBeNull()
+      expect(useUIStore.getState().labels).toHaveLength(1)
+    })
+
+    it('persists labels to localStorage', () => {
+      useUIStore.getState().createLabel('auth')
+      const raw = localStorage.getItem('agents-observe-labels')
+      expect(raw).toBeTruthy()
+      const parsed = JSON.parse(raw!) as { name: string }[]
+      expect(parsed[0].name).toBe('auth')
+    })
+
+    it('toggles session membership and persists', () => {
+      const label = useUIStore.getState().createLabel('auth')!
+      useUIStore.getState().toggleSessionLabel(label.id, 'sess-1')
+      expect(useUIStore.getState().getLabelsForSession('sess-1')).toHaveLength(1)
+      useUIStore.getState().toggleSessionLabel(label.id, 'sess-1')
+      expect(useUIStore.getState().getLabelsForSession('sess-1')).toHaveLength(0)
+
+      useUIStore.getState().toggleSessionLabel(label.id, 'sess-2')
+      const raw = localStorage.getItem('agents-observe-label-memberships')
+      expect(raw).toBeTruthy()
+      const parsed = JSON.parse(raw!) as Record<string, string[]>
+      expect(parsed[label.id]).toEqual(['sess-2'])
+    })
+
+    it('renames a label and rejects case-insensitive collisions', () => {
+      const a = useUIStore.getState().createLabel('auth')!
+      useUIStore.getState().createLabel('bugs')
+      expect(useUIStore.getState().renameLabel(a.id, 'Bugs')).toBe(false)
+      expect(useUIStore.getState().renameLabel(a.id, 'Auth v2')).toBe(true)
+      expect(useUIStore.getState().labels.find((l) => l.id === a.id)?.name).toBe('Auth v2')
+    })
+
+    it('deletes a label and removes its memberships', () => {
+      const a = useUIStore.getState().createLabel('auth')!
+      useUIStore.getState().toggleSessionLabel(a.id, 'sess-1')
+      useUIStore.getState().deleteLabel(a.id)
+      expect(useUIStore.getState().labels).toHaveLength(0)
+      expect(useUIStore.getState().labelMemberships.get(a.id)).toBeUndefined()
+      expect(useUIStore.getState().getLabelsForSession('sess-1')).toHaveLength(0)
+    })
+
+    it('getLabelsForSession returns labels a session belongs to', () => {
+      const a = useUIStore.getState().createLabel('auth')!
+      const b = useUIStore.getState().createLabel('bugs')!
+      useUIStore.getState().toggleSessionLabel(a.id, 'sess-1')
+      useUIStore.getState().toggleSessionLabel(b.id, 'sess-1')
+      useUIStore.getState().toggleSessionLabel(a.id, 'sess-2')
+      const forOne = useUIStore.getState().getLabelsForSession('sess-1')
+      expect(forOne.map((l) => l.name).sort()).toEqual(['auth', 'bugs'])
+      const forTwo = useUIStore.getState().getLabelsForSession('sess-2')
+      expect(forTwo.map((l) => l.name)).toEqual(['auth'])
+    })
+
+    it('opens and closes the labels modal', () => {
+      expect(useUIStore.getState().labelsModalOpen).toBe(false)
+      useUIStore.getState().openLabelsModal()
+      expect(useUIStore.getState().labelsModalOpen).toBe(true)
+      useUIStore.getState().closeLabelsModal()
+      expect(useUIStore.getState().labelsModalOpen).toBe(false)
+    })
+  })
 })

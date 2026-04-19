@@ -39,6 +39,7 @@ router.get('/sessions/recent', async (c) => {
     projectName: r.project_name,
     projectSlug: r.project_slug,
     slug: r.slug,
+    transcriptPath: r.transcript_path || null,
     status: r.status,
     startedAt: r.started_at,
     stoppedAt: r.stopped_at,
