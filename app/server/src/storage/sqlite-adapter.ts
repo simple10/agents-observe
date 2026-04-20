@@ -467,36 +467,17 @@ export class SqliteAdapter implements EventStore {
 
   async getSessionsWithPendingNotifications(sinceTs: number): Promise<any[]> {
     // A session is "pending" when `pending_notification_ts` is set. The
-    // column is driven entirely by envelope flags (meta.isNotification /
-    // meta.clearsNotification) at event-insert time — the WHERE clause
-    // below does not look at `subtype`.
-    //
-    // The `count` subquery is a pragmatic approximation of "how many
-    // Notifications piled up since the last clearing event." It still
-    // filters on subtype = 'Notification' because Claude Code emits both
-    // the subtype AND `isNotification:true` on the same event — so for
-    // Claude Code this count is accurate. Agent classes that produce
-    // "awaiting user" states without a 'Notification' subtype will get
-    // a count of 0 here; acceptable for v1. `sinceTs` is the client's
-    // last-seen cursor for resume on page load.
+    // column is driven entirely by envelope flags at event-insert time —
+    // this query never inspects `subtype`. `sinceTs` is the client's
+    // last-seen cursor for resume on page load. Pending is binary: the
+    // session either has a notification pending or it doesn't.
     return this.db
       .prepare(
         `
       SELECT
         s.id as session_id,
         s.project_id,
-        s.pending_notification_ts,
-        (
-          SELECT COUNT(*) FROM events e
-          WHERE e.session_id = s.id
-            AND e.subtype = 'Notification'
-            AND e.timestamp > COALESCE(
-              (SELECT MAX(timestamp) FROM events e2
-                 WHERE e2.session_id = s.id
-                   AND COALESCE(e2.subtype, '') != 'Notification'),
-              0
-            )
-        ) AS count
+        s.pending_notification_ts
       FROM sessions s
       WHERE s.pending_notification_ts IS NOT NULL
         AND s.pending_notification_ts > ?

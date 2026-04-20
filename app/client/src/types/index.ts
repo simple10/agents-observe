@@ -86,7 +86,6 @@ export interface NotificationPayload {
   sessionId: string
   projectId: number
   latestNotificationTs: number
-  count: number
 }
 
 export type WSMessage =

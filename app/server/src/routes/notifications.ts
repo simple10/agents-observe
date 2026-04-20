@@ -25,7 +25,6 @@ router.get('/notifications', async (c) => {
     sessionId: r.session_id,
     projectId: r.project_id,
     latestNotificationTs: r.pending_notification_ts,
-    count: r.count,
   }))
   return c.json(notifications)
 })

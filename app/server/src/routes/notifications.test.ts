@@ -27,7 +27,6 @@ describe('GET /api/notifications', () => {
         session_id: 'sess-a',
         project_id: 42,
         pending_notification_ts: 1700000000000,
-        count: 2,
       },
     ])
     const res = await app.request('/api/notifications')
@@ -38,7 +37,6 @@ describe('GET /api/notifications', () => {
         sessionId: 'sess-a',
         projectId: 42,
         latestNotificationTs: 1700000000000,
-        count: 2,
       },
     ])
     // Default since=0 when the query param is missing.

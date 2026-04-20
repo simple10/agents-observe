@@ -51,9 +51,10 @@ export const TimelineRewind = memo(function TimelineRewind({
   const { timeRange, selectedAgentIds, setScrollToEventId } = useUIStore()
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Re-dedupe is a no-op since we receive already-deduped events, but we still
-  // need spawnInfo/etc. for filtering consistency with event-stream.
-  const { deduped } = useDedupedEvents(events)
+  // Re-dedupe is a no-op when we receive already-deduped events, but the
+  // hook is cheap and keeps this component resilient to callers passing
+  // raw events.
+  const deduped = useDedupedEvents(events)
 
   // Compute session time span and pixel scale
   const { sessionStart, totalWidth, pixelsPerMs } = useMemo(() => {
