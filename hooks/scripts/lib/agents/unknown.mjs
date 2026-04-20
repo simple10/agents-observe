@@ -1,8 +1,11 @@
 // hooks/scripts/lib/agents/unknown.mjs
 // Fallback agent lib used when the CLI is invoked with an agent class
 // that doesn't have a dedicated module. Builds a pass-through envelope
-// with no notification flags — so unrecognized agents silently work but
-// never produce bells until they implement their own lib.
+// with no class-specific categorization — so unrecognized agents
+// silently work but never produce bells unless the user explicitly
+// opts specific hook events into AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS.
+
+import { isNotificationEvent } from './index.mjs'
 
 function buildEnv(config) {
   const env = {}
@@ -20,6 +23,12 @@ export function buildHookEvent(config, _log, hookPayload) {
   const toolName = hookPayload?.tool_name || hookPayload?.tool?.name || null
   const sessionId = hookPayload?.session_id || undefined
   const agentId = hookPayload?.agent_id || null
+
+  const flags = {}
+  if (isNotificationEvent(config, hookName, hookPayload)) {
+    flags.isNotification = true
+  }
+
   const envelope = {
     hook_payload: hookPayload,
     meta: {
@@ -32,6 +41,7 @@ export function buildHookEvent(config, _log, hookPayload) {
       toolName,
       sessionId,
       agentId,
+      ...flags,
     },
   }
   return { envelope, hookEvent: hookName, toolName: toolName || '' }

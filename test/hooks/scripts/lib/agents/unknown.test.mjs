@@ -45,6 +45,26 @@ describe('unknown.buildHookEvent', () => {
     expect(envelope.meta.type).toBeUndefined()
     expect(envelope.meta.subtype).toBeUndefined()
   })
+
+  describe('notificationOnEvents opt-in', () => {
+    it('flags isNotification when the hook event is in the configured list', () => {
+      const optIn = { agentClass: 'unknown', notificationOnEvents: ['AwaitingInput'] }
+      const { envelope } = buildHookEvent(optIn, makeLog(), { hook_event_name: 'AwaitingInput' })
+      expect(envelope.meta.isNotification).toBe(true)
+    })
+
+    it('does not flag events not in the configured list', () => {
+      const optIn = { agentClass: 'unknown', notificationOnEvents: ['AwaitingInput'] }
+      const { envelope } = buildHookEvent(optIn, makeLog(), { hook_event_name: 'SomethingElse' })
+      expect(envelope.meta.isNotification).toBeUndefined()
+    })
+
+    it('empty list disables notifications entirely', () => {
+      const optOut = { agentClass: 'unknown', notificationOnEvents: [] }
+      const { envelope } = buildHookEvent(optOut, makeLog(), { hook_event_name: 'Notification' })
+      expect(envelope.meta.isNotification).toBeUndefined()
+    })
+  })
 })
 
 describe('unknown.getSessionInfo', () => {
