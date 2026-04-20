@@ -13,6 +13,7 @@ import { format } from 'timeago.js'
 import { buildAgentColorMap } from '@/lib/agent-utils'
 import { QueryBoundary } from '@/components/shared/query-boundary'
 import { EmptyState, Spinner } from '@/components/shared/loading-states'
+import { eventMatchesFilters } from '@/config/filters'
 import type { Agent } from '@/types'
 
 export function EventStream() {
@@ -81,14 +82,13 @@ export function EventStream() {
     }
 
     // Static category filters (row 1: Prompts, Tools, Agents, etc.)
+    // Delegate to the shared STATIC_FILTERS config so events that
+    // belong to multiple categories (e.g. SubagentStop → Agents AND
+    // Stop) match whichever filter the user picked. Previously we
+    // filtered by the singular `filterTags.static`, which forced a
+    // single category per event.
     if (deferredStaticFilters.length > 0) {
-      filtered = filtered.filter((e) => {
-        // 'Errors' is a cross-cutting filter — matches any event with failed status or error payload
-        if (deferredStaticFilters.includes('Errors')) {
-          if (e.status === 'failed' || (e.payload as any)?.error) return true
-        }
-        return e.filterTags.static !== null && deferredStaticFilters.includes(e.filterTags.static)
-      })
+      filtered = filtered.filter((e) => eventMatchesFilters(e, deferredStaticFilters, []))
     }
 
     // Dynamic tool filters (row 2: Bash, Read, Edit, etc.)

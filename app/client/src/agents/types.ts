@@ -15,6 +15,7 @@ export interface EnrichedEvent {
   id: number
   agentId: string
   sessionId: string
+  hookName: string | null
   timestamp: number
   createdAt: number
   type: string

@@ -24,6 +24,7 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     id: raw.id,
     agentId: raw.agentId,
     sessionId: raw.sessionId,
+    hookName: raw.hookName,
     timestamp: raw.timestamp,
     createdAt: raw.createdAt,
     type: raw.type,
