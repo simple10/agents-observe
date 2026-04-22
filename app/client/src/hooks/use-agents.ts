@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { Agent, ServerAgent, ParsedEvent } from '@/types'
@@ -11,7 +11,10 @@ const pendingFetches = new Set<string>()
 /**
  * Derives full Agent objects from server metadata + events.
  * Status, eventCount, and timing are computed from events.
- * Detects unknown agents and fetches their metadata on demand.
+ * Detects unknown agents and fetches their metadata on demand — that
+ * fetch is a side effect and lives in a useEffect, not the render-time
+ * useMemo that builds the Agent[] (React's rules: pure renders, side
+ * effects in useEffect).
  */
 export function useAgents(sessionId: string | null, events: ParsedEvent[] | undefined): Agent[] {
   const queryClient = useQueryClient()
@@ -22,11 +25,9 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
     enabled: !!sessionId,
   })
 
-  return useMemo(() => {
-    if (!events) return []
-
-    // Build per-agent stats from events
-    const agentStats = new Map<
+  // Pure render: compute per-agent stats from events. No side effects.
+  const agentStats = useMemo(() => {
+    const stats = new Map<
       string,
       {
         eventCount: number
@@ -36,71 +37,77 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
         cwd: string | null
       }
     >()
-
+    if (!events) return stats
     const stopSubtypes = new Set(['Stop', 'SessionEnd', 'stop_hook_summary'])
-
     for (const e of events) {
-      let stats = agentStats.get(e.agentId)
-      if (!stats) {
-        stats = {
+      let s = stats.get(e.agentId)
+      if (!s) {
+        s = {
           eventCount: 0,
           firstEventAt: e.timestamp,
           lastEventAt: e.timestamp,
           lastStoppedAt: 0,
           cwd: null,
         }
-        agentStats.set(e.agentId, stats)
+        stats.set(e.agentId, s)
       }
-      if (!stats.cwd && typeof (e.payload as any)?.cwd === 'string') {
-        stats.cwd = (e.payload as any).cwd
+      if (!s.cwd && typeof (e.payload as any)?.cwd === 'string') {
+        s.cwd = (e.payload as any).cwd
       }
-      stats.eventCount++
-      if (e.timestamp < stats.firstEventAt) stats.firstEventAt = e.timestamp
-      if (e.timestamp > stats.lastEventAt) stats.lastEventAt = e.timestamp
-
-      // Stop signals for this agent's own events
+      s.eventCount++
+      if (e.timestamp < s.firstEventAt) s.firstEventAt = e.timestamp
+      if (e.timestamp > s.lastEventAt) s.lastEventAt = e.timestamp
       if (stopSubtypes.has(e.subtype ?? '')) {
-        stats.lastStoppedAt = Math.max(stats.lastStoppedAt, e.timestamp)
+        s.lastStoppedAt = Math.max(s.lastStoppedAt, e.timestamp)
       }
-
       // SubagentStop targets the agent ID in the payload, not the event's agentId
       if (e.subtype === 'SubagentStop') {
         const targetId = (e.payload as any)?.agent_id
         if (targetId) {
-          const targetStats = agentStats.get(targetId)
-          if (targetStats) {
-            targetStats.lastStoppedAt = Math.max(targetStats.lastStoppedAt, e.timestamp)
-          }
+          const target = stats.get(targetId)
+          if (target) target.lastStoppedAt = Math.max(target.lastStoppedAt, e.timestamp)
         }
       }
     }
+    return stats
+  }, [events])
 
-    // Server metadata lookup
-    const serverMap = new Map<string, ServerAgent>()
-    serverAgents?.forEach((a) => serverMap.set(a.id, a))
-
-    // Merge: for every agent seen in events, create a full Agent
-    const result: Agent[] = []
-    for (const [agentId, stats] of agentStats) {
-      const server = serverMap.get(agentId)
-
-      // Fetch metadata for agents we haven't seen from the server yet
-      if (!server && !pendingFetches.has(agentId)) {
-        pendingFetches.add(agentId)
-        api
-          .getAgent(agentId)
-          .then((agent) => {
-            queryClient.setQueryData<ServerAgent[]>(['agents', sessionId], (old) => {
-              if (!old) return [agent]
-              if (old.some((a) => a.id === agent.id)) {
-                return old.map((a) => (a.id === agent.id ? agent : a))
-              }
-              return [...old, agent]
-            })
+  // Side effect: for every agentId seen in events but not present in
+  // serverAgents, fetch the metadata and patch it into the ['agents',
+  // sessionId] cache. Previously this lived inside the useMemo above,
+  // which violated React's "pure render" contract (and could double-
+  // fire in StrictMode). Moving it to useEffect keeps the pattern
+  // honest without changing behavior.
+  useEffect(() => {
+    if (!sessionId || agentStats.size === 0) return
+    const serverIds = new Set<string>()
+    if (serverAgents) for (const a of serverAgents) serverIds.add(a.id)
+    for (const agentId of agentStats.keys()) {
+      if (serverIds.has(agentId)) continue
+      if (pendingFetches.has(agentId)) continue
+      pendingFetches.add(agentId)
+      api
+        .getAgent(agentId)
+        .then((agent) => {
+          queryClient.setQueryData<ServerAgent[]>(['agents', sessionId], (old) => {
+            if (!old) return [agent]
+            if (old.some((a) => a.id === agent.id)) {
+              return old.map((a) => (a.id === agent.id ? agent : a))
+            }
+            return [...old, agent]
           })
-          .catch(() => {})
-      }
+        })
+        .catch(() => {})
+    }
+  }, [agentStats, serverAgents, sessionId, queryClient])
 
+  // Pure render: merge event-derived stats with server metadata.
+  return useMemo(() => {
+    const serverMap = new Map<string, ServerAgent>()
+    if (serverAgents) for (const a of serverAgents) serverMap.set(a.id, a)
+    const result: Agent[] = []
+    for (const [agentId, s] of agentStats) {
+      const server = serverMap.get(agentId)
       result.push({
         id: agentId,
         sessionId: sessionId || '',
@@ -110,14 +117,13 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
         agentType: server?.agentType ?? null,
         agentClass: server?.agentClass ?? null,
         // Agent is stopped if the last stop signal came after or at the last activity
-        status: stats.lastStoppedAt >= stats.lastEventAt ? 'stopped' : 'active',
-        eventCount: stats.eventCount,
-        firstEventAt: stats.firstEventAt,
-        lastEventAt: stats.lastEventAt,
-        cwd: stats.cwd,
+        status: s.lastStoppedAt >= s.lastEventAt ? 'stopped' : 'active',
+        eventCount: s.eventCount,
+        firstEventAt: s.firstEventAt,
+        lastEventAt: s.lastEventAt,
+        cwd: s.cwd,
       })
     }
-
     return result
-  }, [events, serverAgents, sessionId, queryClient])
+  }, [agentStats, serverAgents, sessionId])
 }
