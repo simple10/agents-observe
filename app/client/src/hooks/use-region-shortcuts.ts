@@ -26,9 +26,7 @@ function focusFirstFilterPill() {
 }
 
 function focusSidebar() {
-  const selected = document.querySelector<HTMLElement>(
-    '[data-sidebar-item][aria-current="true"]',
-  )
+  const selected = document.querySelector<HTMLElement>('[data-sidebar-item][aria-current="true"]')
   const target = selected ?? document.querySelector<HTMLElement>('[data-sidebar-item]')
   target?.focus()
 }

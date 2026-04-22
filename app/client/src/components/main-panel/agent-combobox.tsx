@@ -77,7 +77,12 @@ export function AgentCombobox() {
     <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button data-region-target="agents" variant="outline" size="sm" className="h-7 gap-1.5 text-xs px-2.5">
+          <Button
+            data-region-target="agents"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs px-2.5"
+          >
             <Users className="h-3.5 w-3.5" />
             Agents
             {activeCount > 0 && (
