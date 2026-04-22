@@ -413,7 +413,7 @@ function SessionList({ projectId }: { projectId: number }) {
             {hiddenCount > 0 && (
               <button
                 data-sidebar-item=""
-                className="w-full text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 cursor-pointer"
+                className="w-full text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
                 onClick={() => toggleGroup(group.label)}
               >
                 Show {hiddenCount} more...
@@ -424,7 +424,7 @@ function SessionList({ projectId }: { projectId: number }) {
               group.sessions.length > previewCount && (
                 <button
                   data-sidebar-item=""
-                  className="w-full text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 cursor-pointer"
+                  className="w-full text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
                   onClick={() => toggleGroup(group.label)}
                 >
                   Show less

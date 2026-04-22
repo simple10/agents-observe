@@ -49,7 +49,7 @@ export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
               <button
                 data-sidebar-item=""
                 className={cn(
-                  'flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer',
+                  'flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                   selectedSessionId === session.id
                     ? 'bg-primary/10 text-primary border border-primary/30'
                     : 'text-muted-foreground hover:bg-accent',
