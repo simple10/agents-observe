@@ -152,6 +152,18 @@ export function getConfig(overrides = {}) {
     /** Max ms to wait for server startup in hook-autostart before returning a timeout message */
     hookStartupTimeout: parseInt(process.env.AGENTS_OBSERVE_HOOK_STARTUP_TIMEOUT || '30000', 10),
 
+    /**
+     * Maximum base64-encoded image data size (in chars) kept in the
+     * tool_response payload sent to the server. Images larger than
+     * this are replaced with '[REDACTED]' before the event is POSTed,
+     * so huge screenshots (MCP devtools take_screenshot, etc.) don't
+     * balloon the event DB. Set to 0 to disable redaction entirely.
+     */
+    maxImageDataChars: parseInt(
+      overrides.maxImageDataChars || process.env.AGENTS_OBSERVE_MAX_IMAGE_DATA_CHARS || '50000',
+      10,
+    ),
+
     /* Test harness only — skip `docker pull` when image is pre-loaded. See docs/plans/_queued/spec-fresh-install-test-harness.md */
     testSkipPull: overrides.testSkipPull || process.env.AGENTS_OBSERVE_TEST_SKIP_PULL === '1',
 

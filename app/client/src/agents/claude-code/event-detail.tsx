@@ -831,14 +831,59 @@ function ToolDetail({
         </div>
       )
     }
-    default:
+    default: {
+      // Extract any base64 images from the tool_response so MCP tools
+      // that return screenshots (chrome-devtools take_screenshot,
+      // etc.) render their images inline. `data.length > 100` guards
+      // against both empty strings and the "[REDACTED]" sentinel
+      // stamped by the hook CLI's stripLargeImageData.
+      const rawResponse =
+        (pairedEvent?.payload as Record<string, unknown> | undefined)?.tool_response ??
+        payload.tool_response
+      const images = extractBase64Images(rawResponse)
       return (
         <div className="space-y-1.5">
           {ti.description && <DetailRow label="Description" value={ti.description} />}
           {result && <DetailCode label="Result" value={formatResult(result)} />}
+          {images.map((img, i) => (
+            // Matches DetailRow's layout: fixed-width label on the
+            // left, value on the right. Keeps the image visually
+            // aligned with the Description / Result rows above.
+            <div key={i} className="flex gap-2">
+              <span className="text-muted-foreground shrink-0 w-20 text-right">
+                {images.length > 1 ? `Image ${i + 1}:` : 'Image:'}
+              </span>
+              <div className="min-w-0 rounded-md border overflow-hidden bg-muted/30 flex items-center justify-center p-2">
+                <img
+                  src={`data:${img.mediaType};base64,${img.data}`}
+                  alt="Tool response image"
+                  className="max-w-full max-h-[480px] object-contain"
+                />
+              </div>
+            </div>
+          ))}
         </div>
       )
+    }
   }
+}
+
+function extractBase64Images(resp: unknown): { mediaType: string; data: string }[] {
+  if (!Array.isArray(resp)) return []
+  const out: { mediaType: string; data: string }[] = []
+  for (const item of resp) {
+    if (!item || typeof item !== 'object') continue
+    const typed = item as Record<string, unknown>
+    if (typed.type !== 'image') continue
+    const src = typed.source as Record<string, unknown> | undefined
+    if (!src || typeof src !== 'object') continue
+    if (src.type !== 'base64') continue
+    const data = src.data
+    if (typeof data !== 'string' || data.length <= 100) continue
+    const mediaType = typeof src.media_type === 'string' ? src.media_type : 'image/png'
+    out.push({ mediaType, data })
+  }
+  return out
 }
 
 // ── Helper components ──────────────────────────────────────
@@ -900,12 +945,40 @@ function DetailCode({ label, value, diff }: { label: string; value?: string; dif
   const [showRaw, setShowRaw] = useState(!hasMd && !hasDiff)
   const [copied, setCopied] = useState(false)
 
+  const copyButton = (
+    <button
+      type="button"
+      className="flex items-center gap-1 text-[9px] text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
+      onClick={() => {
+        navigator.clipboard.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+    >
+      {copied ? (
+        <>
+          Copied <Check className="h-2.5 w-2.5 text-green-500" />
+        </>
+      ) : (
+        <>
+          Copy <Copy className="h-2.5 w-2.5" />
+        </>
+      )}
+    </button>
+  )
+
+  // Only render the header row when there's a format toggle (markdown
+  // or diff). For plain-text values the toggle is absent and the old
+  // header bar was an empty row that visually "pushed down" the
+  // content. Copy moves into a hover-revealed overlay instead.
+  const showHeaderRow = hasMd || hasDiff
+
   return (
     <div className="flex gap-2">
       <span className="text-muted-foreground shrink-0 w-20 text-right">{label}:</span>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1 mb-0.5">
-          {(hasMd || hasDiff) && (
+        {showHeaderRow && (
+          <div className="flex items-center gap-1 mb-0.5">
             <button
               type="button"
               className="flex items-center gap-1 text-[9px] text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer"
@@ -914,38 +987,27 @@ function DetailCode({ label, value, diff }: { label: string; value?: string; dif
               {showRaw ? <Code className="h-2.5 w-2.5" /> : <FileText className="h-2.5 w-2.5" />}
               {showRaw ? 'raw' : hasDiff ? 'diff' : 'markdown'}
             </button>
-          )}
-          <button
-            type="button"
-            className="flex items-center gap-1 text-[9px] text-muted-foreground/70 hover:text-muted-foreground transition-colors cursor-pointer ml-auto"
-            onClick={() => {
-              navigator.clipboard.writeText(value)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            }}
-          >
-            {copied ? (
-              <>
-                Copied <Check className="h-2.5 w-2.5 text-green-500" />
-              </>
-            ) : (
-              <>
-                Copy <Copy className="h-2.5 w-2.5" />
-              </>
-            )}
-          </button>
-        </div>
-        {showRaw ? (
-          <pre className="overflow-x-auto rounded bg-muted/50 p-1.5 font-mono text-[10px] leading-relaxed max-h-40 overflow-y-auto">
-            {value}
-          </pre>
-        ) : hasDiff ? (
-          <DiffPre value={value} />
-        ) : (
-          <div className="overflow-y-auto max-h-40 rounded bg-muted/50 p-1.5 text-[11px] leading-relaxed prose-sm">
-            <Markdown components={mdComponents}>{value}</Markdown>
+            <div className="ml-auto">{copyButton}</div>
           </div>
         )}
+        <div className="relative group">
+          {!showHeaderRow && (
+            <div className="absolute right-1 top-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-muted/80 rounded px-1 py-0.5">
+              {copyButton}
+            </div>
+          )}
+          {showRaw ? (
+            <pre className="overflow-x-auto rounded bg-muted/50 p-1.5 font-mono text-[10px] leading-relaxed max-h-40 overflow-y-auto">
+              {value}
+            </pre>
+          ) : hasDiff ? (
+            <DiffPre value={value} />
+          ) : (
+            <div className="overflow-y-auto max-h-40 rounded bg-muted/50 p-1.5 text-[11px] leading-relaxed prose-sm">
+              <Markdown components={mdComponents}>{value}</Markdown>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

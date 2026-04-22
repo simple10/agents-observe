@@ -10,15 +10,50 @@ import { getAgentClass, getAgentLib } from './agents/index.mjs'
 // -- Helpers ----------------------------------------------------------
 
 /**
+ * Redact oversized base64 image blobs from a tool_response payload
+ * before it gets posted to the server. Targets Claude-Code tool
+ * response shape where tool_response is an array of content items
+ * like `{ type: 'image', source: { type: 'base64', media_type, data } }`.
+ * Mutates in place — the hook payload is consumed once and not read
+ * again after dispatch.
+ *
+ * `maxChars <= 0` disables redaction entirely.
+ */
+function stripLargeImageData(hookPayload, maxChars) {
+  if (!maxChars || maxChars <= 0) return
+  const resp = hookPayload?.tool_response
+  if (!Array.isArray(resp)) return
+  for (const item of resp) {
+    if (!item || typeof item !== 'object') continue
+    if (item.type !== 'image') continue
+    const src = item.source
+    if (!src || typeof src !== 'object') continue
+    if (src.type !== 'base64') continue
+    if (typeof src.data !== 'string') continue
+    if (src.data.length > maxChars) {
+      src.data = '[REDACTED]'
+    }
+  }
+}
+
+/**
  * Dispatch to the agent-class-specific `buildHookEvent` to produce the
  * POST envelope. Returns { envelope, hookEvent, toolName } — the latter
  * two are used only for local logging.
  */
 function dispatchHookEvent(config, log, hookPayload) {
+  // Strip large base64 images from the payload before the agent lib
+  // wraps it in an envelope. Otherwise MCP devtools screenshot tools
+  // can push multi-MB events into the DB.
+  stripLargeImageData(hookPayload, config?.maxImageDataChars)
   const agentClass = getAgentClass(config, log, hookPayload)
   const lib = getAgentLib(agentClass)
   return lib.buildHookEvent(config, log, hookPayload)
 }
+
+// Exported for tests only — redaction is applied internally by
+// dispatchHookEvent in the normal hook flow.
+export const __testing = { stripLargeImageData }
 
 /**
  * Mute console.log/error/warn so only our final JSON goes to stdout.
