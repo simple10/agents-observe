@@ -1,6 +1,6 @@
 {
   "name": "agents-observe",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Real-time observability dashboard for Claude Code agents",
   "license": "MIT",
   "repository": "https://github.com/simple10/agents-observe",

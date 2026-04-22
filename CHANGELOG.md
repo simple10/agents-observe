@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.9.1 — Configurable notifications and richer event handling
+
+**BREAKING CHANGE:** This release adds claude's new `UserPromptExpansion` hook. Be sure to update `claude code` to to the latest version before upgrading the plugin.
+
+This release introduces a new `AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS` env var that lets you choose which hook events trigger notifications across Claude, Codex, and fallback CLIs. The dashboard now renders `UserPromptExpansion` events, pairs `PreCompact`/`PostCompact` into a single row, and keeps expanded rows in view when filtering. Event descriptors are now CLI-stamped with a `hook_name` field, and several timeline and filter bugs have been fixed.
+
+### Features
+
+- Configurable notification events via the new `AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS` env var, honored by the Claude, Codex, and unknown-fallback hook libraries
+- Example `hooks.json` now enables notifications on Codex `Stop` events
+- Render claude `UserPromptExpansion` hook events in the dashboard timeline
+- Pair `PreCompact` and `PostCompact` into a single combined event row
+- Keep the last-expanded row in view when filters or search change
+- CLI-stamped event descriptors: events now carry a `hook_name` field (replaces `tool_use_id`)
+- Notification state is now driven by envelope flags, with trace logging for notification events
+
+### Fixes
+
+- Guard timeline-rewind and parser against poisoned timestamps
+- Static `Agents` filter now includes `SubagentStop` events
+- Resolve nested-button warning in the sidebar project row
+
+### Other
+
+- Enable `Notification` and `Stop` triggers in project settings and example configs
+- Drop unused notification count and dedup-hook dead code; refresh post-refactor comments
+- Add specs and implementation plans for configurable notifications, envelope flags, and CLI-stamped descriptors
+
 ## v0.9.0 — Multi-agent support with Codex, notifications, and session bookmarking
 
 This release introduces a pluggable agent class registry with experimental Codex hook support, live notification indicators with an animated favicon and auto-dismiss, and session labels for cross-project bookmarking. Sessions now support forking, inline renaming from the sidebar, and browser back/forward navigation. Task events are grouped into a history view, MCP tool calls get distinct icon styling, and a new theme picker rounds out the settings modal.
