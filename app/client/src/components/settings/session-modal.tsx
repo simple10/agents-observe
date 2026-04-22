@@ -65,6 +65,8 @@ export function SessionEditModal() {
   const setEditingSessionId = useUIStore((s) => s.setEditingSessionId)
   const selectedSessionId = useUIStore((s) => s.selectedSessionId)
   const setSelectedSessionId = useUIStore((s) => s.setSelectedSessionId)
+  const setSelectedProject = useUIStore((s) => s.setSelectedProject)
+  const closeSettings = useUIStore((s) => s.closeSettings)
 
   const open = editingSessionId !== null
 
@@ -233,6 +235,31 @@ export function SessionEditModal() {
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
+                {/* Navigate to the session in the main view. Real anchor
+                    so cmd/middle-click opens in a new tab; plain click
+                    closes both modals and selects the session in-app. */}
+                {session && (
+                  <a
+                    href={`#/${session.projectSlug ?? ''}/${session.id}`}
+                    onClick={(e) => {
+                      const isModified =
+                        e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0
+                      if (isModified) return
+                      e.preventDefault()
+                      if (session.projectSlug) {
+                        setSelectedProject(session.projectId, session.projectSlug)
+                      }
+                      setTimeout(() => setSelectedSessionId(session.id), 0)
+                      setEditingSessionId(null)
+                      closeSettings()
+                    }}
+                    className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded hover:bg-muted text-muted-foreground cursor-pointer"
+                    title="Open session (cmd/ctrl-click for new tab)"
+                    aria-label="Open session"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
                 <DialogClose asChild>
                   <Button variant="ghost" size="icon-xs" className="shrink-0" title="Close">
                     <X className="h-3.5 w-3.5" />

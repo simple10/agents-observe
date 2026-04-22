@@ -44,7 +44,7 @@ export function SettingsModal() {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
-        className="w-[640px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
+        className="w-[720px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
       >
         <div className="flex items-center px-6 pt-6 pb-0">
           <DialogTitle>Settings</DialogTitle>

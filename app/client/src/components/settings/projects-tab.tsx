@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { ExternalLink, DatabaseZap } from 'lucide-react'
+import { SquarePen, DatabaseZap } from 'lucide-react'
 import { ProjectModal } from './project-modal'
 import type { Project } from '@/types'
 
@@ -60,7 +60,7 @@ export function ProjectsTab() {
                   {project.sessionCount ?? 0} session{project.sessionCount !== 1 ? 's' : ''}
                 </div>
               </div>
-              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <SquarePen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </button>
           ))}
         </div>
