@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
@@ -72,5 +72,78 @@ describe('SessionItem tooltip — agent classes', () => {
     expect(codexNodes.length).toBeGreaterThan(0)
     // No "codex," with trailing comma
     expect(screen.queryByText(/^codex,$/)).not.toBeInTheDocument()
+  })
+})
+
+describe('SessionItem accessibility', () => {
+  it('renders the outer container as a focusable button', () => {
+    renderItem(makeSession())
+    const container = screen.getAllByText('my-session')[0].closest('[role="button"]')
+    expect(container).not.toBeNull()
+    expect(container).toHaveAttribute('tabindex', '0')
+    expect(container).toHaveAttribute('data-sidebar-item')
+  })
+
+  it('sets aria-current="true" when isSelected', () => {
+    renderWithProviders(
+      <TooltipProvider>
+        <SessionItem
+          session={makeSession()}
+          isSelected={true}
+          isPinned={false}
+          onSelect={() => {}}
+          onTogglePin={() => {}}
+          onRename={async () => {}}
+        />
+      </TooltipProvider>,
+    )
+    const container = screen.getAllByText('my-session')[0].closest('[role="button"]')
+    expect(container).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('omits aria-current when not selected', () => {
+    renderItem(makeSession())
+    const container = screen.getAllByText('my-session')[0].closest('[role="button"]')
+    expect(container).not.toHaveAttribute('aria-current')
+  })
+
+  it('calls onSelect when Enter is pressed', async () => {
+    const onSelect = vi.fn()
+    renderWithProviders(
+      <TooltipProvider>
+        <SessionItem
+          session={makeSession()}
+          isSelected={false}
+          isPinned={false}
+          onSelect={onSelect}
+          onTogglePin={() => {}}
+          onRename={async () => {}}
+        />
+      </TooltipProvider>,
+    )
+    const container = screen.getAllByText('my-session')[0].closest('[role="button"]') as HTMLElement
+    container.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls onSelect when Space is pressed', async () => {
+    const onSelect = vi.fn()
+    renderWithProviders(
+      <TooltipProvider>
+        <SessionItem
+          session={makeSession()}
+          isSelected={false}
+          isPinned={false}
+          onSelect={onSelect}
+          onTogglePin={() => {}}
+          onRename={async () => {}}
+        />
+      </TooltipProvider>,
+    )
+    const container = screen.getAllByText('my-session')[0].closest('[role="button"]') as HTMLElement
+    container.focus()
+    await userEvent.keyboard(' ')
+    expect(onSelect).toHaveBeenCalledTimes(1)
   })
 })
