@@ -4,6 +4,7 @@ import { useProcessedEvents } from '@/agents/event-processing-context'
 import { cn } from '@/lib/utils'
 import { Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { focusSiblingMatching } from '@/lib/keyboard-nav'
 
 // Framework-defined static filter categories (always shown in this order)
 const STATIC_CATEGORIES = [
@@ -93,7 +94,18 @@ export function EventFilterBar() {
   const hasAnyFilter = activeStaticFilters.length > 0 || activeToolFilters.length > 0
 
   return (
-    <div className="flex flex-col gap-1 px-3 py-1.5 border-b border-border">
+    <div
+      className="flex flex-col gap-1 px-3 py-1.5 border-b border-border"
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        const direction = e.key === 'ArrowRight' ? 1 : -1
+        const target = e.target as HTMLElement
+        if (!target.matches('[data-filter-pill]')) return
+        if (focusSiblingMatching(target, '[data-filter-pill]', e.currentTarget, direction)) {
+          e.preventDefault()
+        }
+      }}
+    >
       {/* Row 1: Static category filters + search */}
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 flex-wrap">
