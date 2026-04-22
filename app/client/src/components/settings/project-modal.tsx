@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Pencil,
+  SquarePen,
   Trash2,
   Check,
   X,
@@ -548,8 +549,19 @@ function SessionRow({
         </div>
       </div>
       <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* Pencil (rename) stays leftmost — closest to the session
+            name so the relationship between icon and target is obvious.
+            SquarePen (open details modal) follows. */}
         <Button variant="ghost" size="icon-xs" title="Rename" onClick={startEditing}>
           <Pencil className="h-3 w-3 text-muted-foreground/40 group-hover:text-yellow-500 transition-colors" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title="Session details"
+          onClick={() => useUIStore.getState().setEditingSessionId(session.id)}
+        >
+          <SquarePen className="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
         </Button>
         {jsonlPath && (
           <Button

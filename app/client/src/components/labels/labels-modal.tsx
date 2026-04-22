@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useRecentSessions } from '@/hooks/use-recent-sessions'
 import { useUIStore } from '@/stores/ui-store'
-import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +26,10 @@ import {
   Tags,
   FolderTree,
   Plus,
+  SquarePen,
 } from 'lucide-react'
+// LabelsModalBody is now rendered inside the Settings modal as the
+// "Labels" tab. The standalone modal wrapper is gone.
 import type { Label, RecentSession } from '@/types'
 
 const RECENT_LIMIT = 1000
@@ -68,28 +70,7 @@ function matchesSearch(session: RecentSession, sessionLabels: Label[], query: st
 
 type ViewMode = 'label' | 'cwd'
 
-export function LabelsModal() {
-  const open = useUIStore((s) => s.labelsModalOpen)
-  const closeLabelsModal = useUIStore((s) => s.closeLabelsModal)
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) closeLabelsModal()
-      }}
-    >
-      <DialogContent
-        aria-describedby={undefined}
-        className="w-[680px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
-      >
-        <LabelsModalBody />
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function LabelsModalBody() {
+export function LabelsModalBody() {
   const labels = useUIStore((s) => s.labels)
   const labelMemberships = useUIStore((s) => s.labelMemberships)
   const setSelectedProject = useUIStore((s) => s.setSelectedProject)
@@ -215,17 +196,11 @@ function LabelsModalBody() {
 
   return (
     <>
-      <div className="flex items-center gap-3 px-5 pt-5 pb-2">
-        <DialogTitle className="flex-1 min-w-0 truncate">Labels</DialogTitle>
-        <span className="text-xs text-muted-foreground">
-          {labelCount} {labelCount === 1 ? 'label' : 'labels'} · {labeledTotal}{' '}
-          {labeledTotal === 1 ? 'session' : 'sessions'}
-        </span>
-        <DialogClose asChild>
-          <Button variant="ghost" size="icon-xs" className="shrink-0" title="Close">
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        </DialogClose>
+      {/* Stats line — title + close are provided by the Settings modal
+          chrome, so we just show counts here. */}
+      <div className="px-5 pt-3 pb-2 text-xs text-muted-foreground">
+        {labelCount} {labelCount === 1 ? 'label' : 'labels'} · {labeledTotal}{' '}
+        {labeledTotal === 1 ? 'session' : 'sessions'}
       </div>
 
       <div className="px-5 pb-3 flex items-center gap-2">
@@ -557,6 +532,7 @@ function LabelGroup({
 }) {
   const renameLabel = useUIStore((s) => s.renameLabel)
   const deleteLabel = useUIStore((s) => s.deleteLabel)
+  const toggleSessionLabel = useUIStore((s) => s.toggleSessionLabel)
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(label.name)
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -665,6 +641,7 @@ function LabelGroup({
           showLabels={false}
           onOpen={() => onOpenSession(session)}
           onOpenDetails={() => onOpenDetails(session.id)}
+          onRemoveFromLabel={() => toggleSessionLabel(label.id, session.id)}
         />
       ))}
 
@@ -700,12 +677,18 @@ function SessionRow({
   showLabels,
   onOpen,
   onOpenDetails,
+  onRemoveFromLabel,
 }: {
   session: RecentSession
   sessionLabels: Label[]
   showLabels: boolean
   onOpen: () => void
   onOpenDetails: () => void
+  // Only provided in ByLabel view — where "remove" has clear scope
+  // (unassign this session from the enclosing label group). In ByCwd
+  // view the session may belong to many labels, so removing "from the
+  // label" is ambiguous and we skip the action.
+  onRemoveFromLabel?: () => void
 }) {
   const name = sessionLabel(session)
   const cwd = sessionCwd(session)
@@ -736,27 +719,44 @@ function SessionRow({
             · {session.projectName}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
+        <span className="ml-auto flex items-center gap-1.5 shrink-0 text-[10px] text-muted-foreground">
+          {/* Open session edit modal — standardized SquarePen glyph
+              used across the app (sessions tab, projects tab, scope
+              bar, sidebar rows). */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation()
               onOpenDetails()
             }}
-            className="px-1.5 py-0.5 rounded border border-border bg-background hover:bg-accent text-[10px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
             aria-label="Open session details"
             title="Open session details"
           >
-            Details
+            <SquarePen className="h-3 w-3" />
           </button>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {formatRelativeTime(session.lastActivity)}
-          </span>
+          {onRemoveFromLabel && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemoveFromLabel()
+              }}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+              aria-label="Remove from label"
+              title="Remove from label"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </span>
       </div>
       <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground/80">
-        {cwd && <span className="truncate">{shortenCwd(cwd)}</span>}
+        <span className="flex items-center gap-1 shrink-0">
+          <Clock className="h-3 w-3" />
+          {formatRelativeTime(session.lastActivity)}
+        </span>
+        {cwd && <span className="truncate">· {shortenCwd(cwd)}</span>}
         {showLabels && sessionLabels.length > 0 && (
           <span className="ml-auto flex flex-wrap gap-1 justify-end">
             {sessionLabels.map((l) => (

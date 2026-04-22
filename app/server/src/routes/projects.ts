@@ -26,6 +26,48 @@ router.get('/projects', async (c) => {
   return c.json(projects)
 })
 
+// POST /projects — manual project creation from the Projects tab.
+// Projects are normally created implicitly when the first session hits,
+// but users want to pre-create empty projects they can move sessions
+// into from the Project modal. Slug is derived from the name if not
+// provided; collisions return 409.
+router.post('/projects', async (c) => {
+  const store = c.get('store')
+  const broadcastToAll = c.get('broadcastToAll')
+  let body: Record<string, unknown>
+  try {
+    body = (await c.req.json()) as Record<string, unknown>
+  } catch {
+    return apiError(c, 400, 'Invalid JSON body')
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name) return apiError(c, 400, 'name must not be empty')
+
+  const providedSlug = typeof body.slug === 'string' ? body.slug.trim() : ''
+  const slug = providedSlug || slugify(name)
+  if (!slug) return apiError(c, 400, 'could not derive a valid slug from name')
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    return apiError(c, 400, 'slug must be kebab-case (a-z, 0-9, hyphens)')
+  }
+
+  if (!(await store.isSlugAvailable(slug))) {
+    return apiError(c, 409, `slug "${slug}" is already in use`, { code: 'SLUG_TAKEN' })
+  }
+
+  const id = await store.createProject(slug, name, null)
+  broadcastToAll({ type: 'project_update', data: { id, name, slug } })
+  return c.json({ id, slug, name, createdAt: Date.now(), sessionCount: 0 }, 201)
+})
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 router.get('/projects/:id/sessions', async (c) => {
   const store = c.get('store')
   const projectId = Number(c.req.param('id'))

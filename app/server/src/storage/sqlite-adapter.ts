@@ -773,6 +773,42 @@ export class SqliteAdapter implements EventStore {
     return { projects, sessions, agents, events }
   }
 
+  async deleteSessions(
+    sessionIds: string[],
+  ): Promise<{ events: number; agents: number; sessions: number }> {
+    if (sessionIds.length === 0) return { events: 0, agents: 0, sessions: 0 }
+    // Wrap in a transaction so a mid-loop failure doesn't leave orphaned
+    // events/agents pointing at a deleted session row.
+    const tx = this.db.transaction((ids: string[]) => {
+      let events = 0
+      let agents = 0
+      let sessions = 0
+      const delEvents = this.db.prepare('DELETE FROM events WHERE session_id = ?')
+      const delAgents = this.db.prepare('DELETE FROM agents WHERE session_id = ?')
+      const delSession = this.db.prepare('DELETE FROM sessions WHERE id = ?')
+      for (const id of ids) {
+        events += delEvents.run(id).changes
+        agents += delAgents.run(id).changes
+        sessions += delSession.run(id).changes
+      }
+      return { events, agents, sessions }
+    })
+    return tx(sessionIds)
+  }
+
+  async getDbStats(): Promise<{ sessionCount: number; eventCount: number }> {
+    const sessionRow = this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as { c: number }
+    const eventRow = this.db.prepare('SELECT COUNT(*) as c FROM events').get() as { c: number }
+    return { sessionCount: sessionRow.c, eventCount: eventRow.c }
+  }
+
+  async vacuum(): Promise<void> {
+    // VACUUM cannot run inside a transaction. better-sqlite3 exposes it
+    // directly via exec(). The DB briefly locks for writes, but for a
+    // local single-user tool the tradeoff is fine.
+    this.db.exec('VACUUM')
+  }
+
   async clearSessionEvents(sessionId: string): Promise<{ events: number; agents: number }> {
     const events = this.db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId).changes
     const agents = this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(sessionId).changes

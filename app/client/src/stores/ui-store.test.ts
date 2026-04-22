@@ -360,6 +360,33 @@ describe('ui-store', () => {
     })
   })
 
+  // ── Sidebar Projects/Labels tab switcher ──────────────────
+
+  describe('sidebar Projects/Labels tab', () => {
+    beforeEach(() => {
+      localStorage.removeItem('agents-observe-sidebar-tab')
+      useUIStore.setState({ sidebarTab: 'projects' })
+    })
+
+    it('defaults to "projects"', () => {
+      expect(useUIStore.getState().sidebarTab).toBe('projects')
+    })
+
+    it('setSidebarTab updates state', () => {
+      useUIStore.getState().setSidebarTab('labels')
+      expect(useUIStore.getState().sidebarTab).toBe('labels')
+      useUIStore.getState().setSidebarTab('projects')
+      expect(useUIStore.getState().sidebarTab).toBe('projects')
+    })
+
+    it('setSidebarTab persists to localStorage', () => {
+      useUIStore.getState().setSidebarTab('labels')
+      expect(localStorage.getItem('agents-observe-sidebar-tab')).toBe('labels')
+      useUIStore.getState().setSidebarTab('projects')
+      expect(localStorage.getItem('agents-observe-sidebar-tab')).toBe('projects')
+    })
+  })
+
   // ── Selected event ────────────────────────────────────────
 
   describe('selected event', () => {
@@ -463,7 +490,9 @@ describe('ui-store', () => {
       useUIStore.setState({
         labels: [],
         labelMemberships: new Map(),
-        labelsModalOpen: false,
+        settingsOpen: false,
+        settingsTab: 'settings',
+        labelsModalScrollToId: null,
       })
     })
 
@@ -536,12 +565,23 @@ describe('ui-store', () => {
       expect(forTwo.map((l) => l.name)).toEqual(['auth'])
     })
 
-    it('opens and closes the labels modal', () => {
-      expect(useUIStore.getState().labelsModalOpen).toBe(false)
+    it('opens and closes the labels tab via the settings modal', () => {
+      // Labels live inside the Settings modal now; openLabelsModal
+      // switches the settings tab + opens the modal, closeLabelsModal
+      // drops the user out of Settings.
+      expect(useUIStore.getState().settingsOpen).toBe(false)
       useUIStore.getState().openLabelsModal()
-      expect(useUIStore.getState().labelsModalOpen).toBe(true)
+      expect(useUIStore.getState().settingsOpen).toBe(true)
+      expect(useUIStore.getState().settingsTab).toBe('labels')
       useUIStore.getState().closeLabelsModal()
-      expect(useUIStore.getState().labelsModalOpen).toBe(false)
+      expect(useUIStore.getState().settingsOpen).toBe(false)
+    })
+
+    it('openLabelsModal carries an optional scroll-to target', () => {
+      useUIStore.getState().openLabelsModal('label-42')
+      expect(useUIStore.getState().labelsModalScrollToId).toBe('label-42')
+      useUIStore.getState().clearLabelsModalScrollTarget()
+      expect(useUIStore.getState().labelsModalScrollToId).toBeNull()
     })
   })
 })

@@ -147,3 +147,101 @@ describe('admin routes — DELETE /data policy', () => {
     expect(mockStore.clearAllData).toHaveBeenCalled()
   })
 })
+
+describe('admin routes — DB stats + bulk session delete', () => {
+  let app: Hono<Env>
+  const mockStore = {
+    getDbStats: vi.fn(),
+    deleteSessions: vi.fn(),
+    vacuum: vi.fn(),
+  }
+
+  beforeEach(async () => {
+    vi.resetModules()
+    Object.values(mockStore).forEach((fn) => fn.mockReset())
+
+    vi.doMock('./events', () => ({
+      removeSessionRootAgent: vi.fn(),
+      clearSessionRootAgents: vi.fn(),
+    }))
+    // Point config at a file that doesn't exist so statSync throws and
+    // the route falls back to sizeBytes=0 — tests stay hermetic.
+    vi.doMock('../config', () => ({
+      config: { allowDbReset: 'allow', dbPath: '/tmp/does-not-exist-db-for-tests.db' },
+    }))
+
+    const { default: adminRouter } = await import('./admin')
+    app = new Hono<Env>()
+    app.use('*', async (c, next) => {
+      c.set('store', mockStore as unknown as EventStore)
+      c.set('broadcastToAll', vi.fn())
+      c.set('broadcastToSession', vi.fn())
+      await next()
+    })
+    app.route('/api', adminRouter)
+  })
+
+  test('GET /db/stats returns dbPath, size, counts', async () => {
+    mockStore.getDbStats.mockResolvedValue({ sessionCount: 12, eventCount: 34567 })
+    const res = await app.request('/api/db/stats')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sessionCount).toBe(12)
+    expect(body.eventCount).toBe(34567)
+    expect(body.dbPath).toBe('/tmp/does-not-exist-db-for-tests.db')
+    expect(body.sizeBytes).toBe(0)
+  })
+
+  test('POST /sessions/bulk-delete deletes and vacuums', async () => {
+    mockStore.deleteSessions.mockResolvedValue({ events: 100, agents: 5, sessions: 2 })
+    mockStore.vacuum.mockResolvedValue(undefined)
+
+    const res = await app.request('/api/sessions/bulk-delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionIds: ['s1', 's2'] }),
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.deleted).toEqual({ events: 100, agents: 5, sessions: 2 })
+    expect(mockStore.deleteSessions).toHaveBeenCalledWith(['s1', 's2'])
+    expect(mockStore.vacuum).toHaveBeenCalledTimes(1)
+  })
+
+  test('POST /sessions/bulk-delete returns 400 when sessionIds missing', async () => {
+    const res = await app.request('/api/sessions/bulk-delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+    expect(mockStore.deleteSessions).not.toHaveBeenCalled()
+    expect(mockStore.vacuum).not.toHaveBeenCalled()
+  })
+
+  test('POST /sessions/bulk-delete returns 400 when sessionIds is not an array of strings', async () => {
+    const res = await app.request('/api/sessions/bulk-delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionIds: ['ok', 42] }),
+    })
+    expect(res.status).toBe(400)
+    expect(mockStore.deleteSessions).not.toHaveBeenCalled()
+  })
+
+  test('POST /sessions/bulk-delete with empty array still vacuums', async () => {
+    mockStore.deleteSessions.mockResolvedValue({ events: 0, agents: 0, sessions: 0 })
+    mockStore.vacuum.mockResolvedValue(undefined)
+    const res = await app.request('/api/sessions/bulk-delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionIds: [] }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.deleted).toEqual({ events: 0, agents: 0, sessions: 0 })
+    expect(mockStore.vacuum).toHaveBeenCalled()
+  })
+})

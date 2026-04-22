@@ -2,7 +2,7 @@ import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
 import { LogsModal } from './logs-modal'
 import { AgentCombobox } from './agent-combobox'
-import { ArrowDownToLine, Pencil, BarChart3, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { ArrowDownToLine, SquarePen, BarChart3, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 
 export function ScopeBar() {
   const {
@@ -73,7 +73,7 @@ export function ScopeBar() {
           onClick={() => setEditingSessionId(selectedSessionId)}
           title="Edit session"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <SquarePen className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>

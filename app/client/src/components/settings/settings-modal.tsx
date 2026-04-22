@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ProjectsTab } from './projects-tab'
+import { SessionsTab } from './sessions-tab'
+import { LabelsModalBody } from '@/components/labels/labels-modal'
 import { IconSettings } from './icon-settings'
 import { GeneralSettings } from './general-settings'
 import { useUIStore } from '@/stores/ui-store'
@@ -16,15 +18,13 @@ interface ServerInfo {
 
 export function SettingsModal() {
   const open = useUIStore((s) => s.settingsOpen)
-  const settingsTab = useUIStore((s) => s.settingsTab)
+  // Read tab + setter straight from the store so switching tabs inside
+  // the modal persists to localStorage and the gear icon reopens there
+  // next time.
+  const activeTab = useUIStore((s) => s.settingsTab)
+  const setSettingsTab = useUIStore((s) => s.setSettingsTab)
   const closeSettings = useUIStore((s) => s.closeSettings)
-  const [activeTab, setActiveTab] = useState(settingsTab)
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
-
-  // Sync tab when opened programmatically (e.g., from dedup pill)
-  useEffect(() => {
-    if (open) setActiveTab(settingsTab)
-  }, [open, settingsTab])
 
   const onOpenChange = (o: boolean) => {
     if (!o) closeSettings()
@@ -45,7 +45,7 @@ export function SettingsModal() {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
-        className="w-[640px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
+        className="w-[720px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
       >
         <div className="flex items-center px-6 pt-6 pb-0">
           <DialogTitle>Settings</DialogTitle>
@@ -59,18 +59,20 @@ export function SettingsModal() {
         </div>
         <Tabs
           value={activeTab}
-          onValueChange={setActiveTab}
+          onValueChange={setSettingsTab}
           className="flex-1 flex flex-col min-h-0"
         >
           <div className="px-6 pt-2">
             <TabsList>
-              <TabsTrigger value="projects">Projects</TabsTrigger>
-              <TabsTrigger value="icons">Icons</TabsTrigger>
               <TabsTrigger value="settings">Display</TabsTrigger>
+              <TabsTrigger value="icons">Icons</TabsTrigger>
+              <TabsTrigger value="projects">Projects</TabsTrigger>
+              <TabsTrigger value="sessions">Sessions</TabsTrigger>
+              <TabsTrigger value="labels">Labels</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="projects" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
-            <ProjectsTab />
+          <TabsContent value="settings" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
+            <GeneralSettings />
           </TabsContent>
           <TabsContent
             value="icons"
@@ -79,8 +81,18 @@ export function SettingsModal() {
           >
             <IconSettings />
           </TabsContent>
-          <TabsContent value="settings" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
-            <GeneralSettings />
+          <TabsContent value="projects" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
+            <ProjectsTab />
+          </TabsContent>
+          <TabsContent value="sessions" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
+            <SessionsTab />
+          </TabsContent>
+          {/* Labels tab deliberately skips the outer px-6/pb-6/pt-4
+              padding because LabelsModalBody handles its own scrolling
+              + internal padding (port of the old standalone
+              LabelsModal). */}
+          <TabsContent value="labels" className="flex-1 min-h-0 flex flex-col">
+            <LabelsModalBody />
           </TabsContent>
         </Tabs>
         {serverInfo && (

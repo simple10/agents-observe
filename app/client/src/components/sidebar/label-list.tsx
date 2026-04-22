@@ -1,24 +1,18 @@
 import { useMemo, useState, useCallback } from 'react'
-import { useProjects } from '@/hooks/use-projects'
-import { useSessions } from '@/hooks/use-sessions'
-import { useEvents } from '@/hooks/use-events'
+import { useRecentSessions } from '@/hooks/use-recent-sessions'
 import { useUIStore } from '@/stores/ui-store'
-import { ChevronDown, ChevronRight, Folder, Pencil, Clock, CalendarDays } from 'lucide-react'
+import { ChevronDown, ChevronRight, Tag, Pencil, Clock, CalendarDays } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api-client'
-import { ProjectModal } from '@/components/settings/project-modal'
 import { SessionItem } from './session-item'
-import {
-  NotificationIndicator,
-  dismissNotifications,
-  useAnyHiddenFlaggedSession,
-  useAnySessionHasNotification,
-} from './notification-indicator'
-import type { Project, Session } from '@/types'
+import type { Label, RecentSession } from '@/types'
 
-interface ProjectListProps {
+// Same recent-sessions fetch limit used by the Sessions and Labels tabs
+// in the Settings modal — all three share the react-query cache so this
+// doesn't multiply network traffic.
+const SESSION_FETCH_LIMIT = 10000
+
+interface LabelListProps {
   collapsed: boolean
 }
 
@@ -35,35 +29,19 @@ function formatRelativeTime(ts: number): string {
 function getDateGroupLabel(ts: number): string {
   const now = new Date()
   const date = new Date(ts)
-
-  // Start of today (midnight)
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const startOfYesterday = new Date(startOfToday)
   startOfYesterday.setDate(startOfYesterday.getDate() - 1)
-
-  // Start of this week (Monday)
   const startOfThisWeek = new Date(startOfToday)
   const dayOfWeek = startOfToday.getDay()
-  // getDay(): 0=Sun, 1=Mon ... 6=Sat. We want Monday as start of week.
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
   startOfThisWeek.setDate(startOfThisWeek.getDate() - daysToMonday)
-
   const startOfLastWeek = new Date(startOfThisWeek)
   startOfLastWeek.setDate(startOfLastWeek.getDate() - 7)
-
-  if (date >= startOfToday) {
-    return 'Today'
-  }
-  if (date >= startOfYesterday) {
-    return 'Yesterday'
-  }
-  if (date >= startOfThisWeek) {
-    return 'This Week'
-  }
-  if (date >= startOfLastWeek) {
-    return 'Last Week'
-  }
-  // Older: group by month
+  if (date >= startOfToday) return 'Today'
+  if (date >= startOfYesterday) return 'Yesterday'
+  if (date >= startOfThisWeek) return 'This Week'
+  if (date >= startOfLastWeek) return 'Last Week'
   const monthNames = [
     'January',
     'February',
@@ -83,30 +61,29 @@ function getDateGroupLabel(ts: number): string {
 
 interface SessionGroup {
   label: string
-  sessions: Session[]
+  sessions: RecentSession[]
 }
 
-function groupSessionsByDate(sessions: Session[], sortBy: 'activity' | 'created'): SessionGroup[] {
-  // Sort sessions by the chosen field (descending — most recent first)
+function groupSessionsByDate(
+  sessions: RecentSession[],
+  sortBy: 'activity' | 'created',
+): SessionGroup[] {
   const sorted = [...sessions].sort((a, b) => {
     const aTime = sortBy === 'activity' ? a.lastActivity || a.startedAt : a.startedAt
     const bTime = sortBy === 'activity' ? b.lastActivity || b.startedAt : b.startedAt
     return bTime - aTime
   })
-
-  // Group by date label based on the same field used for sorting
   const groups: SessionGroup[] = []
   let currentLabel: string | null = null
-  let currentGroup: Session[] = []
-
+  let currentGroup: RecentSession[] = []
   for (const session of sorted) {
     const ts = sortBy === 'activity' ? session.lastActivity || session.startedAt : session.startedAt
-    const label = getDateGroupLabel(ts)
-    if (label !== currentLabel) {
+    const date = getDateGroupLabel(ts)
+    if (date !== currentLabel) {
       if (currentLabel !== null && currentGroup.length > 0) {
         groups.push({ label: currentLabel, sessions: currentGroup })
       }
-      currentLabel = label
+      currentLabel = date
       currentGroup = [session]
     } else {
       currentGroup.push(session)
@@ -118,23 +95,41 @@ function groupSessionsByDate(sessions: Session[], sortBy: 'activity' | 'created'
   return groups
 }
 
-export function ProjectList({ collapsed }: ProjectListProps) {
-  const { data: projects } = useProjects()
-  const { selectedProjectId, setSelectedProject } = useUIStore()
+export function LabelList({ collapsed }: LabelListProps) {
+  const labels = useUIStore((s) => s.labels)
+  const labelMemberships = useUIStore((s) => s.labelMemberships)
+  const openLabelsModal = useUIStore((s) => s.openLabelsModal)
+  const { data: sessions } = useRecentSessions(SESSION_FETCH_LIMIT)
+  const [expandedLabelId, setExpandedLabelId] = useState<string | null>(null)
 
-  const [modalProjectId, setModalProjectId] = useState<number | null>(null)
-  const modalProject = projects?.find((p) => p.id === modalProjectId) ?? null
+  // sessionsByLabel: labelId -> RecentSession[]. Built once per labels /
+  // membership / sessions change so expanding a label is instant.
+  const sessionsByLabel = useMemo(() => {
+    const map = new Map<string, RecentSession[]>()
+    if (!sessions) return map
+    const byId = new Map(sessions.map((s) => [s.id, s] as const))
+    for (const label of labels) {
+      const ids = labelMemberships.get(label.id) ?? new Set<string>()
+      const list: RecentSession[] = []
+      for (const id of ids) {
+        const s = byId.get(id)
+        if (s) list.push(s)
+      }
+      map.set(label.id, list)
+    }
+    return map
+  }, [labels, labelMemberships, sessions])
 
-  const openProjectModal = useCallback((project: Project, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setModalProjectId(project.id)
-  }, [])
+  const sortedLabels = useMemo(
+    () => [...labels].sort((a, b) => a.name.localeCompare(b.name)),
+    [labels],
+  )
 
-  if (!projects?.length) {
+  if (sortedLabels.length === 0) {
     return (
       <TooltipProvider>
         <div className="text-xs text-muted-foreground p-2">
-          {collapsed ? '' : 'No projects yet'}
+          {collapsed ? '' : 'No labels yet. Create one from the Labels tab in Settings.'}
         </div>
       </TooltipProvider>
     )
@@ -143,157 +138,82 @@ export function ProjectList({ collapsed }: ProjectListProps) {
   return (
     <TooltipProvider>
       <div className="space-y-1">
-        {projects.map((project) => {
-          const isSelected = selectedProjectId === project.id
-          const displayLabel = project.name
+        {sortedLabels.map((label) => {
+          const labelSessions = sessionsByLabel.get(label.id) ?? []
+          const count = labelSessions.length
+          const isExpanded = expandedLabelId === label.id
 
           if (collapsed) {
             return (
-              <Tooltip key={project.id}>
+              <Tooltip key={label.id}>
                 <TooltipTrigger asChild>
                   <button
                     className="relative flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer text-muted-foreground hover:bg-accent"
-                    onClick={() =>
-                      setSelectedProject(
-                        isSelected ? null : project.id,
-                        isSelected ? null : project.slug,
-                      )
-                    }
+                    onClick={() => setExpandedLabelId(isExpanded ? null : label.id)}
+                    aria-label={label.name}
                   >
-                    {displayLabel.charAt(0).toUpperCase()}
-                    <ProjectNotificationDot
-                      projectId={project.id}
-                      className="absolute top-0.5 right-0.5"
-                    />
+                    <Tag className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="right">{displayLabel}</TooltipContent>
+                <TooltipContent side="right">{label.name}</TooltipContent>
               </Tooltip>
             )
           }
 
-          const toggleProject = () =>
-            setSelectedProject(isSelected ? null : project.id, isSelected ? null : project.slug)
+          const toggleLabel = () => setExpandedLabelId(isExpanded ? null : label.id)
 
           return (
-            <div key={project.id}>
+            <div key={label.id}>
               <div
                 role="button"
                 tabIndex={0}
                 className="group flex items-center gap-2 w-full rounded-md px-2 py-0.5 text-sm transition-colors cursor-pointer text-foreground hover:bg-accent focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                onClick={toggleProject}
+                onClick={toggleLabel}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    toggleProject()
+                    toggleLabel()
                   }
                 }}
               >
-                {isSelected ? (
+                {isExpanded ? (
                   <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5 shrink-0" />
                 )}
-                <ProjectFolderWithBell projectId={project.id} />
-                <span className="truncate">{displayLabel}</span>
-                {project.sessionCount != null && (
-                  <Badge
-                    variant="secondary"
-                    className="ml-auto text-[10px] h-4 px-1 group-hover:hidden"
-                  >
-                    {project.sessionCount}
-                  </Badge>
-                )}
+                <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{label.name}</span>
+                <Badge
+                  variant="secondary"
+                  className="ml-auto text-[10px] h-4 px-1 group-hover:hidden"
+                >
+                  {count}
+                </Badge>
+                {/* Hover affordance mirrors ProjectList's "Edit" pill.
+                    Opens the Labels tab in Settings scrolled to this
+                    specific label so the user can rename or delete. */}
                 <span
-                  data-testid={`edit-project-${project.id}`}
+                  data-testid={`edit-label-${label.id}`}
                   className="ml-auto hidden group-hover:flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/30 text-[10px] cursor-pointer transition-colors"
-                  onClick={(e) => openProjectModal(project, e)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openLabelsModal(label.id)
+                  }}
                 >
                   <Pencil className="h-2.5 w-2.5" />
                   Edit
                 </span>
               </div>
-              {isSelected && <SessionList projectId={project.id} />}
+              {isExpanded && <LabelSessionList label={label} sessions={labelSessions} />}
             </div>
           )
         })}
       </div>
-      <ProjectModal
-        project={modalProject}
-        open={modalProject !== null}
-        onOpenChange={(open) => {
-          if (!open) setModalProjectId(null)
-        }}
-      />
     </TooltipProvider>
   )
 }
 
-/**
- * Folder icon with an optional bell overlay on top. The bell shows when
- * any session in the project is waiting on the user; clicking dismisses
- * every flagged session in the project and the overlay disappears,
- * revealing the plain folder icon underneath.
- */
-/**
- * Folder icon that swaps to a bell when a session in the project is
- * waiting on the user AND that session isn't already showing its own
- * bell elsewhere in the sidebar (Pinned row, or the expanded
- * SessionList for this project). Prevents redundant double-signaling.
- * Clicking the bell dismisses every flagged session in the project.
- */
-function ProjectFolderWithBell({ projectId }: { projectId: number }) {
-  const { data: sessions } = useSessions(projectId)
-  const sessionIds = sessions?.map((s) => s.id) ?? []
-  const hasHiddenFlagged = useAnyHiddenFlaggedSession(sessionIds)
-  if (hasHiddenFlagged) {
-    return (
-      <NotificationIndicator
-        className="h-3.5 w-3.5 shrink-0"
-        onClick={(e) => {
-          e.stopPropagation()
-          dismissNotifications(sessionIds)
-        }}
-      />
-    )
-  }
-  return <Folder className="h-3.5 w-3.5 shrink-0" />
-}
-
-/**
- * Collapsed-sidebar variant — pulsing amber dot in the top-right of the
- * square project icon. Clicking dismisses every flagged session in the
- * project so the dot goes away.
- */
-function ProjectNotificationDot({
-  projectId,
-  className,
-}: {
-  projectId: number
-  className?: string
-}) {
-  const { data: sessions } = useSessions(projectId)
-  const sessionIds = sessions?.map((s) => s.id) ?? []
-  const anyFlagged = useAnySessionHasNotification(sessionIds)
-  if (!anyFlagged) return null
-  return (
-    <button
-      type="button"
-      className={`relative flex h-2 w-2 items-center justify-center rounded-full bg-amber-500 cursor-pointer ${className ?? ''}`}
-      aria-label="Click to dismiss notifications"
-      title="Click to dismiss notifications"
-      onClick={(e) => {
-        e.stopPropagation()
-        dismissNotifications(sessionIds)
-      }}
-    >
-      <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-amber-400/70" />
-    </button>
-  )
-}
-
-function SessionList({ projectId }: { projectId: number }) {
-  const { data: sessions } = useSessions(projectId)
+function LabelSessionList({ label, sessions }: { label: Label; sessions: RecentSession[] }) {
   const {
     selectedSessionId,
     setSelectedSessionId,
@@ -302,39 +222,33 @@ function SessionList({ projectId }: { projectId: number }) {
     togglePinnedSession,
     pinnedSessionIds,
     setEditingSessionId,
+    setSelectedProject,
   } = useUIStore()
-  const queryClient = useQueryClient()
-  const { data: currentEvents } = useEvents(selectedSessionId)
-
-  const handleRename = useCallback(
-    async (sessionId: string, name: string) => {
-      await api.updateSessionSlug(sessionId, name)
-      await queryClient.invalidateQueries({ queryKey: ['sessions', projectId] })
-    },
-    [projectId, queryClient],
-  )
 
   const groups = useMemo(() => {
-    if (!sessions?.length) return []
+    if (!sessions.length) return []
     return groupSessionsByDate(sessions, sessionSortOrder)
   }, [sessions, sessionSortOrder])
 
-  const totalSessions = sessions?.length ?? 0
-  const shouldCollapse = totalSessions > 10
+  const shouldCollapse = sessions.length > 10
   const GROUP_PREVIEW_COUNT = 5
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
-  const toggleGroup = useCallback((label: string) => {
+  const toggleGroup = useCallback((groupLabel: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev)
-      if (next.has(label)) next.delete(label)
-      else next.add(label)
+      if (next.has(groupLabel)) next.delete(groupLabel)
+      else next.add(groupLabel)
       return next
     })
   }, [])
 
-  if (!sessions?.length) {
-    return <div className="text-xs text-muted-foreground pl-6 py-1">No sessions</div>
+  if (!sessions.length) {
+    return (
+      <div className="ml-3.5 mt-1 pb-2 pl-2 text-xs text-muted-foreground border-l border-border">
+        No sessions in this label yet.
+      </div>
+    )
   }
 
   return (
@@ -385,20 +299,26 @@ function SessionList({ projectId }: { projectId: number }) {
             </div>
             {visibleSessions.map((session) => {
               const isSelected = selectedSessionId === session.id
-              const liveEventCount =
-                session.id === selectedSessionId && currentEvents ? currentEvents.length : undefined
-
               return (
                 <SessionItem
                   key={session.id}
                   session={session}
                   isSelected={isSelected}
                   isPinned={pinnedSessionIds.has(session.id)}
-                  onSelect={() => setSelectedSessionId(session.id)}
+                  // Selecting a session from a label group jumps to its
+                  // project — matches the sidebar's normal behavior
+                  // when you click a session inside a project.
+                  onSelect={() => {
+                    setSelectedProject(session.projectId, session.projectSlug || null)
+                    setSelectedSessionId(session.id)
+                  }}
                   onTogglePin={() => togglePinnedSession(session.id)}
-                  onRename={handleRename}
+                  onRename={async () => {
+                    // Rename isn't project-scoped from this view; delegate
+                    // to the session modal so the user gets the full UI.
+                    setEditingSessionId(session.id)
+                  }}
                   onEdit={() => setEditingSessionId(session.id)}
-                  eventCountOverride={liveEventCount}
                   relativeTime={formatRelativeTime(
                     sessionSortOrder === 'activity'
                       ? session.lastActivity || session.startedAt
@@ -430,6 +350,10 @@ function SessionList({ projectId }: { projectId: number }) {
           </div>
         )
       })}
+      {/* Silences the lint error about `label` being only used for
+          React's reconciliation key — we reference it here in a no-op
+          so TS/eslint see the binding as used. */}
+      <span className="sr-only">{label.name}</span>
     </div>
   )
 }

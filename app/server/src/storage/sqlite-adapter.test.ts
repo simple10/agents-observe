@@ -1359,6 +1359,80 @@ describe('SqliteAdapter — deletion', () => {
     expect(projects).toHaveLength(0)
   })
 
+  test('deleteSessions bulk-removes multiple sessions with their events/agents', async () => {
+    const projId = await store.createProject('proj1', 'Project 1', null)
+    await store.upsertSession('keep', projId, null, null, 1000)
+    await store.upsertSession('del1', projId, null, null, 2000)
+    await store.upsertSession('del2', projId, null, null, 3000)
+    await store.upsertAgent('a-keep', 'keep', null, null, null)
+    await store.upsertAgent('a-del1', 'del1', null, null, null)
+    await store.upsertAgent('a-del2', 'del2', null, null, null)
+    for (const [aid, sid, ts] of [
+      ['a-keep', 'keep', 1000],
+      ['a-del1', 'del1', 2000],
+      ['a-del2', 'del2', 3000],
+    ] as const) {
+      await store.insertEvent({
+        agentId: aid,
+        sessionId: sid,
+        type: 'user',
+        subtype: null,
+        toolName: null,
+        timestamp: ts,
+        payload: {},
+      })
+    }
+
+    const result = await store.deleteSessions(['del1', 'del2'])
+    expect(result).toEqual({ events: 2, agents: 2, sessions: 2 })
+
+    // Surviving session still has its row + agent + event
+    const sessions = await store.getSessionsForProject(projId)
+    expect(sessions.map((s: { id: string }) => s.id)).toEqual(['keep'])
+    const agents = await store.getAgentsForSession('keep')
+    expect(agents).toHaveLength(1)
+    const events = await store.getEventsForSession('keep')
+    expect(events).toHaveLength(1)
+  })
+
+  test('deleteSessions with empty array is a no-op', async () => {
+    const result = await store.deleteSessions([])
+    expect(result).toEqual({ events: 0, agents: 0, sessions: 0 })
+  })
+
+  test('getDbStats counts rows across sessions and events', async () => {
+    const projId = await store.createProject('proj1', 'Project 1', null)
+    await store.upsertSession('s1', projId, null, null, 1000)
+    await store.upsertSession('s2', projId, null, null, 2000)
+    await store.upsertAgent('a1', 's1', null, null, null)
+    await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 's1',
+      type: 'user',
+      subtype: null,
+      toolName: null,
+      timestamp: 1000,
+      payload: {},
+    })
+    await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 's1',
+      type: 'user',
+      subtype: null,
+      toolName: null,
+      timestamp: 1100,
+      payload: {},
+    })
+
+    const stats = await store.getDbStats()
+    expect(stats).toEqual({ sessionCount: 2, eventCount: 2 })
+  })
+
+  test('vacuum runs without throwing', async () => {
+    // VACUUM is mostly a smoke test — it rewrites the DB file.
+    await expect(store.vacuum()).resolves.toBeUndefined()
+  })
+
   test('clearAllData empties all tables', async () => {
     const projId = await store.createProject('proj1', 'Project 1', null)
     await store.upsertSession('sess1', projId, null, null, 1000)

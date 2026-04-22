@@ -158,5 +158,26 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     }),
+  createProject: (data: { name: string; slug?: string }) =>
+    fetchJson<Project>(`/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
   getChangelog: () => fetchJson<{ markdown: string }>('/changelog'),
+  getDbStats: () =>
+    fetchJson<{ dbPath: string; sizeBytes: number; sessionCount: number; eventCount: number }>(
+      '/db/stats',
+    ),
+  bulkDeleteSessions: (sessionIds: string[]) =>
+    fetchJson<{
+      ok: true
+      deleted: { events: number; agents: number; sessions: number }
+      sizeBefore: number
+      sizeAfter: number
+    }>('/sessions/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionIds }),
+    }),
 }

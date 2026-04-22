@@ -1,6 +1,6 @@
 // app/server/src/routes/admin.ts
 import { Hono } from 'hono'
-import { copyFileSync } from 'fs'
+import { copyFileSync, statSync } from 'fs'
 import type { EventStore } from '../storage/types'
 import { apiError } from '../errors'
 import { config } from '../config'
@@ -9,6 +9,63 @@ import { removeSessionRootAgent, clearSessionRootAgents } from './events'
 type Env = { Variables: { store: EventStore } }
 
 const router = new Hono<Env>()
+
+// GET /db/stats — DB file size + row counts for the Sessions tab
+router.get('/db/stats', async (c) => {
+  const store = c.get('store')
+  let sizeBytes = 0
+  try {
+    sizeBytes = statSync(config.dbPath).size
+  } catch {
+    // File may not exist yet in edge cases (fresh install, reset mid-request);
+    // fall through with 0 rather than erroring the whole endpoint.
+  }
+  const { sessionCount, eventCount } = await store.getDbStats()
+  return c.json({ dbPath: config.dbPath, sizeBytes, sessionCount, eventCount })
+})
+
+// POST /sessions/bulk-delete — delete multiple sessions and VACUUM
+// Body: { sessionIds: string[] }
+router.post('/sessions/bulk-delete', async (c) => {
+  const body = await c.req.json().catch(() => null)
+  const ids = body?.sessionIds
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
+    return apiError(c, 400, 'sessionIds must be an array of strings')
+  }
+  const store = c.get('store')
+  let sizeBefore = 0
+  try {
+    sizeBefore = statSync(config.dbPath).size
+  } catch {
+    // See /db/stats — tolerate a missing file rather than 500.
+  }
+
+  console.log(`[admin] bulk-delete: starting for ${ids.length} session(s)`)
+  const deleteStart = Date.now()
+  const deleted = await store.deleteSessions(ids)
+  for (const id of ids) removeSessionRootAgent(id)
+  console.log(
+    `[admin] bulk-delete: removed ${deleted.events} events, ${deleted.agents} agents, ${deleted.sessions} sessions in ${Date.now() - deleteStart}ms`,
+  )
+
+  // VACUUM after delete so the file actually shrinks on disk. This is the
+  // whole point of the Sessions tab; skipping it would leave users
+  // confused about why "deleting 5GB of sessions" didn't free any space.
+  const vacuumStart = Date.now()
+  await store.vacuum()
+  let sizeAfter = 0
+  try {
+    sizeAfter = statSync(config.dbPath).size
+  } catch {
+    // See above.
+  }
+  const reclaimed = sizeBefore - sizeAfter
+  console.log(
+    `[admin] vacuum: ${sizeBefore} -> ${sizeAfter} bytes (reclaimed ${reclaimed}) in ${Date.now() - vacuumStart}ms`,
+  )
+
+  return c.json({ ok: true, deleted, sizeBefore, sizeAfter })
+})
 
 // DELETE /sessions/:id — delete session and all its data
 router.delete('/sessions/:id', async (c) => {
