@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { SessionItem } from './session-item'
@@ -145,5 +145,33 @@ describe('SessionItem accessibility', () => {
     container.focus()
     await userEvent.keyboard(' ')
     expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes outer container from tab order and ignores Enter while editing', async () => {
+    const onSelect = vi.fn()
+    renderWithProviders(
+      <TooltipProvider>
+        <SessionItem
+          session={makeSession()}
+          isSelected={false}
+          isPinned={false}
+          onSelect={onSelect}
+          onTogglePin={() => {}}
+          onRename={async () => {}}
+        />
+      </TooltipProvider>,
+    )
+    // Enter rename mode by double-clicking the label
+    await userEvent.dblClick(screen.getAllByText('my-session')[0])
+    const input = await screen.findByDisplayValue('my-session')
+    const container = input.closest('[role="button"]') as HTMLElement
+    // Outer is removed from tab order while editing
+    expect(container).toHaveAttribute('tabindex', '-1')
+    // Clear any onSelect calls fired by the dblClick sequence itself
+    onSelect.mockClear()
+    // Even if a key event reaches the outer, onSelect must NOT fire while editing
+    fireEvent.keyDown(container, { key: 'Enter' })
+    fireEvent.keyDown(container, { key: ' ' })
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })
