@@ -6,6 +6,7 @@ import { SessionsTab } from './sessions-tab'
 import { LabelsModalBody } from '@/components/labels/labels-modal'
 import { IconSettings } from './icon-settings'
 import { GeneralSettings } from './general-settings'
+import { KeyboardSettings } from './keyboard-settings'
 import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
 import { API_BASE } from '@/config/api'
@@ -69,6 +70,7 @@ export function SettingsModal() {
               <TabsTrigger value="projects">Projects</TabsTrigger>
               <TabsTrigger value="sessions">Sessions</TabsTrigger>
               <TabsTrigger value="labels">Labels</TabsTrigger>
+              <TabsTrigger value="keyboard">Keyboard</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="settings" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
@@ -93,6 +95,9 @@ export function SettingsModal() {
               LabelsModal). */}
           <TabsContent value="labels" className="flex-1 min-h-0 flex flex-col">
             <LabelsModalBody />
+          </TabsContent>
+          <TabsContent value="keyboard" className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-4">
+            <KeyboardSettings />
           </TabsContent>
         </Tabs>
         {serverInfo && (
