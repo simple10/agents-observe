@@ -178,25 +178,29 @@ export function ActivityTimeline() {
 
   const transitionSpinnerRef = useRef<HTMLDivElement>(null)
 
-  const handleToggleRewind = () => {
-    // Show the spinner via direct DOM manipulation (skips the React
-    // scheduling path so it paints before the main thread blocks on
-    // enter/exitRewindMode, which can take 5-10s on large sessions).
-    // display:none vs display:block means no compositor layer is
-    // allocated while hidden — visibility:hidden was keeping the
-    // spin animation running and a willChange layer allocated forever.
+  // Shared spinner helper for heavy timeline operations (mode toggle,
+  // range changes in rewind). Shows the spinner imperatively so it
+  // paints before the main thread blocks on the expensive work, then
+  // hides it after the work completes.
+  const runWithSpinner = (work: () => void) => {
     const spinner = transitionSpinnerRef.current
     if (spinner) spinner.style.display = 'block'
     // Yield one paint tick so the spinner actually renders before the
     // heavy work monopolizes the main thread.
     setTimeout(() => {
+      work()
+      if (spinner) spinner.style.display = 'none'
+    }, 50)
+  }
+
+  const handleToggleRewind = () => {
+    runWithSpinner(() => {
       if (rewindMode) {
         exitRewindMode()
       } else {
         enterRewindMode(events || [])
       }
-      if (spinner) spinner.style.display = 'none'
-    }, 50)
+    })
   }
 
   return (
@@ -262,7 +266,18 @@ export function ActivityTimeline() {
                 variant={timeRange === r ? 'default' : 'ghost'}
                 size="sm"
                 className="h-5 px-2 text-[10px]"
-                onClick={() => setTimeRange(r)}
+                onClick={() => {
+                  // Rewind mode rebuilds the whole horizontal timeline
+                  // on range change — can take several seconds on large
+                  // sessions. Show the shared transition spinner so the
+                  // click feels acknowledged. Live mode is cheap; skip
+                  // the paint yield there.
+                  if (rewindMode) {
+                    runWithSpinner(() => setTimeRange(r))
+                  } else {
+                    setTimeRange(r)
+                  }
+                }}
               >
                 {r}
               </Button>
