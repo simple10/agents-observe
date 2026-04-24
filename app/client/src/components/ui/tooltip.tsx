@@ -3,6 +3,43 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 
 import { cn } from '@/lib/utils'
 
+// Two tab-visibility quirks conspire to make Radix Tooltip misbehave
+// around tab-switching; this block patches both:
+//
+// 1. Tooltips that were open when the tab was hidden never see a
+//    pointerleave / blur, so on return Radix still thinks they're
+//    open. We dispatch pointerleave + blur on every trigger at the
+//    moment the tab becomes hidden so Radix closes them in advance.
+//
+// 2. Even if nothing was open, the browser re-fires `focus` on the
+//    last-focused element when a tab regains visibility. Radix opens
+//    the tooltip on focus. For the sidebar's selected session this
+//    means "the active session tooltip pops up on tab return even
+//    though the pointer is nowhere near it". We catch this by
+//    blurring the focused tooltip trigger on a post-visibility rAF
+//    (after the browser has fired the spurious focus).
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      const triggers = document.querySelectorAll('[data-slot="tooltip-trigger"]')
+      for (const el of triggers) {
+        el.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false, cancelable: false }))
+        el.dispatchEvent(new FocusEvent('blur', { bubbles: false, cancelable: false }))
+      }
+      return
+    }
+    // Visible again. After the browser has re-fired focus events,
+    // blur any tooltip trigger that the browser restored focus to.
+    requestAnimationFrame(() => {
+      const active = document.activeElement as HTMLElement | null
+      if (active && typeof active.closest === 'function') {
+        const trigger = active.closest('[data-slot="tooltip-trigger"]') as HTMLElement | null
+        if (trigger) trigger.blur()
+      }
+    })
+  })
+}
+
 function TooltipProvider({
   delayDuration = 0,
   ...props
