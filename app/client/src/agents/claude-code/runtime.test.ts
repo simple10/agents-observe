@@ -104,6 +104,34 @@ describe('computeRuntimeMs', () => {
     expect(computeRuntimeMs(start, null, [start])).toBeNull()
   })
 
+  it('finds UserPromptSubmit in the turn for Stop', () => {
+    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 4500, subtype: 'Stop' })
+    expect(computeRuntimeMs(stop, null, [prompt, stop])).toBe(3500)
+  })
+
+  it('finds UserPromptSubmit in the turn for stop_hook_summary', () => {
+    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 2200, subtype: 'stop_hook_summary' })
+    expect(computeRuntimeMs(stop, null, [prompt, stop])).toBe(1200)
+  })
+
+  it('finds SubagentStart in the turn for SubagentStop', () => {
+    const start = makeEvent({ timestamp: 2000, subtype: 'SubagentStart' })
+    const stop = makeEvent({ id: 2, timestamp: 5000, subtype: 'SubagentStop' })
+    expect(computeRuntimeMs(stop, null, [start, stop])).toBe(3000)
+  })
+
+  it('returns null for Stop with no UserPromptSubmit in the turn', () => {
+    const stop = makeEvent({ timestamp: 4000, subtype: 'Stop' })
+    expect(computeRuntimeMs(stop, null, [stop])).toBeNull()
+  })
+
+  it('returns null for SubagentStop with no SubagentStart in the turn', () => {
+    const stop = makeEvent({ timestamp: 4000, subtype: 'SubagentStop' })
+    expect(computeRuntimeMs(stop, null, [stop])).toBeNull()
+  })
+
   it('returns null for event types without a known pairing strategy', () => {
     const session = makeEvent({ timestamp: 1000, subtype: 'SessionStart' })
     expect(computeRuntimeMs(session, null, [])).toBeNull()

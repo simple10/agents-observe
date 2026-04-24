@@ -2,7 +2,10 @@
 // Renders the summary line for a collapsed event row (the agent-owned section).
 
 import { getEventColor } from './icons'
+import { computeRuntimeMs, formatRuntime } from './runtime'
 import type { EventProps } from '../types'
+
+const STOP_SUBTYPES = new Set(['Stop', 'stop_hook_summary', 'SubagentStop'])
 
 /**
  * Renders the one-line summary for a Claude Code event.
@@ -16,7 +19,7 @@ function parseBinaryPrefix(summary: string): { binary: string | null; rest: stri
   return { binary: null, rest: summary }
 }
 
-export function ClaudeCodeRowSummary({ event }: EventProps) {
+export function ClaudeCodeRowSummary({ event, dataApi }: EventProps) {
   const summary = (event.summary as string) || ''
   const toolName = event.toolName
   const isTool =
@@ -28,6 +31,15 @@ export function ClaudeCodeRowSummary({ event }: EventProps) {
     event.subtype === 'UserPromptExpansion'
       ? (event.payload as Record<string, unknown>)?.expansion_type
       : null
+
+  // For Stop / SubagentStop events, compute runtime from the matching
+  // start in the same turn and render it as a trailing muted pill.
+  let runtimeLabel: string | null = null
+  if (event.subtype && STOP_SUBTYPES.has(event.subtype) && event.turnId) {
+    const turnEvents = dataApi.getTurnEvents(event.turnId)
+    const ms = computeRuntimeMs(event, null, turnEvents)
+    if (ms != null) runtimeLabel = formatRuntime(ms)
+  }
 
   return (
     <>
@@ -61,6 +73,11 @@ export function ClaudeCodeRowSummary({ event }: EventProps) {
         </div>
       ) : (
         <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{rest}</span>
+      )}
+      {runtimeLabel && (
+        <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
+          {runtimeLabel}
+        </span>
       )}
     </>
   )

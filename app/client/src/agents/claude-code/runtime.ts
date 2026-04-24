@@ -23,6 +23,14 @@ export function computeRuntimeMs(
     const end = turnEvents.find((e) => e.subtype === 'SubagentStop')
     if (end) return Math.abs(end.timestamp - event.timestamp)
   }
+  if (event.subtype === 'Stop' || event.subtype === 'stop_hook_summary') {
+    const start = turnEvents.find((e) => e.subtype === 'UserPromptSubmit')
+    if (start) return Math.abs(event.timestamp - start.timestamp)
+  }
+  if (event.subtype === 'SubagentStop') {
+    const start = turnEvents.find((e) => e.subtype === 'SubagentStart')
+    if (start) return Math.abs(event.timestamp - start.timestamp)
+  }
   return null
 }
 
