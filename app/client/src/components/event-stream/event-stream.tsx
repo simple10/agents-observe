@@ -9,6 +9,7 @@ import { getTimelineScrollTo, registerEventStreamScroll, withSyncLock } from '@/
 import { api } from '@/lib/api-client'
 import { useUIStore } from '@/stores/ui-store'
 import { EventRow } from './event-row'
+import { TimestampTooltipProvider } from './timestamp-tooltip'
 import { format } from 'timeago.js'
 import { buildAgentColorMap } from '@/lib/agent-utils'
 import { QueryBoundary } from '@/components/shared/query-boundary'
@@ -411,28 +412,30 @@ export function EventStream() {
               {filteredEvents.length === 0 ? (
                 <EmptyState text="No events match the current filters" />
               ) : (
-                <div className="relative" style={{ height: `${totalSize}px`, width: '100%' }}>
-                  {virtualItems.map((virtualItem) => {
-                    const event = filteredEvents[virtualItem.index]
-                    if (!event) return null
-                    return (
-                      <div
-                        key={virtualItem.key}
-                        ref={virtualizer.measureElement}
-                        data-index={virtualItem.index}
-                        className="absolute top-0 left-0 w-full border-b border-border/50"
-                        style={{ transform: `translateY(${virtualItem.start}px)` }}
-                      >
-                        <EventRow
-                          event={event}
-                          dataApi={dataApi}
-                          agentColorMap={agentColorMap}
-                          showAgentLabel={showAgentLabel}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
+                <TimestampTooltipProvider>
+                  <div className="relative" style={{ height: `${totalSize}px`, width: '100%' }}>
+                    {virtualItems.map((virtualItem) => {
+                      const event = filteredEvents[virtualItem.index]
+                      if (!event) return null
+                      return (
+                        <div
+                          key={virtualItem.key}
+                          ref={virtualizer.measureElement}
+                          data-index={virtualItem.index}
+                          className="absolute top-0 left-0 w-full border-b border-border/50"
+                          style={{ transform: `translateY(${virtualItem.start}px)` }}
+                        >
+                          <EventRow
+                            event={event}
+                            dataApi={dataApi}
+                            agentColorMap={agentColorMap}
+                            showAgentLabel={showAgentLabel}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </TimestampTooltipProvider>
               )}
             </div>
           </>

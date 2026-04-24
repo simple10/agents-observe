@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { getAgentDisplayName } from '@/lib/agent-utils'
 import { getEventIcon } from './icons'
 import { getEventSummary, relativePath } from './helpers'
+import { computeRuntimeMs, formatRuntime } from './runtime'
 import type { EventProps, EnrichedEvent, FrameworkDataApi } from '../types'
 import type { Agent } from '@/types'
 
@@ -221,6 +222,15 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
         event.subtype !== 'StopFailure' &&
         typeof payload.error === 'string' &&
         payload.error && <DetailCode label="Error" value={payload.error} />}
+
+      {/* Runtime — elapsed time between an event and its paired end.
+          - Pre/Post pairs (tool use, compact) via groupId
+          - UserPromptSubmit → Stop (or stop_hook_summary) via turnEvents
+          - SubagentStart → SubagentStop via turnEvents */}
+      {(() => {
+        const ms = computeRuntimeMs(event, pairedEvent, turnEvents)
+        return ms != null ? <DetailRow label="Runtime" value={formatRuntime(ms)} /> : null
+      })()}
 
       {/* Conversation thread for UserPrompt / Stop / Subagent events */}
       {showThread && (

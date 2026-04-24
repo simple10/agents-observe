@@ -7,6 +7,7 @@ import { AgentClassIcon } from '@/components/shared/agent-class-icon'
 import { useUIStore } from '@/stores/ui-store'
 import { Check, X, Loader } from 'lucide-react'
 import type { EnrichedEvent, FrameworkDataApi } from '@/agents/types'
+import { useTimestampTooltip } from './timestamp-tooltip'
 
 interface EventRowProps {
   event: EnrichedEvent
@@ -35,6 +36,7 @@ export const EventRow = memo(function EventRow({
   const isFlashing = useUIStore((s) => s.flashingEventId === event.id)
   const toggleExpandedEvent = useUIStore((s) => s.toggleExpandedEvent)
   const setSelectedEventId = useUIStore((s) => s.setSelectedEventId)
+  const { show: showTimestampTooltip, hide: hideTimestampTooltip } = useTimestampTooltip()
 
   const agent = dataApi.getAgent(event.agentId)
   const isSubagent = agent?.parentAgentId != null
@@ -152,7 +154,13 @@ export const EventRow = memo(function EventRow({
           <RowSummary event={event} dataApi={dataApi} />
 
           {/* Agent class icon + timestamp (framework-owned) */}
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground/80 dark:text-muted-foreground/60 tabular-nums shrink-0">
+          <span
+            className="flex items-center gap-1 text-[10px] text-muted-foreground/80 dark:text-muted-foreground/60 tabular-nums shrink-0"
+            onMouseEnter={(e) =>
+              showTimestampTooltip(event.timestamp, e.currentTarget.getBoundingClientRect())
+            }
+            onMouseLeave={hideTimestampTooltip}
+          >
             <AgentClassIcon agentClass={agent?.agentClass} />
             {formatTime(event.timestamp)}
           </span>
