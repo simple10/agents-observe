@@ -149,16 +149,42 @@ For every POST `/api/events`:
    - `clearsNotification` → set `pending_notification_ts = NULL`, `pending_notification_count = 0`. Leave `last_notification_ts` alone.
    - `startsNotification` → set `pending_notification_ts = event.timestamp`, `last_notification_ts = event.timestamp`, `pending_notification_count += 1`.
    - `stopsSession` → set `sessions.stopped_at = event.timestamp`.
-7. **Broadcast.** Per-session WS event broadcast (subscribed clients) + global activity ping (all clients).
+7. **Compose response.** Default body is `{ id: eventId }`. If the server needs information it can't compute itself (e.g. session row was just created with no slug), it adds a `requests` array of named callbacks the CLI should dispatch. See "Server-initiated callbacks" below.
+8. **Broadcast.** Per-session WS event broadcast (subscribed clients) + global activity ping (all clients).
+
+### Server-initiated callbacks
+
+The server stays agent-class-agnostic by *naming* the information it needs rather than parsing payloads or transcripts itself. When something is missing that an agent-class lib can compute, the event response includes a `requests` array:
+
+```json
+{
+  "id": 12345,
+  "requests": [
+    {
+      "name": "getSessionInfo",
+      "callback": "/api/callbacks/session-info/sess-abc",
+      "args": { "transcriptPath": "/path/to/transcript.jsonl", "agentClass": "claude-code" }
+    }
+  ]
+}
+```
+
+The CLI dispatches each named request to the matching function on its hook lib (e.g. `lib.getSessionInfo(args, ctx)`), then POSTs the result to the supplied callback URL. This keeps Layer 2 from inspecting payloads while letting it fill in agent-class-specific session metadata on demand. The flow is amortized: callbacks fire only when state is missing, not on every event.
+
+Defined callbacks (Layer 2 contract):
+
+- **`getSessionInfo`** — fired when a session row is created and lacks `slug`. CLI returns `{ slug, gitBranch }`. Server populates the session row.
+
+Hook libs implement only the callbacks their agent class can satisfy. The server gracefully degrades when a callback isn't implemented or fails — slug stays NULL, project resolution falls through to other branches.
 
 ### What the server does NOT do
 
-- Inspect the payload contents (with one narrow exception: `events.cwd` extraction if hook lib didn't provide it at the envelope level — and even this is a transitional convenience worth questioning).
+- Inspect event payload contents (with one narrow exception: `events.cwd` extraction if hook lib didn't provide it at the envelope level — and even this is a transitional convenience worth questioning).
 - Branch on `hookName` values.
 - Derive event status, type, subtype, or category.
 - Auto-resolve projects without an explicit flag.
 - Compute denormalized counters (`event_count`, `agent_count`).
-- Walk transcripts (the `getSessionInfo` callback is removed; hook libs prefetch).
+- Walk transcripts itself. (It *requests* this work via callbacks — the work happens in Layer 1.)
 - Build agent hierarchies.
 - Generate event summaries.
 
@@ -360,7 +386,7 @@ Hook libs decide what counts as a notification per agent class; envelope flags c
 
 - `GET /api/events/:id/thread` — dead
 - `GET /api/agents/:id/events` — dead
-- `POST /api/callbacks/session-info/:id` — replaced by hook-lib prefetch into `_meta`
+- (Callbacks: kept. `POST /api/callbacks/session-info/:id` stays as the canonical channel for `getSessionInfo` results — see Layer 2 contract.)
 
 ### Server logic
 
@@ -384,8 +410,8 @@ Hook libs decide what counts as a notification per agent class; envelope flags c
 ### Hook lib code
 
 - `deriveTypeSubtype` from all three libs
-- `getSessionInfo` callback receiver path (the lib still has the function for prefetch use, but the round-trip with the server goes away)
 - `unknown.mjs` renames to `default.mjs`; per-class libs delegate to it
+- (`getSessionInfo`: kept as a callback handler. Hook libs continue to implement it; the CLI dispatches when the server's response carries a matching `requests` entry.)
 
 ### Client code
 

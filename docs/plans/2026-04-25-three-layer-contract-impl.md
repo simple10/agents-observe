@@ -399,7 +399,7 @@ Rewrite the server's behavior surface to match the spec.
 - `app/server/src/services/project-resolver.ts` — full rewrite per spec algorithm
 - `app/server/src/types.ts` — finalize `EventEnvelope` + `EventEnvelopeMeta`
 - `app/server/src/routes/agents.ts` — bring back PATCH; drop `/:id/events` (already done in Phase 1)
-- `app/server/src/app.ts` — drop callbacks router, register PATCH agents
+- `app/server/src/app.ts` — register PATCH agents (callbacks router stays)
 
 ### Task 3.1: Lock the envelope type definitions
 
@@ -809,19 +809,38 @@ router.patch('/agents/:id', async (c) => {
 
 - [ ] **Step 4: Commit.**
 
-### Task 3.6: Drop callback infrastructure
+### Task 3.6: Keep + tighten callback infrastructure
 
-- [ ] **Step 1: Delete `app/server/src/routes/callbacks.ts`.**
+The callbacks mechanism (server response includes a `requests` array; CLI dispatches to named hook-lib functions; results POST back to a callback endpoint) stays. It's the bridge that lets Layer 2 stay agent-class-agnostic while still getting agent-class-specific metadata when it's needed (e.g. slug from a Claude transcript). Spec section "Server-initiated callbacks" is the contract.
 
-- [ ] **Step 2: Drop `callbacksRouter` from `app/server/src/app.ts`.**
+This task verifies the callback flow still works after the events.ts rewrite in 3.4 and tightens the response shape if needed.
 
-- [ ] **Step 3: Drop the callback-related fields from response types** (the `requests` array in events.ts response).
+- [ ] **Step 1:** Confirm `app/server/src/routes/callbacks.ts` and the `POST /api/callbacks/session-info/:sessionId` handler still exist and aren't broken by the parser/route rewrites.
 
-- [ ] **Step 4: Drop `getSessionInfo` callback handler in hook libs** (`hooks/scripts/observe_cli.mjs` callback dispatch). Keep the `getSessionInfo` function in each agent lib — Phase 4 wires it into the envelope-building path.
+- [ ] **Step 2:** In the rewritten events.ts (Task 3.4), after the upsert+resolve+insert flow, build the `requests` array. Trigger condition: session row was just created (or has been around but still has `slug IS NULL`) AND the envelope provided `_meta.session.transcriptPath`. The request entry:
 
-- [ ] **Step 5: Run tests.** callbacks.test.ts goes away; events.test.ts loses callback assertions.
+```ts
+const requests: Array<{ name: string; callback: string; args: Record<string, unknown> }> = []
+if (session && !session.slug && env._meta?.session?.transcriptPath) {
+  requests.push({
+    name: 'getSessionInfo',
+    callback: `/api/callbacks/session-info/${env.sessionId}`,
+    args: {
+      transcriptPath: env._meta.session.transcriptPath,
+      agentClass: env.agentClass,
+    },
+  })
+}
+return c.json({ id: eventId, ...(requests.length > 0 ? { requests } : {}) })
+```
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 3:** Confirm the existing CLI dispatcher in `hooks/scripts/observe_cli.mjs` reads the `requests` array, looks up `lib[name]`, calls it, and POSTs to `callback`. No changes needed unless rewrites broke it.
+
+- [ ] **Step 4:** Confirm `app/server/src/routes/callbacks.ts` accepts `{ slug, gitBranch }` and patches the session row. The handler stays narrow — it's the storage-write side of the named callback.
+
+- [ ] **Step 5:** Run tests. `callbacks.test.ts` should still pass. `events.test.ts` gains a case asserting the `requests` array fires only when expected.
+
+- [ ] **Step 6:** Commit.
 
 ---
 
@@ -1030,38 +1049,17 @@ export function getSessionInfo(args, ctx) { /* existing transcript-scan logic st
 - [ ] **Step 2: Drop `deriveTypeSubtype` if present (Codex currently leaves it null — easy delete).**
 - [ ] **Step 3: Tests + commit.**
 
-### Task 4.5: Hook lib prefetch into envelope
+### Task 4.5: Verify the callback flow still functions
 
-The `getSessionInfo` callback receiver is gone. Per the spec, hook libs proactively read transcript info into `_meta.session.*` on session start.
+Per the revised spec, hook libs do NOT prefetch into the envelope on every event. Instead, each lib continues to expose `getSessionInfo` as a callback handler, and the CLI dispatches it only when the server's response carries a matching `requests` entry. This task is a verification pass — no new code unless the route rewrites broke the existing dispatch path.
 
-- [ ] **Step 1: In `hooks/scripts/lib/hooks.mjs` dispatchHookEvent**, after `buildHookEvent`, if this is the first event for the session (heuristic: `hookName === 'SessionStart'` for Claude Code) AND the lib exports `getSessionInfo`, call it and merge into `_meta.session`:
+- [ ] **Step 1:** Confirm each agent lib (default, claude-code, codex) still exports a `getSessionInfo(args, ctx)` function with the `{ slug, git: { branch } }` return contract. (Default lib's version can be a no-op stub returning `null`.)
 
-```js
-if (lib.getSessionInfo && shouldPrefetchSessionInfo(envelope.hookName)) {
-  try {
-    const info = lib.getSessionInfo(
-      { transcript_path: envelope._meta?.session?.transcriptPath, agentClass: envelope.agentClass },
-      { log }
-    )
-    if (info?.slug) envelope._meta = { ...envelope._meta, session: { ...envelope._meta?.session, slug: info.slug } }
-    if (info?.git?.branch) {
-      envelope._meta = {
-        ...envelope._meta,
-        session: {
-          ...envelope._meta?.session,
-          metadata: { ...(envelope._meta?.session?.metadata ?? {}), gitBranch: info.git.branch },
-        },
-      }
-    }
-  } catch (err) {
-    log.debug(`getSessionInfo prefetch failed: ${err.message}`)
-  }
-}
-```
+- [ ] **Step 2:** Confirm `hooks/scripts/observe_cli.mjs` still dispatches the `requests` array from the events response: looks up each `request.name` on the lib, calls it with `request.args`, and POSTs the result to `request.callback`.
 
-- [ ] **Step 2: Per-agent-class `shouldPrefetchSessionInfo`** can be a function exported by each lib (defaulting to `(hookName) => hookName === 'SessionStart'`). Alternatively, just always try — the read is cheap and idempotent.
+- [ ] **Step 3:** Add a test fixture covering the round-trip: POST event with `_meta.session.transcriptPath`, observe `requests` in response, dispatch `getSessionInfo`, POST callback, verify session row's slug populated.
 
-- [ ] **Step 3: Tests + commit.**
+- [ ] **Step 4:** Commit.
 
 ---
 
