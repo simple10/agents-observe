@@ -2,7 +2,7 @@ import type { RawEvent, EnrichedEvent, ProcessingContext, ProcessEventResult } f
 import { getEventIcon, getEventColor } from './icons'
 import { getEventSummary, buildSearchText } from './helpers'
 import { deriveSubtype, deriveToolName } from './derivers'
-import { api } from '@/lib/api-client'
+import { agentPatchDebouncer } from '@/lib/agent-patch-debouncer'
 
 // Label mapping for the framework's left-side chrome
 const LABELS: Record<string, string> = {
@@ -147,21 +147,37 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
       ctx.stashPendingAgentMeta(toolUseId, { name: inputName, description: inputDesc })
     }
   }
+  // SubagentStart payload often carries `agent_type` (and sometimes a
+  // refined name) for the agent the event identifies. Push those into
+  // the debouncer so the canonical agent row gets the agent_type
+  // populated even when the Pre/Post Agent pairing didn't carry it.
+  if (subtype === 'SubagentStart') {
+    const agentType =
+      typeof p.agent_type === 'string' ? (p.agent_type as string) : null
+    const agentName =
+      typeof p.name === 'string' ? (p.name as string) : null
+    if (agentType !== null || agentName !== null) {
+      const patch: { name?: string | null; agent_type?: string | null } = {}
+      if (agentType !== null) patch.agent_type = agentType
+      if (agentName !== null) patch.name = agentName
+      agentPatchDebouncer.schedule(raw.agentId, patch)
+    }
+  }
   if (subtype === 'PostToolUse' && toolName === 'Agent' && toolUseId) {
     const spawnedAgentId =
       typeof p.tool_response?.agentId === 'string' ? (p.tool_response.agentId as string) : null
     if (spawnedAgentId) {
       const meta = ctx.consumePendingAgentMeta(toolUseId)
       if (meta && (meta.name || meta.description)) {
-        // Fire-and-forget: the dashboard re-reads agents on the next
-        // refetch / WS broadcast. Failures are non-fatal — the existing
-        // agent row already has agent_class + id.
-        api
-          .patchAgent(spawnedAgentId, {
-            name: meta.name ?? null,
-            description: meta.description ?? null,
-          })
-          .catch(() => {})
+        // Debounced + fire-and-forget. Multiple discoveries for the
+        // same agent (Pre/Post pair, follow-up SubagentStop carrying
+        // an agent_type, etc.) coalesce into a single PATCH so a
+        // chatty session doesn't hammer /api/agents/:id. The dashboard
+        // re-reads on the next useAgents refetch / WS broadcast.
+        agentPatchDebouncer.schedule(spawnedAgentId, {
+          name: meta.name ?? null,
+          description: meta.description ?? null,
+        })
       }
     }
   }
