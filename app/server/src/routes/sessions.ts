@@ -5,10 +5,8 @@ import type { ParsedEvent } from '../types'
 import { config } from '../config'
 import { apiError } from '../errors'
 
-function deriveEventStatus(subtype: string | null): string {
-  if (subtype === 'PreToolUse') return 'running'
-  if (subtype === 'PostToolUse') return 'completed'
-  return 'pending'
+function deriveSessionStatus(stoppedAt: number | null | undefined): string {
+  return stoppedAt ? 'ended' : 'active'
 }
 
 function parseAgentClasses(raw: unknown): string[] {
@@ -40,7 +38,8 @@ router.get('/sessions/recent', async (c) => {
     projectSlug: r.project_slug,
     slug: r.slug,
     transcriptPath: r.transcript_path || null,
-    status: r.status,
+    startCwd: r.start_cwd || null,
+    status: deriveSessionStatus(r.stopped_at),
     startedAt: r.started_at,
     stoppedAt: r.stopped_at,
     metadata: r.metadata ? JSON.parse(r.metadata) : null,
@@ -64,10 +63,11 @@ router.get('/sessions/:id', async (c) => {
     projectSlug: row.project_slug,
     projectName: row.project_name,
     slug: row.slug,
-    status: row.status,
+    status: deriveSessionStatus(row.stopped_at),
     startedAt: row.started_at,
     stoppedAt: row.stopped_at,
     transcriptPath: row.transcript_path || null,
+    startCwd: row.start_cwd || null,
     metadata: row.metadata ? JSON.parse(row.metadata) : null,
     agentCount: row.agent_count,
     eventCount: row.event_count,
@@ -83,8 +83,6 @@ router.get('/sessions/:id/agents', async (c) => {
   const rows = await store.getAgentsForSession(sessionId)
   const agents = rows.map((r: any) => ({
     id: r.id,
-    sessionId: r.session_id,
-    parentAgentId: r.parent_agent_id,
     name: r.name,
     description: r.description,
     agentType: r.agent_type || null,
@@ -104,8 +102,6 @@ router.get('/sessions/:id/events', async (c) => {
     ? await store.getEventsSince(sessionId, parseInt(sinceParam))
     : await store.getEventsForSession(sessionId, {
         agentIds: agentIdParam ? agentIdParam.split(',') : undefined,
-        type: c.req.query('type') || undefined,
-        subtype: c.req.query('subtype') || undefined,
         hookName: c.req.query('hookName') || undefined,
         search: c.req.query('search') || undefined,
         limit: c.req.query('limit') ? parseInt(c.req.query('limit')!) : undefined,
@@ -116,40 +112,33 @@ router.get('/sessions/:id/events', async (c) => {
     id: r.id,
     agentId: r.agent_id,
     sessionId: r.session_id,
-    hookName: r.hook_name ?? null,
-    type: r.type,
-    subtype: r.subtype,
-    toolName: r.tool_name,
-    status: deriveEventStatus(r.subtype),
+    hookName: r.hook_name,
     timestamp: r.timestamp,
     createdAt: r.created_at || r.timestamp,
+    cwd: r.cwd ?? null,
+    _meta: r._meta ? JSON.parse(r._meta) : null,
     payload: JSON.parse(r.payload),
   }))
 
   // Lazy session status correction based on event history.
+  // Phase 2: still uses the route's existing legacy compatibility wrapper
+  // (`updateSessionStatus`) which now writes only to `stopped_at`.
   if (events.length > 0) {
     let lastSessionEndIdx = -1
     for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].subtype === 'SessionEnd') {
+      if (events[i].hookName === 'SessionEnd') {
         lastSessionEndIdx = i
         break
       }
     }
     const session = await store.getSessionById(sessionId)
     if (session) {
-      if (
-        lastSessionEndIdx >= 0 &&
-        lastSessionEndIdx === events.length - 1 &&
-        session.status === 'active'
-      ) {
+      const isStopped = !!session.stopped_at
+      if (lastSessionEndIdx >= 0 && lastSessionEndIdx === events.length - 1 && !isStopped) {
         await store.updateSessionStatus(sessionId, 'stopped')
-      } else if (
-        lastSessionEndIdx >= 0 &&
-        lastSessionEndIdx < events.length - 1 &&
-        session.status === 'stopped'
-      ) {
+      } else if (lastSessionEndIdx >= 0 && lastSessionEndIdx < events.length - 1 && isStopped) {
         await store.updateSessionStatus(sessionId, 'active')
-      } else if (lastSessionEndIdx < 0 && session.status === 'stopped') {
+      } else if (lastSessionEndIdx < 0 && isStopped) {
         await store.updateSessionStatus(sessionId, 'active')
       }
     }

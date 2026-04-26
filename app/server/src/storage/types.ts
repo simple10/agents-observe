@@ -3,13 +3,14 @@
 export interface InsertEventParams {
   agentId: string
   sessionId: string
-  /** Raw hook event name from the CLI-stamped envelope, or null. */
-  hookName?: string | null
-  type: string
-  subtype: string | null
-  toolName: string | null
+  /** Raw hook event name from the CLI-stamped envelope. Defaults to 'unknown'. */
+  hookName: string
   timestamp: number
   payload: Record<string, unknown>
+  /** Per-event cwd (lifted from envelope). Optional. */
+  cwd?: string | null
+  /** Envelope creation hints persisted for traceability. Optional. */
+  _meta?: Record<string, unknown> | null
   /**
    * When true, set `pending_notification_ts = timestamp`. When explicitly
    * false (default for untagged events), clear it. When undefined AND the
@@ -33,8 +34,6 @@ export interface InsertEventResult {
 
 export interface EventFilters {
   agentIds?: string[]
-  type?: string
-  subtype?: string
   hookName?: string
   search?: string
   limit?: number
@@ -45,27 +44,18 @@ export interface StoredEvent {
   id: number
   agent_id: string
   session_id: string
-  hook_name: string | null
-  type: string
-  subtype: string | null
-  tool_name: string | null
+  hook_name: string
   timestamp: number
   created_at: number
+  cwd: string | null
+  _meta: string | null // JSON string in DB
   payload: string // JSON string in DB
 }
 
 export interface EventStore {
-  createProject(
-    slug: string,
-    name: string,
-    transcriptPath: string | null,
-    cwd?: string | null,
-  ): Promise<number>
+  createProject(slug: string, name: string): Promise<number>
   getProjectById(id: number): Promise<any | null>
   getProjectBySlug(slug: string): Promise<any | null>
-  getProjectByCwd(cwd: string): Promise<any | null>
-  getProjectByTranscriptPath(transcriptPath: string): Promise<any | null>
-  updateProjectCwd(projectId: number, cwd: string): Promise<void>
   updateProjectName(projectId: number, name: string): Promise<void>
   isSlugAvailable(slug: string): Promise<boolean>
   deleteProject(
@@ -73,11 +63,12 @@ export interface EventStore {
   ): Promise<{ sessionIds: string[]; sessions: number; agents: number; events: number }>
   upsertSession(
     id: string,
-    projectId: number,
+    projectId: number | null,
     slug: string | null,
     metadata: Record<string, unknown> | null,
     timestamp: number,
     transcriptPath?: string | null,
+    startCwd?: string | null,
   ): Promise<void>
   upsertAgent(
     id: string,
@@ -116,9 +107,8 @@ export interface EventStore {
   healthCheck(): Promise<{ ok: boolean; error?: string }>
   /**
    * Scan all tables for rows with broken foreign keys and repair them.
-   * - Sessions with invalid project_id → reassigned to the 'unknown' project
-   * - Agents with invalid session_id → deleted
-   * - Agents with invalid parent_agent_id → parent_agent_id set to NULL
+   * - Sessions with invalid project_id → project_id set to NULL
+   * - Agents with no referencing events → deleted
    * - Events with invalid session_id or agent_id → deleted
    *
    * Returns a summary of what was repaired.

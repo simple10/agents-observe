@@ -15,8 +15,6 @@ router.get('/agents/:id', async (c) => {
   if (!row) return apiError(c, 404, 'Agent not found')
   return c.json({
     id: row.id,
-    sessionId: row.session_id,
-    parentAgentId: row.parent_agent_id,
     name: row.name,
     description: row.description,
     agentType: row.agent_type || null,

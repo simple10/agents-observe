@@ -31,23 +31,18 @@ export class SqliteAdapter implements EventStore {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         slug TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
-        transcript_path TEXT,
-        cwd TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `)
 
-    // Migration: ensure cwd exists on legacy projects (added later than original schema).
+    // Migration: rebuild projects table to drop unused columns (metadata,
+    // cwd, transcript_path). Idempotent — guarded by PRAGMA check.
     const projectCols = this.db.prepare("PRAGMA table_info('projects')").all() as { name: string }[]
-    if (!projectCols.some((c) => c.name === 'cwd')) {
-      this.db.exec('ALTER TABLE projects ADD COLUMN cwd TEXT')
-    }
-
-    // Migration: drop unused projects.metadata column (zero readers/writers).
-    // Uses table-rebuild because SQLite's DROP COLUMN is unavailable on older
-    // bundled versions, and rebuild is safe when only one column changes.
-    if (projectCols.some((c) => c.name === 'metadata')) {
+    const projectsHasMetadata = projectCols.some((c) => c.name === 'metadata')
+    const projectsHasCwd = projectCols.some((c) => c.name === 'cwd')
+    const projectsHasTranscriptPath = projectCols.some((c) => c.name === 'transcript_path')
+    if (projectsHasMetadata || projectsHasCwd || projectsHasTranscriptPath) {
       this.db.exec(`
         PRAGMA foreign_keys=OFF;
         BEGIN IMMEDIATE;
@@ -56,13 +51,11 @@ export class SqliteAdapter implements EventStore {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           slug TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL,
-          transcript_path TEXT,
-          cwd TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
-        INSERT INTO projects_new (id, slug, name, transcript_path, cwd, created_at, updated_at)
-        SELECT id, slug, name, transcript_path, cwd, created_at, updated_at FROM projects;
+        INSERT INTO projects_new (id, slug, name, created_at, updated_at)
+        SELECT id, slug, name, created_at, updated_at FROM projects;
         DROP TABLE projects;
         ALTER TABLE projects_new RENAME TO projects;
         COMMIT;
@@ -73,15 +66,13 @@ export class SqliteAdapter implements EventStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
-        project_id INTEGER NOT NULL REFERENCES projects(id),
+        project_id INTEGER REFERENCES projects(id),
         slug TEXT,
-        status TEXT DEFAULT 'active',
         started_at INTEGER NOT NULL,
         stopped_at INTEGER,
         transcript_path TEXT,
+        start_cwd TEXT,
         metadata TEXT,
-        event_count INTEGER NOT NULL DEFAULT 0,
-        agent_count INTEGER NOT NULL DEFAULT 0,
         last_activity INTEGER,
         pending_notification_ts INTEGER,
         created_at INTEGER NOT NULL,
@@ -94,15 +85,10 @@ export class SqliteAdapter implements EventStore {
     if (!sessionCols.some((c) => c.name === 'transcript_path')) {
       this.db.exec('ALTER TABLE sessions ADD COLUMN transcript_path TEXT')
     }
-    if (!sessionCols.some((c) => c.name === 'event_count')) {
-      this.db.exec('ALTER TABLE sessions ADD COLUMN event_count INTEGER NOT NULL DEFAULT 0')
-      this.db.exec('ALTER TABLE sessions ADD COLUMN agent_count INTEGER NOT NULL DEFAULT 0')
+    if (!sessionCols.some((c) => c.name === 'last_activity')) {
       this.db.exec('ALTER TABLE sessions ADD COLUMN last_activity INTEGER')
-      // Backfill from existing data
       this.db.exec(`
         UPDATE sessions SET
-          event_count = (SELECT COUNT(*) FROM events WHERE session_id = sessions.id),
-          agent_count = (SELECT COUNT(*) FROM agents WHERE session_id = sessions.id),
           last_activity = (SELECT MAX(timestamp) FROM events WHERE session_id = sessions.id)
       `)
     }
@@ -128,15 +114,25 @@ export class SqliteAdapter implements EventStore {
     } else if (!hasPending) {
       this.db.exec('ALTER TABLE sessions ADD COLUMN pending_notification_ts INTEGER')
       // Fresh column on a pre-envelope-flags install → backfill from the
-      // events table as a one-time bootstrap. This is the ONLY place the
-      // server reads `subtype` to infer notification state; the sweep
-      // below corrects for the old pending-rule. After migration, state
-      // is driven entirely by envelope flags at event-insert time.
+      // events table as a one-time bootstrap. After migration, state is
+      // driven entirely by envelope flags at event-insert time. We use
+      // hook_name first (post-Phase-2 schema) and fall back to the legacy
+      // `subtype` column for events tables that haven't been rebuilt yet.
+      const evtCols = this.db.prepare("PRAGMA table_info('events')").all() as { name: string }[]
+      const hookNameCol = evtCols.some((c) => c.name === 'hook_name')
+      const subtypeCol = evtCols.some((c) => c.name === 'subtype')
+      const matchExpr = hookNameCol
+        ? subtypeCol
+          ? "COALESCE(hook_name, subtype) = 'Notification'"
+          : "hook_name = 'Notification'"
+        : subtypeCol
+          ? "subtype = 'Notification'"
+          : '0'
       this.db.exec(`
         UPDATE sessions SET
           pending_notification_ts = (
             SELECT MAX(timestamp) FROM events
-            WHERE session_id = sessions.id AND subtype = 'Notification'
+            WHERE session_id = sessions.id AND ${matchExpr}
           )
       `)
     }
@@ -153,19 +149,55 @@ export class SqliteAdapter implements EventStore {
         AND pending_notification_ts < last_activity
     `)
 
+    // Migration: rebuild sessions table to drop dead columns
+    // (status, event_count, agent_count) and add start_cwd. Idempotent —
+    // guarded by PRAGMA check.
+    const sessionsHasStatus = sessionCols.some((c) => c.name === 'status')
+    const sessionsHasEventCount = sessionCols.some((c) => c.name === 'event_count')
+    const sessionsHasAgentCount = sessionCols.some((c) => c.name === 'agent_count')
+    const sessionsHasStartCwd = sessionCols.some((c) => c.name === 'start_cwd')
+    if (
+      sessionsHasStatus ||
+      sessionsHasEventCount ||
+      sessionsHasAgentCount ||
+      !sessionsHasStartCwd
+    ) {
+      this.db.exec(`
+        PRAGMA foreign_keys=OFF;
+        BEGIN IMMEDIATE;
+        DROP TABLE IF EXISTS sessions_new;
+        CREATE TABLE sessions_new (
+          id TEXT PRIMARY KEY,
+          project_id INTEGER REFERENCES projects(id),
+          slug TEXT,
+          started_at INTEGER NOT NULL,
+          stopped_at INTEGER,
+          transcript_path TEXT,
+          start_cwd TEXT,
+          metadata TEXT,
+          last_activity INTEGER,
+          pending_notification_ts INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        INSERT INTO sessions_new (id, project_id, slug, started_at, stopped_at, transcript_path, start_cwd, metadata, last_activity, pending_notification_ts, created_at, updated_at)
+        SELECT id, project_id, slug, started_at, stopped_at, transcript_path, NULL, metadata, last_activity, pending_notification_ts, created_at, updated_at FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_new RENAME TO sessions;
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+      `)
+    }
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        parent_agent_id TEXT,
+        agent_class TEXT NOT NULL DEFAULT 'unknown',
         name TEXT,
         description TEXT,
         agent_type TEXT,
-        agent_class TEXT,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id),
-        FOREIGN KEY (parent_agent_id) REFERENCES agents(id)
+        updated_at INTEGER NOT NULL
       )
     `)
 
@@ -175,30 +207,34 @@ export class SqliteAdapter implements EventStore {
       this.db.exec('ALTER TABLE agents ADD COLUMN agent_class TEXT')
     }
 
-    // Migration: drop unused agents.metadata + agents.transcript_path
-    // (zero readers; transcript_path was written but never read).
+    // Migration: rebuild to drop unused columns (metadata, transcript_path)
+    // and the now-removed session linkage columns (session_id, parent_agent_id).
+    // Idempotent — guarded by PRAGMA check.
     const agentsHasMetadata = agentCols.some((c) => c.name === 'metadata')
     const agentsHasTranscriptPath = agentCols.some((c) => c.name === 'transcript_path')
-    if (agentsHasMetadata || agentsHasTranscriptPath) {
+    const agentsHasSessionId = agentCols.some((c) => c.name === 'session_id')
+    const agentsHasParentAgentId = agentCols.some((c) => c.name === 'parent_agent_id')
+    if (
+      agentsHasMetadata ||
+      agentsHasTranscriptPath ||
+      agentsHasSessionId ||
+      agentsHasParentAgentId
+    ) {
       this.db.exec(`
         PRAGMA foreign_keys=OFF;
         BEGIN IMMEDIATE;
         DROP TABLE IF EXISTS agents_new;
         CREATE TABLE agents_new (
           id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          parent_agent_id TEXT,
+          agent_class TEXT NOT NULL DEFAULT 'unknown',
           name TEXT,
           description TEXT,
           agent_type TEXT,
-          agent_class TEXT,
           created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          FOREIGN KEY (session_id) REFERENCES sessions(id),
-          FOREIGN KEY (parent_agent_id) REFERENCES agents(id)
+          updated_at INTEGER NOT NULL
         );
-        INSERT INTO agents_new (id, session_id, parent_agent_id, name, description, agent_type, agent_class, created_at, updated_at)
-        SELECT id, session_id, parent_agent_id, name, description, agent_type, agent_class, created_at, updated_at FROM agents;
+        INSERT INTO agents_new (id, agent_class, name, description, agent_type, created_at, updated_at)
+        SELECT id, COALESCE(agent_class, 'unknown'), name, description, agent_type, created_at, updated_at FROM agents;
         DROP TABLE agents;
         ALTER TABLE agents_new RENAME TO agents;
         COMMIT;
@@ -211,15 +247,14 @@ export class SqliteAdapter implements EventStore {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         agent_id TEXT NOT NULL,
         session_id TEXT NOT NULL,
-        hook_name TEXT,
-        type TEXT NOT NULL,
-        subtype TEXT,
-        tool_name TEXT,
+        hook_name TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
+        cwd TEXT,
+        _meta TEXT,
         payload TEXT NOT NULL,
-        FOREIGN KEY (agent_id) REFERENCES agents(id),
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `)
 
@@ -249,83 +284,92 @@ export class SqliteAdapter implements EventStore {
       `)
     }
 
-    // Migration: drop tool_use_id column. The server never queries on
-    // it (verified: zero WHERE clauses). The client reads the raw
-    // `tool_use_id` from `payload` directly for Pre/Post tool pairing
-    // (groupId in the agent-class processEvent). Server's subagent
-    // pairing in events.ts also reads from payload at ingest.
+    // Migration: drop tool_use_id column when present (legacy schema).
     if (eventCols.some((c) => c.name === 'tool_use_id')) {
       this.db.exec('DROP INDEX IF EXISTS idx_events_tool_use_id')
       try {
         this.db.exec('ALTER TABLE events DROP COLUMN tool_use_id')
       } catch {
-        // Older SQLite without DROP COLUMN — recreate the table sans
-        // the column. Uses the new schema (no tool_use_id) declared
-        // above at CREATE TABLE IF NOT EXISTS. This only triggers on
-        // pre-3.35 SQLite which modern better-sqlite3 doesn't bundle,
-        // but we keep the fallback defensive.
-        this.db.exec('BEGIN')
-        try {
-          this.db.exec(`
-            CREATE TABLE events_new (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              agent_id TEXT NOT NULL,
-              session_id TEXT NOT NULL,
-              hook_name TEXT,
-              type TEXT NOT NULL,
-              subtype TEXT,
-              tool_name TEXT,
-              timestamp INTEGER NOT NULL,
-              created_at INTEGER NOT NULL,
-              payload TEXT NOT NULL,
-              FOREIGN KEY (agent_id) REFERENCES agents(id),
-              FOREIGN KEY (session_id) REFERENCES sessions(id)
-            )
-          `)
-          this.db.exec(`
-            INSERT INTO events_new (id, agent_id, session_id, hook_name, type, subtype, tool_name, timestamp, created_at, payload)
-            SELECT id, agent_id, session_id, hook_name, type, subtype, tool_name, timestamp, created_at, payload FROM events
-          `)
-          this.db.exec('DROP TABLE events')
-          this.db.exec('ALTER TABLE events_new RENAME TO events')
-          this.db.exec('COMMIT')
-        } catch (err) {
-          this.db.exec('ROLLBACK')
-          throw err
-        }
+        // Older SQLite fallback path — handled by the table-rebuild migration below.
       }
+    }
+
+    // Migration: rebuild events table to drop type/subtype/tool_name and
+    // add cwd + _meta. Idempotent — guarded by PRAGMA check. Existing
+    // rows get NULL cwd/_meta; hook_name is backfilled with COALESCE so
+    // legacy rows that pre-date the column still have a usable identity.
+    const eventsHasType = eventCols.some((c) => c.name === 'type')
+    const eventsHasSubtype = eventCols.some((c) => c.name === 'subtype')
+    const eventsHasToolName = eventCols.some((c) => c.name === 'tool_name')
+    const eventsHasCwd = eventCols.some((c) => c.name === 'cwd')
+    const eventsHasMeta = eventCols.some((c) => c.name === '_meta')
+    if (eventsHasType || eventsHasSubtype || eventsHasToolName || !eventsHasCwd || !eventsHasMeta) {
+      // Compose the source-row hook_name expression depending on which
+      // legacy columns exist on the current table.
+      const subSelect =
+        eventsHasSubtype && eventsHasType
+          ? "COALESCE(hook_name, subtype, type, 'unknown')"
+          : eventsHasSubtype
+            ? "COALESCE(hook_name, subtype, 'unknown')"
+            : eventsHasType
+              ? "COALESCE(hook_name, type, 'unknown')"
+              : "COALESCE(hook_name, 'unknown')"
+      this.db.exec(`
+        PRAGMA foreign_keys=OFF;
+        BEGIN IMMEDIATE;
+        DROP TABLE IF EXISTS events_new;
+        CREATE TABLE events_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          hook_name TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          cwd TEXT,
+          _meta TEXT,
+          payload TEXT NOT NULL,
+          FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+        INSERT INTO events_new (id, agent_id, session_id, hook_name, timestamp, created_at, cwd, _meta, payload)
+        SELECT id, agent_id, session_id, ${subSelect}, timestamp, created_at, NULL, NULL, payload FROM events;
+        DROP TABLE events;
+        ALTER TABLE events_new RENAME TO events;
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+      `)
     }
 
     // Create indexes
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug)')
+    this.db.exec('DROP INDEX IF EXISTS idx_projects_transcript_path')
+    this.db.exec('DROP INDEX IF EXISTS idx_projects_cwd')
+    this.db.exec('DROP INDEX IF EXISTS idx_events_type')
+    this.db.exec('DROP INDEX IF EXISTS idx_events_session')
+    this.db.exec('DROP INDEX IF EXISTS idx_events_agent')
+    this.db.exec('DROP INDEX IF EXISTS idx_events_session_agent')
+    this.db.exec('DROP INDEX IF EXISTS idx_events_hook_name')
+    this.db.exec('DROP INDEX IF EXISTS idx_agents_session')
+    this.db.exec('DROP INDEX IF EXISTS idx_agents_parent')
     this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_projects_transcript_path ON projects(transcript_path)',
+      'CREATE INDEX IF NOT EXISTS idx_events_session_ts ON events(session_id, timestamp)',
     )
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_projects_cwd ON projects(cwd)')
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, timestamp)')
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, timestamp)')
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_type ON events(type, subtype)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_agent_ts ON events(agent_id, timestamp)')
     this.db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_events_session_agent ON events(session_id, agent_id, timestamp)',
+      'CREATE INDEX IF NOT EXISTS idx_events_session_hook ON events(session_id, hook_name)',
     )
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_hook_name ON events(hook_name)')
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id)')
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_agent_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_start_cwd ON sessions(start_cwd)')
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_transcript_path ON sessions(transcript_path)',
+    )
   }
 
-  async createProject(
-    slug: string,
-    name: string,
-    transcriptPath: string | null,
-    cwd: string | null = null,
-  ): Promise<number> {
+  async createProject(slug: string, name: string): Promise<number> {
     const now = Date.now()
     const result = this.db
-      .prepare(
-        'INSERT INTO projects (slug, name, transcript_path, cwd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-      )
-      .run(slug, name, transcriptPath, cwd, now, now)
+      .prepare('INSERT INTO projects (slug, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(slug, name, now, now)
     return result.lastInsertRowid as number
   }
 
@@ -335,24 +379,6 @@ export class SqliteAdapter implements EventStore {
 
   async getProjectBySlug(slug: string): Promise<any | null> {
     return this.db.prepare(`SELECT * FROM projects WHERE slug = ?`).get(slug) || null
-  }
-
-  async getProjectByCwd(cwd: string): Promise<any | null> {
-    return this.db.prepare(`SELECT * FROM projects WHERE cwd = ?`).get(cwd) || null
-  }
-
-  async updateProjectCwd(projectId: number, cwd: string): Promise<void> {
-    const now = Date.now()
-    this.db
-      .prepare('UPDATE projects SET cwd = ?, updated_at = ? WHERE id = ?')
-      .run(cwd, now, projectId)
-  }
-
-  async getProjectByTranscriptPath(transcriptPath: string): Promise<any | null> {
-    return (
-      this.db.prepare(`SELECT * FROM projects WHERE transcript_path = ?`).get(transcriptPath) ||
-      null
-    )
   }
 
   async updateProjectName(projectId: number, name: string): Promise<void> {
@@ -370,26 +396,29 @@ export class SqliteAdapter implements EventStore {
 
   async upsertSession(
     id: string,
-    projectId: number,
+    projectId: number | null,
     slug: string | null,
     metadata: Record<string, unknown> | null,
     timestamp: number,
     transcriptPath?: string | null,
+    startCwd?: string | null,
   ): Promise<void> {
     const now = Date.now()
     this.db
       .prepare(
         `
-      INSERT INTO sessions (id, project_id, slug, status, started_at, transcript_path, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, project_id, slug, started_at, transcript_path, start_cwd, metadata, last_activity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         slug = COALESCE(excluded.slug, sessions.slug),
         transcript_path = COALESCE(excluded.transcript_path, sessions.transcript_path),
+        start_cwd = COALESCE(sessions.start_cwd, excluded.start_cwd),
         metadata = CASE
           WHEN excluded.metadata IS NULL THEN sessions.metadata
           WHEN sessions.metadata IS NULL THEN excluded.metadata
           ELSE json_patch(sessions.metadata, excluded.metadata)
         END,
+        last_activity = MAX(COALESCE(sessions.last_activity, 0), excluded.last_activity),
         updated_at = ?
     `,
       )
@@ -399,7 +428,9 @@ export class SqliteAdapter implements EventStore {
         slug,
         timestamp,
         transcriptPath || null,
+        startCwd || null,
         metadata ? JSON.stringify(metadata) : null,
+        timestamp,
         now,
         now,
         now,
@@ -415,39 +446,30 @@ export class SqliteAdapter implements EventStore {
     agentType?: string | null,
     agentClass?: string | null,
   ): Promise<void> {
+    // sessionId and parentAgentId are accepted for backward-compat with
+    // pre-Phase-3 callers but are no longer persisted on the agents row.
+    // The agents table is now class+identity only; session/parent linkage
+    // is derived from events at query time.
+    void sessionId
+    void parentAgentId
     const now = Date.now()
-    const existing = this.db.prepare('SELECT id FROM agents WHERE id = ?').get(id)
     this.db
       .prepare(
         `
-      INSERT INTO agents (id, session_id, parent_agent_id, name, description, agent_type, agent_class, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (id, name, description, agent_type, agent_class, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = COALESCE(excluded.name, agents.name),
         description = COALESCE(excluded.description, agents.description),
         agent_type = COALESCE(excluded.agent_type, agents.agent_type),
-        agent_class = COALESCE(excluded.agent_class, agents.agent_class),
+        agent_class = CASE
+          WHEN excluded.agent_class = 'unknown' AND agents.agent_class != 'unknown' THEN agents.agent_class
+          ELSE excluded.agent_class
+        END,
         updated_at = ?
     `,
       )
-      .run(
-        id,
-        sessionId,
-        parentAgentId,
-        name,
-        description,
-        agentType ?? null,
-        agentClass ?? null,
-        now,
-        now,
-        now,
-      )
-
-    if (!existing) {
-      this.db
-        .prepare('UPDATE sessions SET agent_count = agent_count + 1 WHERE id = ?')
-        .run(sessionId)
-    }
+      .run(id, name, description, agentType ?? null, agentClass ?? 'unknown', now, now, now)
   }
 
   async updateAgentType(id: string, agentType: string): Promise<void> {
@@ -457,13 +479,13 @@ export class SqliteAdapter implements EventStore {
   }
 
   async updateSessionStatus(id: string, status: string): Promise<void> {
+    // The sessions table no longer stores `status` — it's derived from
+    // `stopped_at`. This method now only updates `stopped_at` based on
+    // the requested status, preserving the pre-refactor behavior for
+    // route-layer callers that still pass 'stopped' / 'active'.
     this.db
-      .prepare(
-        `
-      UPDATE sessions SET status = ?, stopped_at = ? WHERE id = ?
-    `,
-      )
-      .run(status, status === 'stopped' ? Date.now() : null, id)
+      .prepare('UPDATE sessions SET stopped_at = ? WHERE id = ?')
+      .run(status === 'stopped' ? Date.now() : null, id)
   }
 
   async updateSessionProject(sessionId: string, projectId: number): Promise<void> {
@@ -501,19 +523,18 @@ export class SqliteAdapter implements EventStore {
     const result = this.db
       .prepare(
         `
-      INSERT INTO events (agent_id, session_id, hook_name, type, subtype, tool_name, timestamp, created_at, payload)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (agent_id, session_id, hook_name, timestamp, created_at, cwd, _meta, payload)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
         params.agentId,
         params.sessionId,
-        params.hookName ?? null,
-        params.type,
-        params.subtype,
-        params.toolName,
+        params.hookName ?? 'unknown',
         params.timestamp,
         now,
+        params.cwd ?? null,
+        params._meta != null ? JSON.stringify(params._meta) : null,
         JSON.stringify(params.payload),
       )
 
@@ -540,7 +561,6 @@ export class SqliteAdapter implements EventStore {
       this.db
         .prepare(
           `UPDATE sessions SET
-            event_count = event_count + 1,
             last_activity = MAX(COALESCE(last_activity, 0), ?)
           WHERE id = ?`,
         )
@@ -549,7 +569,6 @@ export class SqliteAdapter implements EventStore {
       this.db
         .prepare(
           `UPDATE sessions SET
-            event_count = event_count + 1,
             last_activity = MAX(COALESCE(last_activity, 0), ?),
             pending_notification_ts = ?
           WHERE id = ?`,
@@ -593,7 +612,7 @@ export class SqliteAdapter implements EventStore {
     return this.db
       .prepare(
         `
-      SELECT p.id, p.slug, p.name, p.transcript_path, p.created_at,
+      SELECT p.id, p.slug, p.name, p.created_at,
         COUNT(DISTINCT s.id) as session_count
       FROM projects p
       LEFT JOIN sessions s ON s.project_id = p.id
@@ -609,10 +628,13 @@ export class SqliteAdapter implements EventStore {
       .prepare(
         `
       SELECT s.*,
+        (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+        (SELECT COUNT(DISTINCT e.agent_id) FROM events e WHERE e.session_id = s.id) AS agent_count,
         (
           SELECT GROUP_CONCAT(DISTINCT a.agent_class)
           FROM agents a
-          WHERE a.session_id = s.id AND a.agent_class IS NOT NULL
+          JOIN events e ON e.agent_id = a.id
+          WHERE e.session_id = s.id AND a.agent_class IS NOT NULL
         ) AS agent_classes
       FROM sessions s
       WHERE s.project_id = ?
@@ -630,10 +652,13 @@ export class SqliteAdapter implements EventStore {
       SELECT s.*,
         p.slug as project_slug,
         p.name as project_name,
+        (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+        (SELECT COUNT(DISTINCT e.agent_id) FROM events e WHERE e.session_id = s.id) AS agent_count,
         (
           SELECT GROUP_CONCAT(DISTINCT a.agent_class)
           FROM agents a
-          WHERE a.session_id = s.id AND a.agent_class IS NOT NULL
+          JOIN events e ON e.agent_id = a.id
+          WHERE e.session_id = s.id AND a.agent_class IS NOT NULL
         ) AS agent_classes
       FROM sessions s
       LEFT JOIN projects p ON p.id = s.project_id
@@ -649,8 +674,16 @@ export class SqliteAdapter implements EventStore {
   }
 
   async getAgentsForSession(sessionId: string): Promise<any[]> {
+    // Agents are no longer linked directly to sessions — derive the set
+    // from events for this session.
     return this.db
-      .prepare('SELECT * FROM agents WHERE session_id = ? ORDER BY created_at ASC')
+      .prepare(
+        `SELECT DISTINCT a.*
+         FROM agents a
+         JOIN events e ON e.agent_id = a.id
+         WHERE e.session_id = ?
+         ORDER BY a.created_at ASC`,
+      )
       .all(sessionId)
   }
 
@@ -662,16 +695,6 @@ export class SqliteAdapter implements EventStore {
       const placeholders = filters.agentIds.map(() => '?').join(',')
       sql += ` AND agent_id IN (${placeholders})`
       params.push(...filters.agentIds)
-    }
-
-    if (filters?.type) {
-      sql += ' AND type = ?'
-      params.push(filters.type)
-    }
-
-    if (filters?.subtype) {
-      sql += ' AND subtype = ?'
-      params.push(filters.subtype)
     }
 
     if (filters?.hookName) {
@@ -719,9 +742,32 @@ export class SqliteAdapter implements EventStore {
       .all(sessionId, sinceTimestamp) as StoredEvent[]
   }
 
+  /**
+   * Delete agents that have no events left. Agents are no longer linked
+   * to sessions in the schema, so per-session deletion routes through
+   * the events table.
+   */
+  private deleteAgentsForRemovedEvents(agentIds: string[]): number {
+    if (agentIds.length === 0) return 0
+    const checkOther = this.db.prepare('SELECT 1 FROM events WHERE agent_id = ? LIMIT 1')
+    const deleteAgent = this.db.prepare('DELETE FROM agents WHERE id = ?')
+    let removed = 0
+    for (const aid of agentIds) {
+      if (!checkOther.get(aid)) {
+        removed += deleteAgent.run(aid).changes
+      }
+    }
+    return removed
+  }
+
   async deleteSession(sessionId: string): Promise<{ events: number; agents: number }> {
+    const agentIds = (
+      this.db
+        .prepare('SELECT DISTINCT agent_id FROM events WHERE session_id = ?')
+        .all(sessionId) as { agent_id: string }[]
+    ).map((r) => r.agent_id)
     const events = this.db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId).changes
-    const agents = this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(sessionId).changes
+    const agents = this.deleteAgentsForRemovedEvents(agentIds)
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
     return { events, agents }
   }
@@ -736,8 +782,13 @@ export class SqliteAdapter implements EventStore {
     let events = 0
     let agents = 0
     for (const sessionId of sessionIds) {
+      const agentIds = (
+        this.db
+          .prepare('SELECT DISTINCT agent_id FROM events WHERE session_id = ?')
+          .all(sessionId) as { agent_id: string }[]
+      ).map((r) => r.agent_id)
       events += this.db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId).changes
-      agents += this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(sessionId).changes
+      agents += this.deleteAgentsForRemovedEvents(agentIds)
     }
     const sessions = this.db
       .prepare('DELETE FROM sessions WHERE project_id = ?')
@@ -769,12 +820,15 @@ export class SqliteAdapter implements EventStore {
       let events = 0
       let agents = 0
       let sessions = 0
+      const selectAgents = this.db.prepare(
+        'SELECT DISTINCT agent_id FROM events WHERE session_id = ?',
+      )
       const delEvents = this.db.prepare('DELETE FROM events WHERE session_id = ?')
-      const delAgents = this.db.prepare('DELETE FROM agents WHERE session_id = ?')
       const delSession = this.db.prepare('DELETE FROM sessions WHERE id = ?')
       for (const id of ids) {
+        const agentIds = (selectAgents.all(id) as { agent_id: string }[]).map((r) => r.agent_id)
         events += delEvents.run(id).changes
-        agents += delAgents.run(id).changes
+        agents += this.deleteAgentsForRemovedEvents(agentIds)
         sessions += delSession.run(id).changes
       }
       return { events, agents, sessions }
@@ -796,13 +850,25 @@ export class SqliteAdapter implements EventStore {
   }
 
   async clearSessionEvents(sessionId: string): Promise<{ events: number; agents: number }> {
+    // Delete events for this session and any agents that have no remaining
+    // events. Agents are no longer linked to sessions directly (Phase 2),
+    // so we identify them via the events join.
+    const agentIdsRows = this.db
+      .prepare('SELECT DISTINCT agent_id FROM events WHERE session_id = ?')
+      .all(sessionId) as { agent_id: string }[]
     const events = this.db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId).changes
-    const agents = this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(sessionId).changes
-    this.db
-      .prepare(
-        'UPDATE sessions SET event_count = 0, agent_count = 0, last_activity = NULL WHERE id = ?',
-      )
-      .run(sessionId)
+    let agents = 0
+    if (agentIdsRows.length > 0) {
+      const checkOther = this.db.prepare('SELECT 1 FROM events WHERE agent_id = ? LIMIT 1')
+      const deleteAgent = this.db.prepare('DELETE FROM agents WHERE id = ?')
+      for (const row of agentIdsRows) {
+        const stillUsed = checkOther.get(row.agent_id)
+        if (!stillUsed) {
+          agents += deleteAgent.run(row.agent_id).changes
+        }
+      }
+    }
+    this.db.prepare('UPDATE sessions SET last_activity = NULL WHERE id = ?').run(sessionId)
     return { events, agents }
   }
 
@@ -817,10 +883,13 @@ export class SqliteAdapter implements EventStore {
       SELECT s.*,
         p.slug as project_slug,
         p.name as project_name,
+        (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id) AS event_count,
+        (SELECT COUNT(DISTINCT e.agent_id) FROM events e WHERE e.session_id = s.id) AS agent_count,
         (
           SELECT GROUP_CONCAT(DISTINCT a.agent_class)
           FROM agents a
-          WHERE a.session_id = s.id AND a.agent_class IS NOT NULL
+          JOIN events e ON e.agent_id = a.id
+          WHERE e.session_id = s.id AND a.agent_class IS NOT NULL
         ) AS agent_classes
       FROM sessions s
       LEFT JOIN projects p ON p.id = s.project_id
@@ -839,81 +908,31 @@ export class SqliteAdapter implements EventStore {
       eventsDeleted: 0,
     }
 
-    // 1. Sessions with invalid project_id (project doesn't exist or is null).
-    //    Reassign to the 'unknown' project, creating it if needed.
+    // 1. Sessions whose project FK points to a missing project: clear the
+    //    project_id (NULL = "Unassigned" client-side). Sessions with NULL
+    //    project_id are valid post-refactor and need no repair.
     const orphanedSessions = this.db
       .prepare(
         `SELECT s.id FROM sessions s
-         LEFT JOIN projects p ON p.id = s.project_id
-         WHERE p.id IS NULL`,
+         WHERE s.project_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id)`,
       )
       .all() as { id: string }[]
 
     if (orphanedSessions.length > 0) {
-      // Get-or-create the 'unknown' project
-      let unknownProject = this.db
-        .prepare('SELECT id FROM projects WHERE slug = ?')
-        .get('unknown') as { id: number } | undefined
-      if (!unknownProject) {
-        const now = Date.now()
-        const ins = this.db
-          .prepare(
-            'INSERT INTO projects (slug, name, transcript_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-          )
-          .run('unknown', 'unknown', null, now, now)
-        unknownProject = { id: Number(ins.lastInsertRowid) }
-      }
       const update = this.db.prepare(
-        'UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?',
+        'UPDATE sessions SET project_id = NULL, updated_at = ? WHERE id = ?',
       )
       const now = Date.now()
       for (const s of orphanedSessions) {
-        update.run(unknownProject.id, now, s.id)
+        update.run(now, s.id)
         result.sessionsReassigned++
       }
     }
 
-    // 2. Agents with invalid session_id → delete (no recovery possible since
-    //    the session and all its events are gone).
-    //    Note: we have to delete events for these agents first or the events
-    //    table FK from agents would also fail when something tries to read them.
-    const orphanedAgents = this.db
-      .prepare(
-        `SELECT a.id FROM agents a
-         LEFT JOIN sessions s ON s.id = a.session_id
-         WHERE s.id IS NULL`,
-      )
-      .all() as { id: string }[]
-    if (orphanedAgents.length > 0) {
-      const deleteEvents = this.db.prepare('DELETE FROM events WHERE agent_id = ?')
-      const deleteAgent = this.db.prepare('DELETE FROM agents WHERE id = ?')
-      for (const a of orphanedAgents) {
-        const eventDel = deleteEvents.run(a.id)
-        result.eventsDeleted += eventDel.changes
-        deleteAgent.run(a.id)
-        result.agentsDeleted++
-      }
-    }
-
-    // 3. Agents with invalid parent_agent_id (parent has been deleted but
-    //    the child remains). Null out the parent rather than deleting — the
-    //    agent itself is still meaningful, just no longer part of a hierarchy.
-    const reparented = this.db
-      .prepare(
-        `UPDATE agents
-         SET parent_agent_id = NULL, updated_at = ?
-         WHERE parent_agent_id IS NOT NULL
-         AND parent_agent_id NOT IN (SELECT id FROM agents)`,
-      )
-      .run(Date.now())
-    result.agentsReparented = reparented.changes
-
-    // 4. Events with invalid session_id → delete. Also covers events that
-    //    survived an interrupted delete cascade.
-    //    Note: this is a NOT IN subquery against the full events table, so
-    //    it scans all events. For very large databases (100k+ events) it
-    //    may take a few hundred ms — acceptable since this only runs once
-    //    on server startup.
+    // 2. Events with invalid session_id → delete. Done before agent
+    //    cleanup so that any agents whose only events referenced the
+    //    deleted session become orphaned and are caught in step 3.
     const orphanedSessionEvents = this.db
       .prepare(
         `DELETE FROM events
@@ -922,7 +941,27 @@ export class SqliteAdapter implements EventStore {
       .run()
     result.eventsDeleted += orphanedSessionEvents.changes
 
-    // 5. Events with invalid agent_id → delete (similar to above).
+    // 3. Agents are no longer linked to sessions in the schema (Phase 2).
+    //    Orphaned agents are detected as: rows in `agents` with no
+    //    referencing event rows. Delete them.
+    const orphanedAgents = this.db
+      .prepare(
+        `SELECT a.id FROM agents a
+         WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.agent_id = a.id)`,
+      )
+      .all() as { id: string }[]
+    if (orphanedAgents.length > 0) {
+      const deleteAgent = this.db.prepare('DELETE FROM agents WHERE id = ?')
+      for (const a of orphanedAgents) {
+        deleteAgent.run(a.id)
+        result.agentsDeleted++
+      }
+    }
+
+    // 4. parent_agent_id is gone from the schema; nothing to reparent.
+    result.agentsReparented = 0
+
+    // 5. Events with invalid agent_id → delete.
     const orphanedAgentEvents = this.db
       .prepare(
         `DELETE FROM events
@@ -931,13 +970,12 @@ export class SqliteAdapter implements EventStore {
       .run()
     result.eventsDeleted += orphanedAgentEvents.changes
 
-    // 6. Recompute cached counts on sessions if anything was repaired,
-    //    since insertEvent/upsertAgent maintain these incrementally.
+    // 6. Recompute last_activity on sessions if anything was repaired.
+    //    Counts (event_count / agent_count) are derived at query time now,
+    //    so there is no cached state to fix up.
     if (result.sessionsReassigned > 0 || result.agentsDeleted > 0 || result.eventsDeleted > 0) {
       this.db.exec(`
         UPDATE sessions SET
-          event_count = (SELECT COUNT(*) FROM events WHERE session_id = sessions.id),
-          agent_count = (SELECT COUNT(*) FROM agents WHERE session_id = sessions.id),
           last_activity = (SELECT MAX(timestamp) FROM events WHERE session_id = sessions.id)
       `)
     }

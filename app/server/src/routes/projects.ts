@@ -55,7 +55,7 @@ router.post('/projects', async (c) => {
     return apiError(c, 409, `slug "${slug}" is already in use`, { code: 'SLUG_TAKEN' })
   }
 
-  const id = await store.createProject(slug, name, null)
+  const id = await store.createProject(slug, name)
   broadcastToAll({ type: 'project_update', data: { id, name, slug } })
   return c.json({ id, slug, name, createdAt: Date.now(), sessionCount: 0 }, 201)
 })
@@ -78,10 +78,11 @@ router.get('/projects/:id/sessions', async (c) => {
     id: r.id,
     projectId: r.project_id,
     slug: r.slug,
-    status: r.status,
+    status: r.stopped_at ? 'ended' : 'active',
     startedAt: r.started_at,
     stoppedAt: r.stopped_at,
     transcriptPath: r.transcript_path || null,
+    startCwd: r.start_cwd || null,
     metadata: r.metadata ? JSON.parse(r.metadata) : null,
     agentCount: r.agent_count,
     eventCount: r.event_count,

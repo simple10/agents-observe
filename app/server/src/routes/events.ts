@@ -20,13 +20,6 @@ const router = new Hono<Env>()
 
 const LOG_LEVEL = config.logLevel
 
-/** Derive event status from subtype (not stored in DB) */
-function deriveEventStatus(subtype: string | null): string {
-  if (subtype === 'PreToolUse') return 'running'
-  if (subtype === 'PostToolUse') return 'completed'
-  return 'pending'
-}
-
 // Track root agent IDs per session (sessionId -> agentId)
 const sessionRootAgents = new Map<string, string>()
 
@@ -115,52 +108,40 @@ router.post('/events', async (c) => {
     const parsed = parseRawEvent(hookPayload, meta)
     const eventCwd = (parsed.metadata.cwd as string | undefined) ?? null
 
-    // Resolve project - only on first event for this session
+    // Resolve project - only on first event for this session.
+    //
+    // Phase 2 stub: only honors explicit slug overrides. The full
+    // algorithm (sibling matching, cwd-derived slugs, etc.) lands in
+    // Phase 3 with adapter changes. Sessions with no slug land
+    // unassigned (project_id = NULL) and render in the "Unassigned"
+    // bucket on the client.
     const existingSession = await store.getSessionById(parsed.sessionId)
-    let effectiveProjectId: number
+    let effectiveProjectId: number | null
 
     if (existingSession) {
       effectiveProjectId = existingSession.project_id
       // Auto-repair: if the session's project FK points to a project that
-      // no longer exists (e.g., manual db edit, partial cascade, race
-      // condition during a delete), re-resolve it. Without this, upsertSession
-      // would update the row in place, leaving the bad project_id, and
-      // subsequent queries that JOIN sessions to projects would silently
-      // return null project info.
-      const projectStillExists = await store.getProjectById(effectiveProjectId)
-      if (!projectStillExists) {
-        console.log(
-          `[event] Session ${parsed.sessionId} references missing project ${effectiveProjectId}; re-resolving`,
-        )
-        const projectSlugOverride = meta.env?.AGENTS_OBSERVE_PROJECT_SLUG || null
-        const resolved = await resolveProject(store, {
-          sessionId: parsed.sessionId,
-          slug: projectSlugOverride,
-          transcriptPath: parsed.transcriptPath,
-          cwd: eventCwd,
-        })
-        effectiveProjectId = resolved.projectId
-        await store.updateSessionProject(parsed.sessionId, effectiveProjectId)
-      } else if (parsed.subtype === 'SessionStart' && eventCwd && !projectStillExists.cwd) {
-        // Lazy re-resolve: the session was assigned before we had a cwd,
-        // so the project may have been derived from transcript_path alone
-        // (e.g. Codex's date-based session dir, producing slugs like "17").
-        // Now that SessionStart has given us a cwd, try to land on the
-        // right project — either an existing cwd-keyed one, or create a
-        // new one with a cwd-derived slug.
-        const projectSlugOverride = meta.env?.AGENTS_OBSERVE_PROJECT_SLUG || null
-        const resolved = await resolveProject(store, {
-          sessionId: parsed.sessionId,
-          slug: projectSlugOverride,
-          transcriptPath: parsed.transcriptPath,
-          cwd: eventCwd,
-        })
-        if (resolved.projectId !== effectiveProjectId) {
+      // no longer exists, clear it (Phase 2 lets sessions be unassigned).
+      if (effectiveProjectId !== null) {
+        const projectStillExists = await store.getProjectById(effectiveProjectId)
+        if (!projectStillExists) {
           console.log(
-            `[event] Re-resolving session ${parsed.sessionId} from project ${effectiveProjectId} to ${resolved.projectId} (cwd=${eventCwd})`,
+            `[event] Session ${parsed.sessionId} references missing project ${effectiveProjectId}; clearing`,
           )
-          effectiveProjectId = resolved.projectId
-          await store.updateSessionProject(parsed.sessionId, effectiveProjectId)
+          effectiveProjectId = null
+        }
+      }
+      if (effectiveProjectId === null) {
+        const projectSlugOverride = meta.env?.AGENTS_OBSERVE_PROJECT_SLUG || null
+        if (projectSlugOverride) {
+          const resolved = await resolveProject(store, {
+            sessionId: parsed.sessionId,
+            slug: projectSlugOverride,
+          })
+          if (resolved.projectId !== null) {
+            effectiveProjectId = resolved.projectId
+            await store.updateSessionProject(parsed.sessionId, effectiveProjectId)
+          }
         }
       }
     } else {
@@ -168,8 +149,6 @@ router.post('/events', async (c) => {
       const resolved = await resolveProject(store, {
         sessionId: parsed.sessionId,
         slug: projectSlugOverride,
-        transcriptPath: parsed.transcriptPath,
-        cwd: eventCwd,
       })
       effectiveProjectId = resolved.projectId
     }
@@ -181,6 +160,7 @@ router.post('/events', async (c) => {
       Object.keys(parsed.metadata).length > 0 ? parsed.metadata : null,
       parsed.timestamp,
       parsed.transcriptPath,
+      eventCwd,
     )
 
     const rootAgentId = await ensureRootAgent(store, parsed.sessionId, agentClass)
@@ -317,12 +297,11 @@ router.post('/events', async (c) => {
     const { eventId, notificationTransition } = await store.insertEvent({
       agentId,
       sessionId: parsed.sessionId,
-      hookName: parsed.hookName,
-      type: parsed.type,
-      subtype: parsed.subtype,
-      toolName: parsed.toolName,
+      hookName: parsed.hookName ?? 'unknown',
       timestamp: parsed.timestamp,
       payload: parsed.raw,
+      cwd: eventCwd,
+      _meta: null,
       isNotification: meta.isNotification,
       clearsNotification: meta.clearsNotification,
     })
@@ -331,13 +310,11 @@ router.post('/events', async (c) => {
       id: eventId,
       agentId,
       sessionId: parsed.sessionId,
-      hookName: parsed.hookName,
-      type: parsed.type,
-      subtype: parsed.subtype,
-      toolName: parsed.toolName,
-      status: deriveEventStatus(parsed.subtype),
+      hookName: parsed.hookName ?? 'unknown',
       timestamp: parsed.timestamp,
       createdAt: now,
+      cwd: eventCwd,
+      _meta: null,
       payload: parsed.raw,
     }
 

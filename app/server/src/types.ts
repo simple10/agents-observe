@@ -6,31 +6,31 @@ export interface ProjectRow {
   id: number
   slug: string
   name: string
-  transcript_path: string | null
   created_at: number
   updated_at: number
 }
 
 export interface SessionRow {
   id: string
-  project_id: number
+  project_id: number | null
   slug: string | null
-  status: string
   started_at: number
   stopped_at: number | null
+  transcript_path: string | null
+  start_cwd: string | null
   metadata: string | null
+  last_activity: number | null
+  pending_notification_ts: number | null
   created_at: number
   updated_at: number
 }
 
 export interface AgentRow {
   id: string
-  session_id: string
-  parent_agent_id: string | null
+  agent_class: string
   name: string | null
   description: string | null
   agent_type: string | null
-  agent_class: string
   created_at: number
   updated_at: number
 }
@@ -39,12 +39,11 @@ export interface EventRow {
   id: number
   agent_id: string
   session_id: string
-  hook_name: string | null
-  type: string
-  subtype: string | null
-  tool_name: string | null
+  hook_name: string
   timestamp: number
   created_at: number
+  cwd: string | null
+  _meta: string | null
   payload: string
 }
 
@@ -60,9 +59,9 @@ export interface Project {
 
 export interface Session {
   id: string
-  projectId: number
+  projectId: number | null
   slug: string | null
-  status: string
+  status: string // derived from stopped_at on the server
   startedAt: number
   stoppedAt: number | null
   metadata: Record<string, unknown> | null
@@ -72,24 +71,21 @@ export interface Session {
 
 export interface Agent {
   id: string
-  sessionId: string
-  parentAgentId: string | null
   name: string | null
   description: string | null
   agentType?: string | null
+  agentClass?: string | null
 }
 
 export interface ParsedEvent {
   id: number
   agentId: string
   sessionId: string
-  hookName: string | null
-  type: string
-  subtype: string | null
-  toolName: string | null
-  status: string // derived from subtype, not stored
+  hookName: string
   timestamp: number
   createdAt: number
+  cwd: string | null
+  _meta: Record<string, unknown> | null
   payload: Record<string, unknown>
 }
 
@@ -111,19 +107,21 @@ export interface EventEnvelopeMeta {
    */
   clearsNotification?: boolean
 
-  // ---- Event descriptors (stamped by the CLI, one per indexed column) ----
+  // ---- Event descriptors (stamped by the CLI) ----
   /** Raw hook event name as emitted by the agent (agent-class-native). */
   hookName?: string
-  /** Normalized top-level category (e.g. 'tool', 'user', 'session'). */
-  type?: string
-  /** Normalized sub-category (e.g. 'PreToolUse'). */
-  subtype?: string | null
-  /** Tool name (Pre/PostToolUse events), null otherwise. */
-  toolName?: string | null
   /** Session id extracted from the payload by the agent lib. */
   sessionId?: string
   /** Subagent id if the event came from a subagent; null for main agent. */
   agentId?: string | null
+
+  // ---- Legacy fields (Phase 2 compat — removed in Phase 3) ----
+  /** @deprecated removed in Phase 3 — server no longer derives type. */
+  type?: string
+  /** @deprecated removed in Phase 3 — server no longer derives subtype. */
+  subtype?: string | null
+  /** @deprecated removed in Phase 3 — server no longer derives toolName. */
+  toolName?: string | null
 }
 
 export interface EventEnvelope {
