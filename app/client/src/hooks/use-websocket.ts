@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { API_BASE } from '@/config/api'
+import { getServerHealth } from '@/lib/server-health'
 import type { WSMessage, WSClientMessage, ParsedEvent, Session, RecentSession } from '@/types'
 import { pushNotification, clearNotification } from '@/components/sidebar/notification-indicator'
 import { useUIStore } from '@/stores/ui-store'
@@ -45,16 +45,14 @@ function markSessionActiveInCache(queryClient: QueryClient, sessionId: string): 
 
 const WS_URL = `ws://${window.location.host}/api/events/stream`
 
-// Fetch log level from server once on module load
+// Fetch log level from server once on module load. Shares the page-
+// wide /api/health fetch with the version footer + settings modal.
 let logLevel: 'debug' | 'trace' | 'none' = 'none'
-fetch(`${API_BASE}/health`)
-  .then((r) => r.json())
-  .then((data) => {
-    const level = (data.logLevel || '').toLowerCase()
-    if (level === 'trace') logLevel = 'trace'
-    else if (level === 'debug') logLevel = 'debug'
-  })
-  .catch(() => {})
+getServerHealth().then((data) => {
+  const level = (data?.logLevel || '').toLowerCase()
+  if (level === 'trace') logLevel = 'trace'
+  else if (level === 'debug') logLevel = 'debug'
+})
 
 export function useWebSocket(sessionId: string | null) {
   const queryClient = useQueryClient()

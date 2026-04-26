@@ -9,7 +9,7 @@ import { GeneralSettings } from './general-settings'
 import { KeyboardSettings } from './keyboard-settings'
 import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
-import { API_BASE } from '@/config/api'
+import { getServerHealth } from '@/lib/server-health'
 import { useDbStats } from '@/hooks/use-db-stats'
 import { formatBytes } from '@/lib/format-bytes'
 import { Database, Container, Monitor, X } from 'lucide-react'
@@ -36,12 +36,14 @@ export function SettingsModal() {
 
   useEffect(() => {
     if (open && !serverInfo) {
-      fetch(`${API_BASE}/health`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.dbPath) setServerInfo({ dbPath: data.dbPath, runtime: data.runtime || 'local' })
-        })
-        .catch(() => {})
+      // Shared page-wide /api/health fetch — by the time the user
+      // opens settings, this is already cached.
+      getServerHealth().then((data) => {
+        if (data?.dbPath) {
+          const runtime: 'docker' | 'local' = data.runtime === 'docker' ? 'docker' : 'local'
+          setServerInfo({ dbPath: data.dbPath, runtime })
+        }
+      })
     }
   }, [open, serverInfo])
 

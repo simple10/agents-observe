@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Label, ParsedEvent } from '@/types'
 import type { TimeRange } from '@/config/time-ranges'
+import { getServerHealth } from '@/lib/server-health'
 
 // Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -621,15 +622,13 @@ if (typeof window !== 'undefined') {
     }
   })
 
-  // Check server version on page load
-  fetch('/api/health')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (data?.version) {
-        useUIStore.getState().setServerVersion(data.version)
-      }
-    })
-    .catch(() => {})
+  // Check server version on page load. Shares the single page-wide
+  // /api/health fetch with the WS log-level sniffer + settings modal.
+  getServerHealth().then((data) => {
+    if (data?.version) {
+      useUIStore.getState().setServerVersion(data.version)
+    }
+  })
 
   // Fetch latest release version from GitHub on page load
   const githubRepoUrl = typeof __GITHUB_REPO_URL__ !== 'undefined' ? __GITHUB_REPO_URL__ : ''
