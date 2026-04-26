@@ -1,5 +1,4 @@
 import { useUIStore } from '@/stores/ui-store'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { Clock, Folder, Activity } from 'lucide-react'
 import {
