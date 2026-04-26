@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildHookEvent, getSessionInfo } from '../../../../../hooks/scripts/lib/agents/unknown.mjs'
+import { buildHookEvent, getSessionInfo } from '../../../../../hooks/scripts/lib/agents/default.mjs'
 
 function makeLog() {
   return {

@@ -8,10 +8,10 @@ import {
 } from '../../../../../hooks/scripts/lib/agents/index.mjs'
 
 describe('agents registry', () => {
-  it('registers claude-code, codex, and unknown', () => {
+  it('registers claude-code, codex, and default', () => {
     expect(AGENT_LIBS['claude-code']).toBeDefined()
     expect(AGENT_LIBS.codex).toBeDefined()
-    expect(AGENT_LIBS.unknown).toBeDefined()
+    expect(AGENT_LIBS.default).toBeDefined()
   })
 })
 
@@ -21,11 +21,11 @@ describe('getAgentClass', () => {
     expect(getAgentClass({ agentClass: 'codex' })).toBe('codex')
   })
 
-  it('returns "unknown" for unrecognized classes', () => {
-    expect(getAgentClass({ agentClass: 'made-up' })).toBe('unknown')
-    expect(getAgentClass({ agentClass: '' })).toBe('unknown')
-    expect(getAgentClass({})).toBe('unknown')
-    expect(getAgentClass(null)).toBe('unknown')
+  it('returns "default" for unrecognized classes', () => {
+    expect(getAgentClass({ agentClass: 'made-up' })).toBe('default')
+    expect(getAgentClass({ agentClass: '' })).toBe('default')
+    expect(getAgentClass({})).toBe('default')
+    expect(getAgentClass(null)).toBe('default')
   })
 })
 
@@ -33,12 +33,12 @@ describe('getAgentLib', () => {
   it('resolves registered libs', () => {
     expect(getAgentLib('claude-code')).toBe(AGENT_LIBS['claude-code'])
     expect(getAgentLib('codex')).toBe(AGENT_LIBS.codex)
-    expect(getAgentLib('unknown')).toBe(AGENT_LIBS.unknown)
+    expect(getAgentLib('default')).toBe(AGENT_LIBS.default)
   })
 
-  it('falls back to the unknown lib for anything else', () => {
-    expect(getAgentLib('what')).toBe(AGENT_LIBS.unknown)
-    expect(getAgentLib(undefined)).toBe(AGENT_LIBS.unknown)
+  it('falls back to the default lib for anything else', () => {
+    expect(getAgentLib('what')).toBe(AGENT_LIBS.default)
+    expect(getAgentLib(undefined)).toBe(AGENT_LIBS.default)
   })
 })
 
