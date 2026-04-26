@@ -1,6 +1,8 @@
 import type { RawEvent, EnrichedEvent, ProcessingContext, ProcessEventResult } from '../types'
 import { getEventIcon, getEventColor } from './icons'
 import { getEventSummary, buildSearchText } from './helpers'
+import { deriveSubtype, deriveToolName } from './derivers'
+import { api } from '@/lib/api-client'
 
 // Label mapping for the framework's left-side chrome
 const LABELS: Record<string, string> = {
@@ -97,7 +99,12 @@ function getFilterTags(
   return { static: null, dynamic: subtype ? [subtype] : [] }
 }
 
-function deriveStatus(subtype: string | null): EnrichedEvent['status'] {
+/** Local fallback for the inline status decision inside processEvent.
+ *  The exported `deriveStatus(event, grouped)` (in `./derivers`) is the
+ *  spec hook used by the registration; this variant only sees the
+ *  current event's subtype and is used as a default when no grouping
+ *  context is available. */
+function deriveLocalStatus(subtype: string | null): EnrichedEvent['status'] {
   if (subtype === 'PreToolUse') return 'running'
   if (subtype === 'PostToolUse') return 'completed'
   if (subtype === 'PostToolUseFailure') return 'failed'
@@ -117,11 +124,47 @@ function deriveStatus(subtype: string | null): EnrichedEvent['status'] {
  */
 export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult {
   const p = raw.payload as Record<string, any>
-  const subtype = raw.subtype
-  const toolName = raw.toolName
+  // Subtype / toolName are derived client-side per the three-layer
+  // contract. The wire `ParsedEvent` carries only `hookName + payload`.
+  const subtype = deriveSubtype(raw)
+  const toolName = deriveToolName(raw)
   // tool_use_id is Claude-Code-specific — read from payload directly
   // rather than a top-level field. Used for Pre/Post pairing groupId.
   const toolUseId: string | null = typeof p.tool_use_id === 'string' ? p.tool_use_id : null
+
+  // ---- Subagent-pairing port from the old server route. ----------------
+  // PreToolUse:Agent stashes the `tool_input.{name,description}` keyed by
+  // `tool_use_id`. The matching PostToolUse:Agent reads
+  // `tool_response.agentId` (the spawned agent's id) and PATCHes the
+  // agent row with the discovered name/description. This used to live in
+  // `pendingAgentMeta` / `pendingAgentMetaQueue` server-side; per spec
+  // it now belongs in Layer 3.
+  if (subtype === 'PreToolUse' && toolName === 'Agent' && toolUseId) {
+    const inputName = typeof p.tool_input?.name === 'string' ? (p.tool_input.name as string) : null
+    const inputDesc =
+      typeof p.tool_input?.description === 'string' ? (p.tool_input.description as string) : null
+    if (inputName !== null || inputDesc !== null) {
+      ctx.stashPendingAgentMeta(toolUseId, { name: inputName, description: inputDesc })
+    }
+  }
+  if (subtype === 'PostToolUse' && toolName === 'Agent' && toolUseId) {
+    const spawnedAgentId =
+      typeof p.tool_response?.agentId === 'string' ? (p.tool_response.agentId as string) : null
+    if (spawnedAgentId) {
+      const meta = ctx.consumePendingAgentMeta(toolUseId)
+      if (meta && (meta.name || meta.description)) {
+        // Fire-and-forget: the dashboard re-reads agents on the next
+        // refetch / WS broadcast. Failures are non-fatal — the existing
+        // agent row already has agent_class + id.
+        api
+          .patchAgent(spawnedAgentId, {
+            name: meta.name ?? null,
+            description: meta.description ?? null,
+          })
+          .catch(() => {})
+      }
+    }
+  }
 
   // Resolve icon and color
   const icon = getEventIcon(subtype, toolName)
@@ -253,7 +296,8 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
   }
 
   // Build the enriched event
-  const summary = getEventSummary(raw)
+  const summary = getEventSummary(raw, subtype, toolName)
+  const type = deriveDisplayType(subtype)
   const enriched: EnrichedEvent = {
     // Core fields
     id: raw.id,
@@ -262,8 +306,11 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     hookName: raw.hookName,
     timestamp: raw.timestamp,
     createdAt: raw.createdAt,
-    type: raw.type,
-    subtype: raw.subtype,
+
+    // Derived display fields (populated from hookName + payload)
+    type,
+    subtype,
+    toolName,
 
     // Enrichment
     groupId,
@@ -271,26 +318,44 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     displayEventStream,
     displayTimeline,
     label: LABELS[subtype ?? ''] || subtype || 'Event',
-    toolName,
     toolUseId,
     icon,
     iconColor,
     dotColor,
     iconColorHex: customHex ?? null,
     dedupMode: dedup,
-    status: statusOverride ?? deriveStatus(subtype),
+    status: statusOverride ?? deriveLocalStatus(subtype),
     filterTags: getFilterTags(subtype, toolName, displayEventStream),
-    searchText: buildSearchText(raw, summary),
+    searchText: buildSearchText(raw, summary, subtype, toolName, type),
 
     // Original payload
     payload: raw.payload,
 
     // Convenience fields for components
-    cwd: p.cwd as string | undefined,
+    cwd: (raw.cwd ?? (p.cwd as string | undefined)) as string | undefined,
     summary,
   }
 
   return { event: enriched }
+}
+
+/** Map a derived subtype to the legacy `type` bucket used by some
+ *  filters / detail panels. Mirrors the old server-side mapping. */
+function deriveDisplayType(subtype: string | null): string {
+  switch (subtype) {
+    case 'SessionStart':
+    case 'SessionEnd':
+      return 'session'
+    case 'UserPromptSubmit':
+    case 'UserPromptExpansion':
+      return 'user'
+    case 'PreToolUse':
+    case 'PostToolUse':
+    case 'PostToolUseFailure':
+      return 'tool'
+    default:
+      return subtype ? 'system' : 'hook'
+  }
 }
 
 /** Extract display text from a tool_response for search indexing */

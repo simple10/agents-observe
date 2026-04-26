@@ -1099,7 +1099,10 @@ function ThreadEvent({ event, isCurrentEvent }: { event: EnrichedEvent; isCurren
   const isCompleted = event.status === 'completed'
   const rawLabel = event.subtype || event.type
   const displayLabel = LABEL_MAP[rawLabel] || rawLabel
-  const summary = (event.summary as string) || getEventSummary(event as any)
+  // EnrichedEvent already has subtype/toolName from runtime derivation;
+  // pass them through so the helper doesn't re-derive.
+  const summary =
+    (event.summary as string) || getEventSummary(event as any, event.subtype, event.toolName)
 
   return (
     <div

@@ -10,16 +10,26 @@ export type RawEvent = ParsedEvent
 // ---------------------------------------------------------------------------
 // Enriched event — what the framework stores after processEvent
 // ---------------------------------------------------------------------------
+/** Display status derived per agent class from hook name + grouped events. */
+export type EventStatus = 'running' | 'completed' | 'failed' | 'pending'
+
 export interface EnrichedEvent {
   // Core fields (from raw server event)
   id: number
   agentId: string
   sessionId: string
-  hookName: string | null
+  hookName: string
   timestamp: number
   createdAt: number
+
+  // ---- Derived fields (populated by the runtime via per-class -----------
+  // `deriveSubtype` / `deriveToolName` / `deriveStatus` hooks). These are
+  // NOT wire fields; the server returns only `hookName + payload` and the
+  // client decides what these mean per agent class. ---------------------
   type: string
   subtype: string | null
+  toolName: string | null
+  status: EventStatus
 
   // Agent-class enrichment
   groupId: string | null
@@ -27,13 +37,11 @@ export interface EnrichedEvent {
   displayEventStream: boolean
   displayTimeline: boolean
   label: string
-  toolName: string | null
   toolUseId: string | null
   icon: ComponentType | null
   iconColor: string | null
   dotColor: string | null
   iconColorHex: string | null
-  status: 'running' | 'completed' | 'failed' | 'pending'
   filterTags: {
     static: string | null // category: 'Prompts', 'Tools', 'Agents', etc. (null if hidden)
     dynamic: string[] // specific filters: ['Bash'], ['Read'], etc.
@@ -77,6 +85,20 @@ export interface ProcessingContext {
   setPendingGroup(key: string, groupId: string): void
   /** Forget a pending groupId. Called after the matching second event arrives. */
   clearPendingGroup(key: string): void
+
+  /** Stash subagent metadata (name/description) keyed by tool_use_id when
+   *  a PreToolUse:Agent event arrives. Consumed by the matching
+   *  PostToolUse:Agent so the spawned agent can be PATCHed with the
+   *  Agent-tool input fields. Lives for the duration of the processing
+   *  pass (per-EventStore instance). */
+  stashPendingAgentMeta(
+    toolUseId: string,
+    meta: { name: string | null; description: string | null },
+  ): void
+  /** Read and clear stashed subagent metadata for a tool_use_id. */
+  consumePendingAgentMeta(
+    toolUseId: string,
+  ): { name: string | null; description: string | null } | null
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +141,27 @@ export interface AgentClassRegistration {
   Icon: ComponentType<{ className?: string }>
 
   processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult
+
+  // ---- Per-class derivation hooks --------------------------------------
+  // These map a wire event (hookName + payload) to display fields. The
+  // runtime calls them when reshaping a `ParsedEvent` into the
+  // `EnrichedEvent` consumed by render code. They are also the bridge
+  // back to the server for endpoints that still accept legacy
+  // `type` / `subtype` filters (see `api.getEvents`).
+
+  /** Map a hookName + payload to a display "subtype" used by row
+   *  summaries and filter pills. Returns null if the event has no
+   *  canonical subtype. */
+  deriveSubtype(event: RawEvent): string | null
+
+  /** Map a hookName + payload to a tool name (for tool-related events).
+   *  Returns null when the event doesn't reference a tool. */
+  deriveToolName(event: RawEvent): string | null
+
+  /** Compute display status from the event and any already-grouped
+   *  sibling events (e.g. PreToolUse + matching PostToolUse). Returns
+   *  null when status doesn't apply for this hook. */
+  deriveStatus(event: RawEvent, groupedEvents: RawEvent[]): EventStatus | null
 
   // Render-time icon/color resolvers — called per-row so live icon
   // customization propagates without a full reprocess.

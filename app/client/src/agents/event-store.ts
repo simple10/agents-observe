@@ -14,6 +14,11 @@ export class EventStore {
   private agentIndex = new Map<string, EnrichedEvent[]>()
   private currentTurns = new Map<string, string>()
   private pendingGroups = new Map<string, string>()
+  // Subagent-pairing scratchpad. Populated by PreToolUse:Agent and
+  // consumed by PostToolUse:Agent — see
+  // `agents/claude-code/process-event.ts`. Map key is the
+  // `payload.tool_use_id` of the spawning Agent tool call.
+  private pendingAgentMeta = new Map<string, { name: string | null; description: string | null }>()
   private pendingUpdates: Array<{ eventId: number; changes: Partial<EnrichedEvent> }> = []
   private dedupEnabled = true
 
@@ -145,6 +150,12 @@ export class EventStore {
       getPendingGroup: (key) => this.pendingGroups.get(key) ?? null,
       setPendingGroup: (key, groupId) => this.pendingGroups.set(key, groupId),
       clearPendingGroup: (key) => this.pendingGroups.delete(key),
+      stashPendingAgentMeta: (toolUseId, meta) => this.pendingAgentMeta.set(toolUseId, meta),
+      consumePendingAgentMeta: (toolUseId) => {
+        const meta = this.pendingAgentMeta.get(toolUseId) ?? null
+        if (meta) this.pendingAgentMeta.delete(toolUseId)
+        return meta
+      },
       updateEvent: (eventId, changes) => {
         this.pendingUpdates.push({ eventId, changes })
       },
@@ -194,6 +205,7 @@ export class EventStore {
     this.agentIndex.clear()
     this.currentTurns.clear()
     this.pendingGroups.clear()
+    this.pendingAgentMeta.clear()
     this.pendingUpdates = []
     this.lastProcessedCount = 0
   }

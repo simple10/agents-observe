@@ -105,7 +105,23 @@ export function useWebSocket(sessionId: string | null) {
   const handleMessage = useCallback(
     (msg: WSMessage) => {
       if (msg.type === 'event') {
-        const event = msg.data as ParsedEvent
+        // Reshape WS broadcast into the canonical client `ParsedEvent`.
+        // The server may emit either camelCase fields (`agentId`,
+        // `hookName`) or the spec-canonical snake_case (`agent_id`,
+        // `hook_name`) — accept both.
+        const wire = msg.data
+        const sessionId = wire.sessionId ?? wire.session_id ?? sessionIdRef.current ?? ''
+        const event: ParsedEvent = {
+          id: wire.id,
+          timestamp: wire.timestamp,
+          createdAt: wire.createdAt ?? wire.created_at ?? wire.timestamp,
+          agentId: (wire.agentId ?? wire.agent_id ?? '') as string,
+          sessionId,
+          hookName: (wire.hookName ?? wire.hook_name ?? '') as string,
+          payload: wire.payload,
+          cwd: wire.cwd ?? null,
+          _meta: wire._meta ?? null,
+        }
         const currentSessionId = sessionIdRef.current
         if (currentSessionId && event.sessionId === currentSessionId) {
           eventBufferRef.current.push(event)
@@ -121,9 +137,7 @@ export function useWebSocket(sessionId: string | null) {
             }, flushMs)
           }
           if (logLevel === 'trace') {
-            console.debug(
-              `[WS] Event buffered: ${event.type}/${event.subtype}${event.toolName ? ` tool:${event.toolName}` : ''}`,
-            )
+            console.debug(`[WS] Event buffered: ${event.hookName}`)
           }
         }
       } else if (msg.type === 'session_update') {

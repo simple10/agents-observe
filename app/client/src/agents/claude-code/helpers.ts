@@ -63,12 +63,18 @@ export function oneLine(s: string): string {
     .trim()
 }
 
-/** Generate one-line summary text from a raw event. */
-export function getEventSummary(event: RawEvent): string {
+/** Generate one-line summary text from a raw event. Takes derived
+ *  subtype/toolName as arguments — those fields are no longer on the
+ *  wire `RawEvent`. */
+export function getEventSummary(
+  event: RawEvent,
+  subtype: string | null,
+  toolName: string | null,
+): string {
   const p = event.payload as Record<string, any>
-  const cwd = p.cwd as string | undefined
+  const cwd = (event.cwd ?? (p.cwd as string | undefined)) as string | undefined
 
-  switch (event.subtype) {
+  switch (subtype) {
     case 'UserPromptSubmit':
       return oneLine(p.prompt || p.message?.content || '')
     case 'UserPromptExpansion': {
@@ -97,9 +103,9 @@ export function getEventSummary(event: RawEvent): string {
       return oneLine(p.message || p.title || '')
     case 'PreToolUse':
     case 'PostToolUse':
-      return getToolSummary(event.toolName, p.tool_input, cwd)
+      return getToolSummary(toolName, p.tool_input, cwd)
     case 'PostToolUseFailure':
-      return oneLine(p.error || getToolSummary(event.toolName, p.tool_input, cwd) || 'Tool failed')
+      return oneLine(p.error || getToolSummary(toolName, p.tool_input, cwd) || 'Tool failed')
     case 'PermissionRequest': {
       const tool = p.tool_name as string | undefined
       const desc = p.tool_input?.description as string | undefined
@@ -186,12 +192,20 @@ function getToolSummary(
   }
 }
 
-/** Build pre-computed searchText from an event and its summary. */
-export function buildSearchText(event: RawEvent, summary: string): string {
+/** Build pre-computed searchText from an event and its summary. Derived
+ *  fields (subtype/toolName/type) are passed in since the wire event no
+ *  longer carries them. */
+export function buildSearchText(
+  event: RawEvent,
+  summary: string,
+  subtype: string | null,
+  toolName: string | null,
+  type: string | null,
+): string {
   const parts: string[] = [summary]
-  if (event.toolName) parts.push(event.toolName)
-  if (event.subtype) parts.push(event.subtype)
-  if (event.type) parts.push(event.type)
+  if (toolName) parts.push(toolName)
+  if (subtype) parts.push(subtype)
+  if (type) parts.push(type)
 
   const p = event.payload as Record<string, any>
   // Include key payload fields for search

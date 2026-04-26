@@ -102,8 +102,10 @@ export const api = {
     sessionId: string,
     filters?: {
       agentIds?: string[]
-      type?: string
-      subtype?: string
+      /** Optional server-side hookName filter — the server only knows
+       *  about `hook_name`. Per-class subtype/toolName filtering happens
+       *  client-side via deriver hooks after fetch. */
+      hookName?: string
       search?: string
       limit?: number
       offset?: number
@@ -111,8 +113,7 @@ export const api = {
   ) => {
     const params = new URLSearchParams()
     if (filters?.agentIds?.length) params.set('agentId', filters.agentIds.join(','))
-    if (filters?.type) params.set('type', filters.type)
-    if (filters?.subtype) params.set('subtype', filters.subtype)
+    if (filters?.hookName) params.set('hookName', filters.hookName)
     if (filters?.search) params.set('search', filters.search)
     if (filters?.limit) params.set('limit', String(filters.limit))
     if (filters?.offset) params.set('offset', String(filters.offset))
@@ -162,6 +163,21 @@ export const api = {
     fetchJson<{ dbPath: string; sizeBytes: number; sessionCount: number; eventCount: number }>(
       '/db/stats',
     ),
+  /**
+   * Layer 3 → server PATCH for agent metadata. The server accepts any
+   * subset of `{ name, description, agent_type }`; unrecognized fields
+   * (and attempts to overwrite `id` / `agent_class`) are silently
+   * ignored. Returns the updated row.
+   */
+  patchAgent: (
+    agentId: string,
+    patch: { name?: string | null; description?: string | null; agent_type?: string | null },
+  ) =>
+    fetchJson<ServerAgent>(`/agents/${encodeURIComponent(agentId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    }),
   bulkDeleteSessions: (sessionIds: string[]) =>
     fetchJson<{
       ok: true
