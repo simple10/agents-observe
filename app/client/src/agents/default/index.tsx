@@ -6,10 +6,29 @@ import { AgentRegistry } from '../registry'
 import type {
   RawEvent,
   EnrichedEvent,
+  EventStatus,
   ProcessingContext,
   ProcessEventResult,
   EventProps,
 } from '../types'
+
+/** Default subtype derivation: identity — the raw hookName. */
+function deriveSubtype(event: RawEvent): string | null {
+  return event.hookName || null
+}
+
+/** Default tool-name derivation: read `payload.tool_name` if present. */
+function deriveToolName(event: RawEvent): string | null {
+  const p = event.payload as Record<string, unknown> | undefined
+  const tn = p?.tool_name
+  return typeof tn === 'string' ? tn : null
+}
+
+/** Default status: no per-class derivation — return null and let the
+ *  consumer fall back to 'completed'. */
+function deriveStatus(_event: RawEvent, _grouped: RawEvent[]): EventStatus | null {
+  return null
+}
 
 export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult {
   const turnId = ctx.getCurrentTurn(raw.agentId)
@@ -20,6 +39,9 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
   const payloadToolUseId = (raw.payload as Record<string, unknown>).tool_use_id
   const toolUseId = typeof payloadToolUseId === 'string' ? payloadToolUseId : null
 
+  const subtype = deriveSubtype(raw)
+  const toolName = deriveToolName(raw)
+
   const enriched: EnrichedEvent = {
     id: raw.id,
     agentId: raw.agentId,
@@ -27,14 +49,14 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     hookName: raw.hookName,
     timestamp: raw.timestamp,
     createdAt: raw.createdAt,
-    type: raw.type,
-    subtype: raw.subtype,
+    type: subtype ? 'system' : 'hook',
+    subtype,
+    toolName,
     groupId: toolUseId,
     turnId,
     displayEventStream: true,
     displayTimeline: true,
-    label: raw.subtype || raw.type || 'Event',
-    toolName: raw.toolName,
+    label: subtype || 'Event',
     toolUseId,
     icon: null,
     iconColor: 'text-muted-foreground',
@@ -42,14 +64,14 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     dotColor: 'bg-muted-foreground',
     iconColorHex: null,
     status: 'completed',
-    filterTags: { static: null, dynamic: raw.toolName ? [raw.toolName] : [] },
-    searchText: [raw.subtype, raw.toolName, raw.type, JSON.stringify(raw.payload)]
+    filterTags: { static: null, dynamic: toolName ? [toolName] : [] },
+    searchText: [subtype, toolName, JSON.stringify(raw.payload)]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
       .slice(0, 500),
     payload: raw.payload,
-    summary: raw.subtype || raw.type || '',
+    summary: subtype || '',
   }
 
   return { event: enriched }
@@ -82,6 +104,9 @@ AgentRegistry.registerDefault({
   displayName: 'unknown',
   Icon: CircleDot,
   processEvent,
+  deriveSubtype,
+  deriveToolName,
+  deriveStatus,
   getEventIcon: () => CircleDot,
   getEventColor: () => ({
     iconColor: 'text-muted-foreground',
