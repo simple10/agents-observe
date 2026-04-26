@@ -1,7 +1,9 @@
 // app/server/src/storage/sqlite-adapter.ts
 
 import Database from 'better-sqlite3'
+import { dirname } from 'node:path'
 import type {
+  AgentPatch,
   EventStore,
   InsertEventParams,
   InsertEventResult,
@@ -187,6 +189,25 @@ export class SqliteAdapter implements EventStore {
         COMMIT;
         PRAGMA foreign_keys=ON;
       `)
+    }
+
+    // Migration (Phase 3): add pending_notification_count + last_notification_ts
+    // for the spec'd notification semantics. Existing rows default to 0/NULL.
+    const sessionColsAfter = this.db.prepare("PRAGMA table_info('sessions')").all() as {
+      name: string
+    }[]
+    if (!sessionColsAfter.some((c) => c.name === 'pending_notification_count')) {
+      this.db.exec(
+        'ALTER TABLE sessions ADD COLUMN pending_notification_count INTEGER NOT NULL DEFAULT 0',
+      )
+    }
+    if (!sessionColsAfter.some((c) => c.name === 'last_notification_ts')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN last_notification_ts INTEGER')
+      // Bootstrap: pre-Phase-3 rows had only pending_notification_ts; mirror it
+      // into last_notification_ts so sort-by-recent-attention works.
+      this.db.exec(
+        'UPDATE sessions SET last_notification_ts = pending_notification_ts WHERE pending_notification_ts IS NOT NULL',
+      )
     }
 
     this.db.exec(`
@@ -394,6 +415,75 @@ export class SqliteAdapter implements EventStore {
     return row === undefined
   }
 
+  async findOrCreateProjectBySlug(
+    slug: string,
+    name?: string,
+  ): Promise<{ id: number; slug: string; created: boolean }> {
+    const now = Date.now()
+    const insertResult = this.db
+      .prepare(
+        `INSERT INTO projects (slug, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(slug) DO NOTHING`,
+      )
+      .run(slug, name ?? slug, now, now)
+    const created = insertResult.changes === 1
+    let row = this.db.prepare('SELECT id, slug FROM projects WHERE slug = ?').get(slug) as
+      | { id: number; slug: string }
+      | undefined
+    if (!row) {
+      // Defensive retry — SQLite serializes writes so this is unreachable
+      // in practice. Retry once before giving up.
+      row = this.db.prepare('SELECT id, slug FROM projects WHERE slug = ?').get(slug) as
+        | { id: number; slug: string }
+        | undefined
+      if (!row) throw new Error(`findOrCreateProjectBySlug: slug ${slug} disappeared`)
+    }
+    return { id: row.id, slug: row.slug, created }
+  }
+
+  async findSiblingSessionWithProject(input: {
+    startCwd: string | null
+    transcriptBasedir: string | null
+    excludeSessionId: string
+  }): Promise<{ projectId: number } | null> {
+    const { startCwd, transcriptBasedir, excludeSessionId } = input
+    if (!startCwd && !transcriptBasedir) return null
+    // Use Node's dirname applied at write time would be ideal, but we
+    // store the full transcript_path. Compare basedir via SQL by
+    // matching the prefix exactly: `dirname(transcript_path)` is the
+    // path up to (but not including) the trailing '/<file>'.
+    //
+    // SQLite has no built-in dirname, so we fold it in at the candidate
+    // side: a session row matches if `start_cwd = ?` (when supplied) OR
+    // its transcript_path starts with `<basedir>/`. We pass the basedir
+    // with a trailing slash to avoid matching prefixes of unrelated dirs
+    // like `/foo/bar` against `/foo/barbaz/...`.
+    const basedirPrefix = transcriptBasedir ? `${transcriptBasedir}/` : null
+    const row = this.db
+      .prepare(
+        `SELECT project_id FROM sessions
+         WHERE id != ?
+           AND project_id IS NOT NULL
+           AND (
+             (? IS NOT NULL AND start_cwd = ?)
+             OR (? IS NOT NULL AND transcript_path LIKE ? || '%')
+           )
+         ORDER BY COALESCE(last_activity, started_at) DESC
+         LIMIT 1`,
+      )
+      .get(excludeSessionId, startCwd, startCwd, basedirPrefix, basedirPrefix) as
+      | { project_id: number }
+      | undefined
+    return row ? { projectId: row.project_id } : null
+  }
+
+  // dirname helper exposed for callers that want a consistent answer.
+  // (Not part of EventStore — inline helper.)
+  static dirname(p: string): string {
+    return dirname(p)
+  }
+
   async upsertSession(
     id: string,
     projectId: number | null,
@@ -476,6 +566,76 @@ export class SqliteAdapter implements EventStore {
     this.db
       .prepare('UPDATE agents SET agent_type = ?, updated_at = ? WHERE id = ?')
       .run(agentType, Date.now(), id)
+  }
+
+  async patchAgent(id: string, patch: AgentPatch): Promise<any | null> {
+    const fields: string[] = []
+    const values: unknown[] = []
+    if ('name' in patch) {
+      fields.push('name = ?')
+      values.push(patch.name ?? null)
+    }
+    if ('description' in patch) {
+      fields.push('description = ?')
+      values.push(patch.description ?? null)
+    }
+    if ('agent_type' in patch) {
+      fields.push('agent_type = ?')
+      values.push(patch.agent_type ?? null)
+    }
+    if (fields.length === 0) {
+      // No-op patch — just verify the row exists and return it.
+      return this.getAgentById(id)
+    }
+    fields.push('updated_at = ?')
+    values.push(Date.now())
+    const result = this.db
+      .prepare(`UPDATE agents SET ${fields.join(', ')} WHERE id = ?`)
+      .run(...values, id)
+    if (result.changes === 0) return null
+    return this.getAgentById(id)
+  }
+
+  async startSessionNotification(sessionId: string, timestamp: number): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+           pending_notification_ts = ?,
+           last_notification_ts = ?,
+           pending_notification_count = pending_notification_count + 1,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(timestamp, timestamp, Date.now(), sessionId)
+  }
+
+  async clearSessionNotification(sessionId: string): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+           pending_notification_ts = NULL,
+           pending_notification_count = 0,
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(Date.now(), sessionId)
+  }
+
+  async stopSession(sessionId: string, timestamp: number): Promise<void> {
+    this.db
+      .prepare('UPDATE sessions SET stopped_at = ?, updated_at = ? WHERE id = ?')
+      .run(timestamp, Date.now(), sessionId)
+  }
+
+  async touchSessionActivity(sessionId: string, timestamp: number): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+           last_activity = MAX(COALESCE(last_activity, 0), ?),
+           updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(timestamp, Date.now(), sessionId)
   }
 
   async updateSessionStatus(id: string, status: string): Promise<void> {

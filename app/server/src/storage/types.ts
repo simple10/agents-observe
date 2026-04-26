@@ -3,7 +3,7 @@
 export interface InsertEventParams {
   agentId: string
   sessionId: string
-  /** Raw hook event name from the CLI-stamped envelope. Defaults to 'unknown'. */
+  /** Raw hook event name from the envelope. */
   hookName: string
   timestamp: number
   payload: Record<string, unknown>
@@ -12,16 +12,14 @@ export interface InsertEventParams {
   /** Envelope creation hints persisted for traceability. Optional. */
   _meta?: Record<string, unknown> | null
   /**
-   * When true, set `pending_notification_ts = timestamp`. When explicitly
-   * false (default for untagged events), clear it. When undefined AND the
-   * caller sets `notificationClears === false`, leave state alone.
+   * @deprecated Phase 3+: notification state is driven by route-layer
+   * calls to startSessionNotification / clearSessionNotification, which
+   * apply envelope flags directly. The adapter still honors these for
+   * the older test fixtures in sqlite-adapter.test.ts; remove once
+   * those migrate.
    */
   isNotification?: boolean
-  /**
-   * When explicitly `false`, this event is neutral — it leaves
-   * `pending_notification_ts` untouched. Any other value applies the
-   * default "clear" behavior unless `isNotification` is true.
-   */
+  /** @deprecated see `isNotification`. */
   clearsNotification?: boolean
 }
 
@@ -52,12 +50,37 @@ export interface StoredEvent {
   payload: string // JSON string in DB
 }
 
+export interface AgentPatch {
+  name?: string | null
+  description?: string | null
+  agent_type?: string | null
+}
+
 export interface EventStore {
   createProject(slug: string, name: string): Promise<number>
   getProjectById(id: number): Promise<any | null>
   getProjectBySlug(slug: string): Promise<any | null>
   updateProjectName(projectId: number, name: string): Promise<void>
   isSlugAvailable(slug: string): Promise<boolean>
+  /**
+   * Find-or-create a project by slug. Uses INSERT ... ON CONFLICT(slug)
+   * DO NOTHING followed by SELECT, so concurrent inserts converge on
+   * the same row. Never auto-suffixes.
+   */
+  findOrCreateProjectBySlug(
+    slug: string,
+    name?: string,
+  ): Promise<{ id: number; slug: string; created: boolean }>
+  /**
+   * Look up a session that already has a project, matching by either
+   * `start_cwd` or `dirname(transcript_path)`. Used by project
+   * resolution when `flags.resolveProject` fires.
+   */
+  findSiblingSessionWithProject(input: {
+    startCwd: string | null
+    transcriptBasedir: string | null
+    excludeSessionId: string
+  }): Promise<{ projectId: number } | null>
   deleteProject(
     projectId: number,
   ): Promise<{ sessionIds: string[]; sessions: number; agents: number; events: number }>
@@ -79,12 +102,22 @@ export interface EventStore {
     agentType?: string | null,
     agentClass?: string | null,
   ): Promise<void>
+  /** Layer 3 patch path. Only `name`, `description`, `agent_type` honored. */
+  patchAgent(id: string, patch: AgentPatch): Promise<any | null>
   updateAgentType(id: string, agentType: string): Promise<void>
   updateSessionStatus(id: string, status: string): Promise<void>
   patchSessionMetadata(sessionId: string, patch: Record<string, unknown>): Promise<void>
   updateSessionSlug(sessionId: string, slug: string): Promise<void>
   updateSessionProject(sessionId: string, projectId: number): Promise<void>
   updateAgentName(agentId: string, name: string): Promise<void>
+  /** Set `pending_notification_ts = timestamp` and bump count + last. */
+  startSessionNotification(sessionId: string, timestamp: number): Promise<void>
+  /** Clear pending notification state (count -> 0, ts -> NULL). */
+  clearSessionNotification(sessionId: string): Promise<void>
+  /** Stamp `sessions.stopped_at = timestamp`. */
+  stopSession(sessionId: string, timestamp: number): Promise<void>
+  /** Update `sessions.last_activity` to MAX(current, timestamp). */
+  touchSessionActivity(sessionId: string, timestamp: number): Promise<void>
   insertEvent(params: InsertEventParams): Promise<InsertEventResult>
   getProjects(): Promise<any[]>
   getSessionsForProject(projectId: number): Promise<any[]>

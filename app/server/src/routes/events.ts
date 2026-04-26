@@ -1,8 +1,24 @@
 // app/server/src/routes/events.ts
+//
+// Per the three-layer contract spec
+// (docs/specs/2026-04-25-three-layer-contract-design.md
+// §"Layer 2 Contract — Server Behavior"). Steps:
+//
+//   1. Validate envelope.
+//   2. Upsert session (consume _meta.session.* on first write only).
+//   3. Resolve project (sticky after first assignment).
+//   4. Upsert agent (consume _meta.agent.* on first write; agent_class
+//      locked at first write).
+//   5. Insert event row.
+//   6. Apply flags in spec order: clear → start → stop.
+//   7. Compose response — including a `requests` array of named
+//      callbacks when state is missing (see Task 3.6).
+//   8. Broadcast.
+
 import { Hono } from 'hono'
 import type { EventStore } from '../storage/types'
-import type { EventEnvelope, EventEnvelopeMeta, ParsedEvent } from '../types'
-import { parseRawEvent } from '../parser'
+import type { EventEnvelope, ParsedEvent } from '../types'
+import { validateEnvelope, EnvelopeValidationError } from '../parser'
 import { resolveProject } from '../services/project-resolver'
 import { config } from '../config'
 import { apiError } from '../errors'
@@ -17,396 +33,209 @@ type Env = {
 }
 
 const router = new Hono<Env>()
-
 const LOG_LEVEL = config.logLevel
 
-// Track root agent IDs per session (sessionId -> agentId)
-const sessionRootAgents = new Map<string, string>()
-
-// Track pending Agent tool metadata so we can name subagents early.
-// When PreToolUse:Agent fires, we store name+description keyed by tool_use_id
-// and also push onto a per-session FIFO queue. The queue is necessary because
-// subagent events carry only agent_id (not the parent tool_use_id), so we can't
-// directly look up by tool_use_id when a new subagent first appears.
-//
-// When multiple Agent tools are invoked concurrently (e.g. two subagents spawned
-// in the same turn), each gets its own queue entry so names are assigned 1:1.
-interface PendingAgentMeta {
-  name: string | null
-  description: string | null
-}
-const pendingAgentMeta = new Map<string, PendingAgentMeta>() // toolUseId -> { name, description }
-const pendingAgentTypes = new Map<string, string>() // toolUseId -> subagent_type
-const pendingAgentMetaQueue = new Map<string, PendingAgentMeta[]>() // sessionId -> FIFO queue
-const namedAgents = new Map<string, Set<string>>() // sessionId -> set of agent IDs already named via queue
-
-async function ensureRootAgent(
-  store: EventStore,
-  sessionId: string,
-  agentClass?: string,
-): Promise<string> {
-  // Fast path: trust the in-memory cache. Cache invalidation happens in all
-  // delete paths (DELETE /projects/:id, DELETE /sessions/:id, DELETE /data),
-  // and the startup repairOrphans pass cleans up any pre-existing orphans.
-  // Defensive always-upserting on every event added a measurable per-event
-  // write cost (~500µs) for no benefit in the common case.
-  let rootId = sessionRootAgents.get(sessionId)
-  if (!rootId) {
-    rootId = sessionId
-    await store.upsertAgent(rootId, sessionId, null, null, null, null, agentClass)
-    sessionRootAgents.set(sessionId, rootId)
-  }
-  return rootId
-}
-
-// POST /events
 router.post('/events', async (c) => {
   const store = c.get('store')
   const broadcastToSession = c.get('broadcastToSession')
   const broadcastToAll = c.get('broadcastToAll')
+  const broadcastActivity = c.get('broadcastActivity')
+
+  let raw: unknown
+  try {
+    raw = await c.req.json()
+  } catch {
+    return apiError(c, 400, 'Invalid JSON body')
+  }
+
+  let envelope: EventEnvelope
+  let timestamp: number
+  try {
+    const validated = validateEnvelope(raw)
+    envelope = validated.envelope
+    timestamp = validated.timestamp
+  } catch (err) {
+    if (err instanceof EnvelopeValidationError) {
+      return c.json({ error: { message: err.message, missingFields: err.missingFields } }, 400)
+    }
+    throw err
+  }
+
+  if (LOG_LEVEL === 'debug' || LOG_LEVEL === 'trace') {
+    const payloadStr = JSON.stringify(envelope.payload)
+    const trimmed = LOG_LEVEL === 'trace' ? payloadStr : payloadStr.slice(0, 500)
+    console.log(
+      `[HOOK:${envelope.hookName}] agentClass=${envelope.agentClass} session=${envelope.sessionId} ${trimmed}`,
+    )
+  }
 
   try {
-    const body = (await c.req.json()) as Partial<EventEnvelope>
-
-    if (!body.hook_payload) {
-      return apiError(c, 400, 'Missing hook_payload in request body')
-    }
-
-    const hookPayload = body.hook_payload as Record<string, unknown>
-    const meta: EventEnvelopeMeta = body.meta || {}
-    const agentClass = meta.agentClass || 'claude-code'
-
-    // Trace-only log when the CLI flagged this event as a notification
-    // trigger. Helpful for debugging AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS
-    // configurations without wading through full payload dumps.
-    if (LOG_LEVEL === 'trace' && meta.isNotification === true) {
-      const hookEvent = (hookPayload.hook_event_name as string | undefined) ?? 'unknown'
-      const sid = hookPayload.session_id ?? '?'
-      console.log(
-        `[NOTIFY] isNotification=true agentClass=${agentClass} hookEvent=${hookEvent} session=${sid}`,
-      )
-    }
-
-    if (LOG_LEVEL === 'debug' || LOG_LEVEL === 'trace') {
-      const logKeys = Object.keys(hookPayload).join(', ')
-      const payload = JSON.stringify(hookPayload)
-      const logPayload =
-        LOG_LEVEL === 'trace'
-          ? `Payload: ${payload}`
-          : `Keys: ${logKeys} \nPayload: ${payload.slice(0, 500)}`
-
-      if (hookPayload.hook_event_name) {
-        const toolInfo = hookPayload.tool_name
-          ? `tool:${hookPayload.tool_name} tool_use_id:${hookPayload.tool_use_id}`
-          : ''
-        console.log(`[HOOK:${hookPayload.hook_event_name}] ${toolInfo} \n${logPayload}\n---`)
-      } else {
-        console.log('[EVENT]', logPayload)
-      }
-    }
-
-    const parsed = parseRawEvent(hookPayload, meta)
-    const eventCwd = (parsed.metadata.cwd as string | undefined) ?? null
-
-    // Resolve project - only on first event for this session.
-    //
-    // Phase 2 stub: only honors explicit slug overrides. The full
-    // algorithm (sibling matching, cwd-derived slugs, etc.) lands in
-    // Phase 3 with adapter changes. Sessions with no slug land
-    // unassigned (project_id = NULL) and render in the "Unassigned"
-    // bucket on the client.
-    const existingSession = await store.getSessionById(parsed.sessionId)
-    let effectiveProjectId: number | null
-
-    if (existingSession) {
-      effectiveProjectId = existingSession.project_id
-      // Auto-repair: if the session's project FK points to a project that
-      // no longer exists, clear it (Phase 2 lets sessions be unassigned).
-      if (effectiveProjectId !== null) {
-        const projectStillExists = await store.getProjectById(effectiveProjectId)
-        if (!projectStillExists) {
-          console.log(
-            `[event] Session ${parsed.sessionId} references missing project ${effectiveProjectId}; clearing`,
-          )
-          effectiveProjectId = null
-        }
-      }
-      if (effectiveProjectId === null) {
-        const projectSlugOverride = meta.env?.AGENTS_OBSERVE_PROJECT_SLUG || null
-        if (projectSlugOverride) {
-          const resolved = await resolveProject(store, {
-            sessionId: parsed.sessionId,
-            slug: projectSlugOverride,
-          })
-          if (resolved.projectId !== null) {
-            effectiveProjectId = resolved.projectId
-            await store.updateSessionProject(parsed.sessionId, effectiveProjectId)
-          }
-        }
-      }
-    } else {
-      const projectSlugOverride = meta.env?.AGENTS_OBSERVE_PROJECT_SLUG || null
-      const resolved = await resolveProject(store, {
-        sessionId: parsed.sessionId,
-        slug: projectSlugOverride,
-      })
-      effectiveProjectId = resolved.projectId
-    }
-
+    // ---- Step 2: upsert session ------------------------------------------
+    // Read existing row first so we can tell whether this is a fresh
+    // session — `requests` and project resolution both depend on that.
+    const sessionBefore = await store.getSessionById(envelope.sessionId)
+    const sessionHints = envelope._meta?.session
     await store.upsertSession(
-      parsed.sessionId,
-      effectiveProjectId,
-      parsed.slug,
-      Object.keys(parsed.metadata).length > 0 ? parsed.metadata : null,
-      parsed.timestamp,
-      parsed.transcriptPath,
-      eventCwd,
+      envelope.sessionId,
+      sessionBefore?.project_id ?? null,
+      sessionHints?.slug ?? null,
+      sessionHints?.metadata ?? null,
+      timestamp,
+      sessionHints?.transcriptPath ?? null,
+      sessionHints?.startCwd ?? null,
     )
 
-    const rootAgentId = await ensureRootAgent(store, parsed.sessionId, agentClass)
+    // Re-read so we work with the post-upsert canonical row (slug,
+    // start_cwd, transcript_path now fully populated).
+    const session = await store.getSessionById(envelope.sessionId)
 
-    // When PreToolUse:Agent fires, stash name + description for early naming.
-    // We store it both by toolUseId (for definitive lookup at PostToolUse) and
-    // in a per-session FIFO queue (for early naming when subagent events arrive
-    // before PostToolUse, since those events don't carry the parent tool_use_id).
-    //
-    // `tool_use_id` is no longer a column and no longer on ParsedEvent —
-    // we read it from the raw payload at ingest time for this in-memory
-    // pairing map. This logic is Claude-Code-specific and stays
-    // server-side until a larger route-layer refactor moves it into an
-    // agent-class registry.
-    const payloadToolUseId = (hookPayload.tool_use_id as string | undefined) || null
-    if (parsed.subtype === 'PreToolUse' && parsed.toolName === 'Agent') {
-      const meta: PendingAgentMeta = {
-        name: parsed.subAgentName,
-        description: parsed.subAgentDescription,
-      }
-      if (meta.name || meta.description) {
-        if (payloadToolUseId) {
-          pendingAgentMeta.set(payloadToolUseId, meta)
-        }
-        const queue = pendingAgentMetaQueue.get(parsed.sessionId) || []
-        queue.push(meta)
-        pendingAgentMetaQueue.set(parsed.sessionId, queue)
-      }
-      // Stash agent type from tool_input.subagent_type
-      const agentType = (hookPayload as any)?.tool_input?.subagent_type
-      if (agentType && payloadToolUseId) {
-        pendingAgentTypes.set(payloadToolUseId, agentType)
-      }
+    // ---- Step 3: project resolution --------------------------------------
+    const resolvedProjectId = await resolveProject(store, {
+      sessionId: envelope.sessionId,
+      meta: envelope._meta?.project,
+      flags: envelope.flags,
+      startCwd: session?.start_cwd ?? null,
+      transcriptPath: session?.transcript_path ?? null,
+      currentProjectId: session?.project_id ?? null,
+    })
+    if (resolvedProjectId !== null && resolvedProjectId !== session?.project_id) {
+      await store.updateSessionProject(envelope.sessionId, resolvedProjectId)
     }
 
-    // If the event has an ownerAgentId (from payload.agent_id), this event
-    // belongs to that agent. Ensure the agent record exists.
-    if (parsed.ownerAgentId && parsed.ownerAgentId !== rootAgentId) {
-      // Only consume a queue entry for agents we haven't named yet.
-      const sessionNamed = namedAgents.get(parsed.sessionId)
-      const alreadyNamed = sessionNamed?.has(parsed.ownerAgentId) ?? false
-      let pending: PendingAgentMeta | null = null
+    // ---- Step 4: upsert agent --------------------------------------------
+    const agentHints = envelope._meta?.agent
+    await store.upsertAgent(
+      envelope.agentId,
+      envelope.sessionId, // accepted for backwards-compat; not persisted
+      null,
+      agentHints?.name ?? null,
+      agentHints?.description ?? null,
+      agentHints?.type ?? null,
+      envelope.agentClass,
+    )
 
-      if (!alreadyNamed) {
-        const queue = pendingAgentMetaQueue.get(parsed.sessionId)
-        if (queue && queue.length > 0) {
-          pending = queue.shift()!
-          if (queue.length === 0) {
-            pendingAgentMetaQueue.delete(parsed.sessionId)
-          }
-        }
-        if (pending) {
-          if (!sessionNamed) {
-            namedAgents.set(parsed.sessionId, new Set([parsed.ownerAgentId]))
-          } else {
-            sessionNamed.add(parsed.ownerAgentId)
-          }
-        }
-      }
-
-      // Extract agent_type from the hook payload
-      const ownerAgentType: string | null = (hookPayload as any)?.agent_type ?? null
-
-      await store.upsertAgent(
-        parsed.ownerAgentId,
-        parsed.sessionId,
-        rootAgentId,
-        pending?.name ?? null,
-        pending?.description ?? null,
-        ownerAgentType,
-        agentClass,
-      )
-    }
-    let agentId = parsed.ownerAgentId || rootAgentId
-
-    // Create/update subagent records (from Agent tool PostToolUse or SubagentStop)
-    if (parsed.subAgentId) {
-      let subAgentName = parsed.subAgentName
-      let subAgentDescription = parsed.subAgentDescription
-      let subAgentType: string | null = (hookPayload as any)?.agent_type ?? null
-      if (parsed.subtype === 'PostToolUse' && parsed.toolName === 'Agent' && payloadToolUseId) {
-        const metaFromPre = pendingAgentMeta.get(payloadToolUseId)
-        if (metaFromPre) {
-          subAgentName = subAgentName || metaFromPre.name
-          subAgentDescription = subAgentDescription || metaFromPre.description
-          pendingAgentMeta.delete(payloadToolUseId)
-        }
-        // Agent type: prefer stashed value from PreToolUse, then tool_input/tool_response
-        const toolResponse = (hookPayload as any)?.tool_response
-        subAgentType =
-          pendingAgentTypes.get(payloadToolUseId) ??
-          (hookPayload as any)?.tool_input?.subagent_type ??
-          toolResponse?.agentType ??
-          toolResponse?.subagent_type ??
-          subAgentType
-        pendingAgentTypes.delete(payloadToolUseId)
-      }
-
-      await store.upsertAgent(
-        parsed.subAgentId,
-        parsed.sessionId,
-        rootAgentId,
-        subAgentName,
-        subAgentDescription,
-        subAgentType,
-        agentClass,
-      )
-
-      // agent_progress events belong to the subagent
-      if (parsed.subtype === 'agent_progress') {
-        agentId = parsed.subAgentId
-      }
-    }
-
-    // Session lifecycle: SessionEnd stops the session, any other event reactivates a stopped session.
-    if (parsed.subtype === 'SessionEnd') {
-      await store.updateSessionStatus(parsed.sessionId, 'stopped')
-      broadcastToAll({
-        type: 'session_update',
-        data: { id: parsed.sessionId, status: 'stopped' },
-      })
-    } else {
-      const session = await store.getSessionById(parsed.sessionId)
-      if (session && session.status === 'stopped') {
-        await store.updateSessionStatus(parsed.sessionId, 'active')
-        broadcastToAll({
-          type: 'session_update',
-          data: { id: parsed.sessionId, status: 'active' },
-        })
-      }
-    }
-
-    const now = Date.now()
-    const { eventId, notificationTransition } = await store.insertEvent({
-      agentId,
-      sessionId: parsed.sessionId,
-      hookName: parsed.hookName ?? 'unknown',
-      timestamp: parsed.timestamp,
-      payload: parsed.raw,
-      cwd: eventCwd,
-      _meta: null,
-      isNotification: meta.isNotification,
-      clearsNotification: meta.clearsNotification,
+    // ---- Step 5: insert event row ----------------------------------------
+    const eventStoreMeta: Record<string, unknown> | null = envelope._meta
+      ? (envelope._meta as Record<string, unknown>)
+      : null
+    const { eventId } = await store.insertEvent({
+      agentId: envelope.agentId,
+      sessionId: envelope.sessionId,
+      hookName: envelope.hookName,
+      timestamp,
+      payload: envelope.payload,
+      cwd: envelope.cwd ?? null,
+      _meta: eventStoreMeta,
+      // Pass-through neutral signals: notification state is now driven
+      // explicitly by envelope flags below, so the adapter must not
+      // touch pending state when inserting a routine event.
+      clearsNotification: false,
     })
 
-    const event: ParsedEvent = {
-      id: eventId,
-      agentId,
-      sessionId: parsed.sessionId,
-      hookName: parsed.hookName ?? 'unknown',
-      timestamp: parsed.timestamp,
-      createdAt: now,
-      cwd: eventCwd,
-      _meta: null,
-      payload: parsed.raw,
+    // ---- Step 6: apply flags in spec order (clear → start → stop) --------
+    const flags = envelope.flags ?? {}
+    const wasPending = session?.pending_notification_ts ?? null
+    let pendingTransition: 'set' | 'cleared' | 'none' = 'none'
+    if (flags.clearsNotification) {
+      await store.clearSessionNotification(envelope.sessionId)
+      if (wasPending !== null) pendingTransition = 'cleared'
+    }
+    if (flags.startsNotification) {
+      await store.startSessionNotification(envelope.sessionId, timestamp)
+      // Set transition only if we weren't already pending (or just cleared).
+      const wasJustCleared = pendingTransition === 'cleared'
+      if (wasPending === null || wasJustCleared) pendingTransition = 'set'
+    }
+    if (flags.stopsSession) {
+      await store.stopSession(envelope.sessionId, timestamp)
     }
 
-    broadcastToSession(parsed.sessionId, { type: 'event', data: event })
+    // ---- Step 7: compose response (callbacks) ----------------------------
+    // Refresh session row so we see post-upsert slug + the freshly
+    // created flag. A request fires only when the session lacks a slug
+    // AND the envelope provided _meta.session.transcriptPath (the agent
+    // class can satisfy `getSessionInfo`).
+    const sessionAfter = await store.getSessionById(envelope.sessionId)
+    const requests: Array<{
+      name: string
+      callback: string
+      args: Record<string, unknown>
+    }> = []
+    if (sessionAfter && !sessionAfter.slug && envelope._meta?.session?.transcriptPath) {
+      requests.push({
+        name: 'getSessionInfo',
+        callback: `/api/callbacks/session-info/${encodeURIComponent(envelope.sessionId)}`,
+        args: {
+          transcriptPath: envelope._meta.session.transcriptPath,
+          agentClass: envelope.agentClass,
+        },
+      })
+    }
 
-    // Fire an activity ping for the sidebar pulse animation. The
-    // broadcastActivity helper internally throttles to once per
-    // session per ACTIVITY_PING_THROTTLE_MS, so calling it on every
-    // insert is safe and cheap.
-    const broadcastActivity = c.get('broadcastActivity')
-    broadcastActivity(parsed.sessionId, eventId)
+    // ---- Step 8: broadcast ------------------------------------------------
+    const event: ParsedEvent = {
+      id: eventId,
+      agentId: envelope.agentId,
+      sessionId: envelope.sessionId,
+      hookName: envelope.hookName,
+      timestamp,
+      createdAt: Date.now(),
+      cwd: envelope.cwd ?? null,
+      _meta: (envelope._meta as Record<string, unknown> | undefined) ?? null,
+      payload: envelope.payload,
+    }
+    broadcastToSession(envelope.sessionId, { type: 'event', data: event })
+    broadcastActivity(envelope.sessionId, eventId)
 
-    // Notification fan-out is driven by the storage-layer transition
-    // signal, not by subtype. The CLI is responsible for stamping
-    // meta.isNotification / meta.clearsNotification on the envelope;
-    // the server just broadcasts on actual state changes.
-    if (notificationTransition === 'set') {
+    if (flags.stopsSession) {
+      broadcastToAll({
+        type: 'session_update',
+        data: { id: envelope.sessionId, status: 'stopped' },
+      })
+    }
+    if (pendingTransition === 'set') {
       broadcastToAll({
         type: 'notification',
         data: {
-          sessionId: parsed.sessionId,
-          projectId: effectiveProjectId,
-          ts: parsed.timestamp,
+          sessionId: envelope.sessionId,
+          projectId: resolvedProjectId ?? sessionAfter?.project_id ?? null,
+          ts: timestamp,
         },
       })
-    } else if (notificationTransition === 'cleared') {
+    } else if (pendingTransition === 'cleared') {
       broadcastToAll({
         type: 'notification_clear',
-        data: {
-          sessionId: parsed.sessionId,
-          ts: parsed.timestamp,
-        },
+        data: { sessionId: envelope.sessionId, ts: timestamp },
       })
-    }
-
-    // Build response -- request local data if the server is missing info
-    const requests: Array<{ cmd: string; args: Record<string, unknown>; callback: string }> = []
-
-    // Request session info (slug + git) when the session still has no slug.
-    // The hook dispatches to an agent-specific reader based on agentClass.
-    if (parsed.raw.transcript_path) {
-      const session = await store.getSessionById(parsed.sessionId)
-      if (session && !session.slug) {
-        requests.push({
-          cmd: 'getSessionInfo',
-          args: {
-            transcript_path: parsed.raw.transcript_path,
-            agentClass,
-            cwd: eventCwd,
-          },
-          callback: `/api/callbacks/session-info/${encodeURIComponent(parsed.sessionId)}`,
-        })
-      }
     }
 
     const responseBody: Record<string, unknown> = {
+      id: eventId,
+      // Legacy shape that pre-Phase-4 hook clients still read. Phase 4
+      // can remove these once the CLIs only need `id`.
       status: 'OK',
       meta: {
         event_id: eventId,
-        session_id: parsed.sessionId,
-        project_id: effectiveProjectId,
+        session_id: envelope.sessionId,
+        project_id: resolvedProjectId ?? sessionAfter?.project_id ?? null,
       },
     }
-
-    if (requests.length > 0) {
-      responseBody.requests = requests
-    }
-
+    if (requests.length > 0) responseBody.requests = requests
     return c.json(responseBody, 201)
   } catch (error) {
     console.error('Error processing event:', error)
     const message = error instanceof Error ? error.message : String(error)
-    // Return 500 (not 400) for genuine processing errors so the client
-    // knows it's a server-side issue, not a malformed request. Include
-    // the full error message so the dashboard can surface it via toast.
     return apiError(c, 500, 'Failed to process event', { details: message })
   }
 })
 
-/** Remove a single session from the in-memory root agent cache */
-export function removeSessionRootAgent(sessionId: string): void {
-  sessionRootAgents.delete(sessionId)
-  pendingAgentMetaQueue.delete(sessionId)
-  namedAgents.delete(sessionId)
+/** Backwards-compat shims for callers that imported these from the old
+ *  events.ts module. Phase 3 removed the in-memory subagent pairing
+ *  maps; nothing to clear, but the exports stay so the index/admin
+ *  routes that called them keep compiling. */
+export function removeSessionRootAgent(_sessionId: string): void {
+  void _sessionId
 }
-
-/** Clear all in-memory session state */
-export function clearSessionRootAgents(): void {
-  sessionRootAgents.clear()
-  pendingAgentMeta.clear()
-  pendingAgentMetaQueue.clear()
-  namedAgents.clear()
-}
+export function clearSessionRootAgents(): void {}
 
 export default router
