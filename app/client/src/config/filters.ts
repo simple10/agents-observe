@@ -45,14 +45,29 @@ export const STATIC_FILTERS: StaticFilter[] = [
   { label: 'Stop', subtypes: ['Stop', 'StopFailure', 'SubagentStop'] },
   { label: 'Compaction', subtypes: ['PreCompact', 'PostCompact'] },
   {
+    label: 'Config',
+    subtypes: ['InstructionsLoaded', 'ConfigChange', 'CwdChanged', 'FileChanged'],
+  },
+  {
     label: 'Errors',
     match: (e, subtype, _toolName) => {
       const payload = e.payload as Record<string, unknown> | undefined
-      if (!payload) return false
-      // Match events with a non-empty error field
-      if (payload.error && payload.error !== '') return true
-      // Also match tool failure subtypes
+      // Tool failure subtypes (legacy data has hookName='PostToolUseFailure'
+      // directly; new data may have a paired PreToolUse whose status was
+      // bumped to 'failed' when a PostToolUseFailure was merged in).
       if (subtype === 'PostToolUseFailure' || subtype === 'StopFailure') return true
+      // EnrichedEvent carries a derived `status` after processEvent's
+      // Pre/Post pairing — a PreToolUse whose paired PostToolUseFailure
+      // landed gets `status === 'failed'` and should match here.
+      if ((e as { status?: string }).status === 'failed') return true
+      // Top-level error field (covers Notifications and StopFailure
+      // payloads, plus any raw error event).
+      if (typeof payload?.error === 'string' && payload.error !== '') return true
+      // Tool failures for new-shape data where the failure is encoded in
+      // the response rather than in the hookName.
+      const tr = payload?.tool_response as Record<string, unknown> | undefined
+      if (tr?.is_error === true) return true
+      if (typeof tr?.error === 'string' && tr.error !== '') return true
       return false
     },
   },

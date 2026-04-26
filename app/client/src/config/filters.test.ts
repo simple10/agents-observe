@@ -313,10 +313,16 @@ describe('getDynamicFilterNames', () => {
   })
 
   it('should include catchall subtypes not covered by static filters', () => {
-    const events = [makeEvent({ subtype: 'CwdChanged' }), makeEvent({ subtype: 'FileChanged' })]
+    // CwdChanged and FileChanged are now covered by the 'Config' static
+    // filter, so they no longer appear as dynamic catchall pills.
+    // SessionCompacted is an example of a hook subtype that has no
+    // static-filter home and therefore should appear as a catchall.
+    const events = [
+      makeEvent({ subtype: 'SessionCompacted' }),
+      makeEvent({ subtype: 'PreToolUse', toolName: 'Bash' }),
+    ]
     const names = getDynamicFilterNames(events)
-    expect(names).toContain('CwdChanged')
-    expect(names).toContain('FileChanged')
+    expect(names).toContain('SessionCompacted')
   })
 
   it('should NOT include subtypes that ARE covered by static filters', () => {
