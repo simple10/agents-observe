@@ -39,19 +39,25 @@ export interface Session {
   agentClasses: string[]
 }
 
-/** Agent metadata from the server — no derived state */
+/** Agent metadata from the server — no derived state.
+ *  Parent / hierarchy fields are NOT here; per spec the server is
+ *  agent-class-agnostic and Layer 3 derives parent/child from events. */
 export interface ServerAgent {
   id: string
-  sessionId: string
-  parentAgentId: string | null
   name: string | null
   description: string | null
   agentType?: string | null
   agentClass?: string | null
 }
 
-/** Agent with UI-derived state (computed from events) */
+/** Agent with UI-derived state (computed from events).
+ *  parentAgentId is derived client-side from spawn events (e.g.
+ *  Claude Code's PostToolUse:Agent → tool_response.agentId), NOT
+ *  read from the server. sessionId is the session-context this Agent
+ *  was constructed for. */
 export interface Agent extends ServerAgent {
+  sessionId: string
+  parentAgentId: string | null
   status: 'active' | 'stopped'
   eventCount: number
   firstEventAt: number | null

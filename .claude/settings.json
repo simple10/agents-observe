@@ -4,7 +4,8 @@
     "AGENTS_OBSERVE_PROJECT_SLUG": "agents-observe",
     "AGENTS_OBSERVE_LOG_LEVEL": "trace",
     "AGENTS_OBSERVE_SHUTDOWN_DELAY_MS": "30000",
-    "AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS": "Stop,Notification"
+    "AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS": "Stop,Notification",
+    "AGENTS_OBSERVE_API_BASE_URL": "http://localhost:4982/api"
   },
   "hooks": {
     "PreToolUse": [

@@ -25,8 +25,11 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
     enabled: !!sessionId,
   })
 
-  // Pure render: compute per-agent stats from events. No side effects.
-  const agentStats = useMemo(() => {
+  // Pure render: compute per-agent stats + parent map from events. No side effects.
+  // Parent derivation: PostToolUse with toolName=Agent declares
+  // tool_response.agentId as a child of event.agentId. Server no longer
+  // tracks this; per spec Layer 3 derives hierarchy from events.
+  const { agentStats, parentMap } = useMemo(() => {
     const stats = new Map<
       string,
       {
@@ -37,7 +40,8 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
         cwd: string | null
       }
     >()
-    if (!events) return stats
+    const parents = new Map<string, string>() // childAgentId -> parentAgentId
+    if (!events) return { agentStats: stats, parentMap: parents }
     const stopSubtypes = new Set(['Stop', 'SessionEnd', 'stop_hook_summary'])
     for (const e of events) {
       let s = stats.get(e.agentId)
@@ -51,8 +55,9 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
         }
         stats.set(e.agentId, s)
       }
-      if (!s.cwd && typeof (e.payload as any)?.cwd === 'string') {
-        s.cwd = (e.payload as any).cwd
+      const p = e.payload as Record<string, unknown> | null | undefined
+      if (!s.cwd && typeof (p as any)?.cwd === 'string') {
+        s.cwd = (p as any).cwd
       }
       s.eventCount++
       if (e.timestamp < s.firstEventAt) s.firstEventAt = e.timestamp
@@ -62,14 +67,26 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
       }
       // SubagentStop targets the agent ID in the payload, not the event's agentId
       if (e.hookName === 'SubagentStop') {
-        const targetId = (e.payload as any)?.agent_id
+        const targetId = (p as any)?.agent_id
         if (targetId) {
           const target = stats.get(targetId)
           if (target) target.lastStoppedAt = Math.max(target.lastStoppedAt, e.timestamp)
         }
       }
+      // Layer 3 hierarchy: PostToolUse:Agent declares tool_response.agentId
+      // as a child of event.agentId. First-write wins (a child shouldn't
+      // be re-parented mid-session under Claude Code semantics).
+      if (e.hookName === 'PostToolUse') {
+        const toolName = (p as any)?.tool_name
+        if (toolName === 'Agent') {
+          const childId = (p as any)?.tool_response?.agentId
+          if (typeof childId === 'string' && childId !== e.agentId && !parents.has(childId)) {
+            parents.set(childId, e.agentId)
+          }
+        }
+      }
     }
-    return stats
+    return { agentStats: stats, parentMap: parents }
   }, [events])
 
   // Side effect: for every agentId seen in events but not present in
@@ -102,16 +119,32 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
   }, [agentStats, serverAgents, sessionId, queryClient])
 
   // Pure render: merge event-derived stats with server metadata.
+  // parentAgentId is purely Layer 3 derivation (from PostToolUse:Agent
+  // events), NOT a server field — the agents table dropped that column
+  // per spec.
+  //
+  // Parent derivation precedence:
+  // 1. Explicit: PostToolUse:Agent declared this agent as a child of
+  //    event.agentId.
+  // 2. Default: any non-root agent (id !== sessionId) falls back to the
+  //    session root. Covers subagents that only emit SubagentStop with
+  //    no upstream PostToolUse:Agent (the common case for older sessions
+  //    or subagents spawned via paths the Agent tool doesn't cover).
+  // 3. Root: id === sessionId → null (no parent).
   return useMemo(() => {
     const serverMap = new Map<string, ServerAgent>()
     if (serverAgents) for (const a of serverAgents) serverMap.set(a.id, a)
     const result: Agent[] = []
     for (const [agentId, s] of agentStats) {
       const server = serverMap.get(agentId)
+      let parentAgentId: string | null = parentMap.get(agentId) ?? null
+      if (!parentAgentId && sessionId && agentId !== sessionId) {
+        parentAgentId = sessionId
+      }
       result.push({
         id: agentId,
         sessionId: sessionId || '',
-        parentAgentId: server?.parentAgentId ?? null,
+        parentAgentId,
         description: server?.description ?? null,
         name: server?.name ?? null,
         agentType: server?.agentType ?? null,
@@ -125,5 +158,5 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
       })
     }
     return result
-  }, [agentStats, serverAgents, sessionId])
+  }, [agentStats, parentMap, serverAgents, sessionId])
 }
