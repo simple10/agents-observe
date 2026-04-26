@@ -1003,10 +1003,32 @@ export function getSessionInfo(args, ctx) { /* existing transcript-scan logic st
 
 ### Task 4.4: Rewrite `codex.mjs` similarly
 
-Mirror the claude-code structure. Codex has no `Notification` hook by default, so the envelope-builder relies on user-configured `AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS`. Codex doesn't have a SessionEnd-equivalent we know about; leave `flags.stopsSession` unset until specified.
+```js
+import { defaultLib } from './default.mjs'
 
-- [ ] **Step 1: Rewrite per the pattern.**
-- [ ] **Step 2: Tests + commit.**
+export function buildEnv(config) { return defaultLib.buildEnv(config) }
+
+export function buildHookEvent(config, log, payload) {
+  const result = defaultLib.buildHookEvent(config, log, payload)
+  result.envelope.agentClass = 'codex'
+  // Codex hook payloads: identity fields are the same shape as Claude
+  // (session_id, agent_id, hook_event_name, cwd, transcript_path), so the
+  // default lib's extraction works without overrides. Notification opt-in
+  // is via AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS env var (handled by
+  // default lib).
+  //
+  // Codex does NOT have Claude's UserPromptSubmit/SessionEnd hooks. If
+  // future versions add equivalent semantic events, set
+  // flags.clearsNotification / flags.stopsSession here.
+  return result
+}
+
+export function getSessionInfo(args, ctx) { /* existing transcript-scan logic stays */ }
+```
+
+- [ ] **Step 1: Rewrite per the pattern above.**
+- [ ] **Step 2: Drop `deriveTypeSubtype` if present (Codex currently leaves it null — easy delete).**
+- [ ] **Step 3: Tests + commit.**
 
 ### Task 4.5: Hook lib prefetch into envelope
 
@@ -1246,12 +1268,46 @@ The shape is the same after processing; only the WIRE is different. As long as t
 
 ### Task 6.2: Codex derivers
 
-- [ ] Mirror Task 6.1 for Codex.
-- [ ] Codex events have a different shape; the derivers need to know about Codex's `data.type === 'agent_progress'` etc. Move the existing transcript-format parsing logic from the deleted server parser.ts into the codex agent-class registration. The user's spec explicitly anticipated this.
+The Codex client registration historically depended on the server's parser to translate transcript-format JSONL events (e.g. `data.type === 'agent_progress'`) into a unified shape. With server parsing gone, that logic moves here.
 
-### Task 6.3: Unknown / default agent class registration
+- [ ] **Step 1:** Port the transcript-format branch of the deleted `parser.ts` into a new helper `app/client/src/agents/codex/parse-transcript.ts`. Function signature: `parseTranscriptEvent(payload): { subtype, toolName, subAgentId? }`.
 
-- [ ] **Step 1: Provide a thin "default" client registration** that uses identity-derivers (subtype = hookName, no tool, no status). Mounted automatically for any `agentClass` not explicitly registered.
+- [ ] **Step 2:** Codex's `deriveSubtype` calls `parseTranscriptEvent(event.payload).subtype ?? event.hookName`.
+
+- [ ] **Step 3:** `deriveToolName` calls the same helper for `toolName`.
+
+- [ ] **Step 4:** `deriveStatus` mirrors Claude Code's logic — Pre/Post pairing — but using Codex's hook names. Keep the registration's behavior identical to current; only the data source (envelope-derived vs server-derived) changes.
+
+- [ ] **Step 5:** Tests: bring over the existing parser tests for the transcript-format branch into `parse-transcript.test.ts`.
+
+- [ ] **Step 6:** Commit.
+
+### Task 6.3: Default agent class registration
+
+A bare-bones registration for `agentClass` values without an explicit lib.
+
+- [ ] **Step 1:** Create `app/client/src/agents/default/index.ts`:
+
+```ts
+export const defaultRegistration: AgentClassRegistration = {
+  agentClass: 'default',
+  displayName: 'Generic',
+  Icon: GenericIcon,
+  processEvent: (raw, ctx) => ({ event: { ...raw, groupId: null, turnId: null /* etc */ } }),
+  deriveSubtype: (event) => event.hookName,
+  deriveToolName: (event) => (event.payload?.tool_name as string) ?? null,
+  deriveStatus: () => null,
+  getEventIcon: () => GenericIcon,
+  getEventColor: () => ({ iconColor: 'text-muted-foreground', dotColor: 'bg-muted-foreground' }),
+  RowSummary: ({ event }) => <span>{event.hookName}</span>,
+  EventDetail: ({ event }) => <pre>{JSON.stringify(event.payload, null, 2)}</pre>,
+  DotTooltip: ({ event }) => <span>{event.hookName}</span>,
+}
+```
+
+- [ ] **Step 2:** Register in the `AgentRegistry` as the fallback when `get(agentClass)` finds no match.
+
+- [ ] **Step 3:** Tests + commit.
 
 ---
 
