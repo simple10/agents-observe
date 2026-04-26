@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Bell } from 'lucide-react'
 import { create } from 'zustand'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import { useUIStore } from '@/stores/ui-store'
 import { cn } from '@/lib/utils'
@@ -303,24 +304,27 @@ export function clearNotification(sessionId: string, ts: number) {
 export function useNotificationsController() {
   const enabled = useUIStore((s) => s.notificationsEnabled)
 
+  // Route the backfill through react-query so StrictMode's double-effect
+  // and any future re-mounts don't double-fetch. The cache key is
+  // global (no consumer, the side effect lives in onSuccess via the
+  // useEffect below).
+  const { data } = useQuery({
+    queryKey: ['notifications-pending'],
+    queryFn: () => api.getPendingNotifications(useNotificationStore.getState().lastSeenTs),
+    enabled,
+    staleTime: 60_000,
+  })
+
   useEffect(() => {
-    if (!enabled) return
-    const lastSeen = useNotificationStore.getState().lastSeenTs
-    api
-      .getPendingNotifications(lastSeen)
-      .then((rows) => {
-        useNotificationStore.getState().replacePending(
-          rows.map((r) => ({
-            sessionId: r.sessionId,
-            projectId: r.projectId,
-            ts: r.latestNotificationTs,
-          })),
-        )
-      })
-      .catch(() => {
-        // Non-critical path — swallow errors silently.
-      })
-  }, [enabled])
+    if (!data) return
+    useNotificationStore.getState().replacePending(
+      data.map((r) => ({
+        sessionId: r.sessionId,
+        projectId: r.projectId,
+        ts: r.latestNotificationTs,
+      })),
+    )
+  }, [data])
 
   useActiveSessionAutoDismiss()
   useFaviconAlert()

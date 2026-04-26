@@ -13,7 +13,18 @@ import { ProjectPage } from './project-page'
 import { useRegionShortcuts } from '@/hooks/use-region-shortcuts'
 
 export function MainPanel() {
-  const { selectedProjectId, selectedSessionId } = useUIStore()
+  const { selectedProjectId, selectedProjectSlug, selectedSessionId } = useUIStore()
+
+  // The URL hash populates `selectedProjectSlug` / `selectedSessionId`
+  // synchronously on store init, but `selectedProjectId` is resolved
+  // asynchronously by `useRouteSync` once /api/projects (and possibly
+  // /api/sessions/:id) has returned. Don't flash HomePage in that
+  // window — it triggers /api/sessions/recent and other home-page
+  // queries that get torn down a tick later.
+  const isResolvingRoute = !selectedProjectId && (!!selectedProjectSlug || !!selectedSessionId)
+  if (isResolvingRoute) {
+    return <div className="flex-1" />
+  }
 
   if (!selectedProjectId) {
     return <HomePage />
