@@ -79,9 +79,7 @@ export function getSessionInfo(args, { log }) {
   try {
     content = readFileSync(transcriptPath, 'utf8')
   } catch (err) {
-    log.warn(
-      `claude-code.getSessionInfo: cannot read transcript ${transcriptPath}: ${err.message}`,
-    )
+    log.warn(`claude-code.getSessionInfo: cannot read transcript ${transcriptPath}: ${err.message}`)
     return null
   }
 

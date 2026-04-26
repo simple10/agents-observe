@@ -293,7 +293,12 @@ describe('SqliteAdapter — sessions', () => {
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertHookEvent({ agentId: 'sess1', sessionId: 'sess1', hookName: 'PreToolUse', timestamp: 1000 })
+    await insertHookEvent({
+      agentId: 'sess1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 1000,
+    })
     await store.startSessionNotification('sess1', 2000)
 
     const rows = await store.getSessionsWithPendingNotifications(0)
@@ -309,7 +314,12 @@ describe('SqliteAdapter — sessions', () => {
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
     await store.startSessionNotification('sess1', 2000)
-    await insertHookEvent({ agentId: 'sess1', sessionId: 'sess1', hookName: 'PreToolUse', timestamp: 3000 })
+    await insertHookEvent({
+      agentId: 'sess1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 3000,
+    })
 
     // PreToolUse is a routine event with no clearsNotification flag — the
     // adapter's insertEvent must NOT touch pending state.

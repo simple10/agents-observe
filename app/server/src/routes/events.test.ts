@@ -341,4 +341,3 @@ describe('POST /api/events — callbacks (`requests` array)', () => {
     expect(body2.requests).toBeUndefined()
   })
 })
-

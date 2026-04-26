@@ -24,7 +24,7 @@ describe('admin routes — DELETE endpoints return counts', () => {
     Object.values(mockStore).forEach((fn) => fn.mockReset())
 
     // Mock events module and config
-vi.doMock('../config', () => ({
+    vi.doMock('../config', () => ({
       config: {
         allowDbReset: 'allow',
         dbPath: '/tmp/test.db',
@@ -106,7 +106,7 @@ describe('admin routes — DELETE /data policy', () => {
 
   async function buildApp(policy: string) {
     vi.resetModules()
-vi.doMock('../config', () => ({
+    vi.doMock('../config', () => ({
       config: { allowDbReset: policy, dbPath: '/tmp/test.db' },
     }))
 
@@ -152,7 +152,7 @@ describe('admin routes — DB stats + bulk session delete', () => {
     vi.resetModules()
     Object.values(mockStore).forEach((fn) => fn.mockReset())
 
-// Point config at a file that doesn't exist so statSync throws and
+    // Point config at a file that doesn't exist so statSync throws and
     // the route falls back to sizeBytes=0 — tests stay hermetic.
     vi.doMock('../config', () => ({
       config: { allowDbReset: 'allow', dbPath: '/tmp/does-not-exist-db-for-tests.db' },
