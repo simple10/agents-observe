@@ -149,6 +149,10 @@ export function useWebSocket(sessionId: string | null) {
         }
       } else if (msg.type === 'session_update') {
         queryClient.invalidateQueries({ queryKey: ['sessions'] })
+        // recent-sessions has a separate cache key prefix; invalidate
+        // explicitly so the home page + sidebar Unassigned bucket pick
+        // up new / changed sessions without needing a polling timer.
+        queryClient.invalidateQueries({ queryKey: ['recent-sessions'] })
         // Only invalidate the specific session that changed, not all ['session', *] queries
         const sessionData = msg.data as { id?: string }
         if (sessionData.id) {
@@ -161,6 +165,10 @@ export function useWebSocket(sessionId: string | null) {
         }
       } else if (msg.type === 'project_update') {
         queryClient.invalidateQueries({ queryKey: ['projects'] })
+        // Project changes (rename, slug edit, deletion) can affect
+        // sessions' projectName / projectSlug fields shown in the
+        // recent-sessions response too.
+        queryClient.invalidateQueries({ queryKey: ['recent-sessions'] })
         if (logLevel === 'trace') {
           console.debug('[WS] Project update → invalidating projects')
         }
