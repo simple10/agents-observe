@@ -43,21 +43,41 @@ function setMockAgents(agents: Agent[]) {
   mockAgents.push(...agents)
 }
 
-function makeEvent(overrides: Partial<ParsedEvent>): ParsedEvent {
-  return {
+/**
+ * Build a wire `ParsedEvent`. Tests pass legacy `subtype` / `toolName`
+ * helpers — we translate those into the new wire shape (hookName +
+ * payload.tool_name) so existing fixtures keep working without churn.
+ * `type` / `status` are derived client-side and ignored on the wire.
+ */
+function makeEvent(
+  overrides: Partial<ParsedEvent> & {
+    subtype?: string | null
+    toolName?: string | null
+    type?: string
+    status?: string
+  },
+): ParsedEvent {
+  const { subtype, toolName, type: _type, status: _status, ...rest } = overrides
+  const hookName = rest.hookName ?? subtype ?? ''
+  const basePayload =
+    (rest.payload as Record<string, unknown> | undefined) ?? ({} as Record<string, unknown>)
+  const payload =
+    toolName && basePayload.tool_name === undefined
+      ? { ...basePayload, tool_name: toolName }
+      : basePayload
+  // Spread `rest` first then re-assign hookName/payload to ensure the
+  // translated values win over anything in `rest`.
+  const merged = {
     id: 1,
     agentId: 'agent-1',
     sessionId: 'sess-1',
-    hookName: null,
-    type: 'hook',
-    subtype: null,
-    toolName: null,
-    status: 'pending',
     timestamp: Date.now(),
     createdAt: Date.now(),
-    payload: {},
-    ...overrides,
-  }
+    ...rest,
+  } as ParsedEvent
+  merged.hookName = hookName
+  merged.payload = payload
+  return merged
 }
 
 function makeAgent(overrides: Partial<Agent>): Agent {
@@ -67,6 +87,7 @@ function makeAgent(overrides: Partial<Agent>): Agent {
     parentAgentId: null,
     name: null,
     description: null,
+    agentClass: 'claude-code',
     status: 'active',
     eventCount: 0,
     firstEventAt: Date.now(),

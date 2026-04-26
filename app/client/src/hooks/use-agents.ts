@@ -57,11 +57,11 @@ export function useAgents(sessionId: string | null, events: ParsedEvent[] | unde
       s.eventCount++
       if (e.timestamp < s.firstEventAt) s.firstEventAt = e.timestamp
       if (e.timestamp > s.lastEventAt) s.lastEventAt = e.timestamp
-      if (stopSubtypes.has(e.subtype ?? '')) {
+      if (stopSubtypes.has(e.hookName ?? '')) {
         s.lastStoppedAt = Math.max(s.lastStoppedAt, e.timestamp)
       }
       // SubagentStop targets the agent ID in the payload, not the event's agentId
-      if (e.subtype === 'SubagentStop') {
+      if (e.hookName === 'SubagentStop') {
         const targetId = (e.payload as any)?.agent_id
         if (targetId) {
           const target = stats.get(targetId)

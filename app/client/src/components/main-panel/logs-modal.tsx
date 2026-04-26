@@ -154,8 +154,10 @@ export function LogsModal() {
           ) : readyEvents && readyEvents.length > 0 ? (
             <div className="divide-y divide-border/30">
               {readyEvents.map((event) => {
-                const hookName = event.subtype || event.type
-                const toolName = event.toolName
+                const hookName = event.hookName
+                const ePayload = event.payload as Record<string, unknown> | undefined
+                const toolName =
+                  typeof ePayload?.tool_name === 'string' ? (ePayload.tool_name as string) : null
                 return (
                   <div key={event.id} className="px-4 py-2 hover:bg-muted/30">
                     <div className="flex items-center gap-2 mb-1">

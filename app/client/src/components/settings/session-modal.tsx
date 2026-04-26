@@ -334,19 +334,9 @@ export function SessionEditModal() {
                 copied={copiedField === 'id'}
                 onCopy={() => copyToClipboard('id', session.id)}
               />
-              {session.eventCount != null && (
-                <DetailRow icon={<Activity className="h-3.5 w-3.5" />} label="Events">
-                  <span>
-                    {session.eventCount}
-                    {session.agentCount != null && (
-                      <span className="text-muted-foreground/70">
-                        {' '}
-                        · {session.agentCount} agents
-                      </span>
-                    )}
-                  </span>
-                </DetailRow>
-              )}
+              {/* Events / agents counts removed — denormalized session
+                  fields are gone. Counts can be re-derived via
+                  useAgents() if a future phase wants them back. */}
               <DetailRow icon={<CalendarDays className="h-3.5 w-3.5" />} label="Started">
                 <span title={formatAbsoluteTime(session.startedAt)}>
                   {formatRelativeTime(session.startedAt)}
@@ -532,10 +522,15 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
   const lastTs = events.length > 0 ? events[events.length - 1].timestamp : 0
 
   for (const e of events) {
+    // Per the three-layer contract, the wire ParsedEvent has only
+    // hookName + payload. For Claude Code, hookName === legacy subtype.
+    const ePayload = e.payload as Record<string, unknown> | undefined
+    const eToolName =
+      typeof ePayload?.tool_name === 'string' ? (ePayload.tool_name as string) : null
     // Tool calls (deduped — count PreToolUse only)
-    if (e.subtype === 'PreToolUse') {
+    if (e.hookName === 'PreToolUse') {
       toolCalls++
-      const tool = e.toolName || 'unknown'
+      const tool = eToolName || 'unknown'
       toolCounts.set(tool, (toolCounts.get(tool) || 0) + 1)
 
       // tool_use_id lives in payload (Claude-Code-specific key) — used
@@ -556,7 +551,7 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
     }
 
     // Tool completion tracking
-    if (e.subtype === 'PostToolUse') {
+    if (e.hookName === 'PostToolUse') {
       postToolUseCount++
       const input = e.payload as any
       const toolUseId = typeof input?.tool_use_id === 'string' ? input.tool_use_id : null
@@ -570,23 +565,23 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
         }
       }
     }
-    if (e.subtype === 'PostToolUseFailure') postToolUseFailureCount++
+    if (e.hookName === 'PostToolUseFailure') postToolUseFailureCount++
 
     // Subagents
-    if (e.subtype === 'SubagentStart') subagentsSpawned++
+    if (e.hookName === 'SubagentStart') subagentsSpawned++
 
     // User prompts
-    if (e.subtype === 'UserPromptSubmit') userPrompts++
+    if (e.hookName === 'UserPromptSubmit') userPrompts++
 
     // Turns (prompt→stop cycles)
-    if (e.subtype === 'Stop' || e.subtype === 'SessionEnd') turns++
+    if (e.hookName === 'Stop' || e.hookName === 'SessionEnd') turns++
 
     // Permissions
-    if (e.subtype === 'PermissionRequest') permissionRequests++
-    if (e.subtype === 'PermissionDenied') permissionDenials++
+    if (e.hookName === 'PermissionRequest') permissionRequests++
+    if (e.hookName === 'PermissionDenied') permissionDenials++
 
     // Git commits
-    if (e.subtype === 'PreToolUse' && e.toolName === 'Bash') {
+    if (e.hookName === 'PreToolUse' && eToolName === 'Bash') {
       const cmd = (e.payload as any)?.tool_input?.command || ''
       if (/git\s+commit\b/.test(cmd)) gitCommits++
     }
@@ -597,9 +592,12 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
   const totalTokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }
 
   for (const e of events) {
+    const ePayload = e.payload as Record<string, unknown> | undefined
+    const eToolName =
+      typeof ePayload?.tool_name === 'string' ? (ePayload.tool_name as string) : null
     if (
-      (e.subtype === 'PostToolUse' || e.subtype === 'PostToolUseFailure') &&
-      e.toolName === 'Agent'
+      (e.hookName === 'PostToolUse' || e.hookName === 'PostToolUseFailure') &&
+      eToolName === 'Agent'
     ) {
       const resp = (e.payload as any)?.tool_response
       if (!resp) continue

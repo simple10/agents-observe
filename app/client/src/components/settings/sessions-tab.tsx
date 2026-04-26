@@ -177,7 +177,13 @@ export function SessionsTab() {
     const q = searchQuery.trim().toLowerCase()
     const filtered = sessions.filter((s) => {
       if (!ageFilterMatches(ageFilter, s.lastActivity || s.startedAt)) return false
-      if (!eventFilterMatches(eventFilter, s.eventCount ?? 0)) return false
+      if (
+        !eventFilterMatches(
+          eventFilter,
+          0 /* eventCount removed from wire shape; placeholder until use-agents-derived counts plumb through */,
+        )
+      )
+        return false
       if (q) {
         const name = (s.slug || s.id).toLowerCase()
         const cwd = typeof s.metadata?.cwd === 'string' ? s.metadata.cwd.toLowerCase() : ''
@@ -202,7 +208,9 @@ export function SessionsTab() {
       } else if (sortBy === 'activity') {
         diff = (a.lastActivity || a.startedAt) - (b.lastActivity || b.startedAt)
       } else if (sortBy === 'events') {
-        diff = (a.eventCount ?? 0) - (b.eventCount ?? 0)
+        // event count is no longer denormalized on the session row;
+        // sort is a no-op until a use-agents-derived count is plumbed in.
+        diff = 0
       } else {
         diff = a.startedAt - b.startedAt
       }
@@ -228,7 +236,12 @@ export function SessionsTab() {
     () => (sessions ? sessions.filter((s) => selected.has(s.id)) : []),
     [sessions, selected],
   )
-  const selectedEventCount = selectedList.reduce((sum, s) => sum + (s.eventCount ?? 0), 0)
+  const selectedEventCount = selectedList.reduce(
+    (sum, s) =>
+      sum +
+      0 /* eventCount removed from wire shape; placeholder until use-agents-derived counts plumb through */,
+    0,
+  )
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -601,8 +614,10 @@ function SessionRow({
       <span className="text-xs text-muted-foreground tabular-nums self-center">
         {formatDate(session.lastActivity)}
       </span>
-      <span className="text-xs text-right tabular-nums self-center">
-        {(session.eventCount ?? 0).toLocaleString()}
+      <span className="text-xs text-right tabular-nums self-center text-muted-foreground/40">
+        {/* event count column intentionally blank — see Phase 5/6
+            three-layer contract refactor. */}
+        —
       </span>
       {/* Real anchor so cmd/middle-click opens the session in a new tab
           via the hash route. On a plain left-click we preventDefault and

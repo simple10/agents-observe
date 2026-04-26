@@ -4,6 +4,7 @@ import { getRangeMs } from '@/config/time-ranges'
 import { useUIStore } from '@/stores/ui-store'
 import { useDedupedEvents } from '@/hooks/use-deduped-events'
 import { getEventIcon, getEventColor } from '@/config/event-icons'
+import { deriveSubtype, deriveToolName } from '@/agents/claude-code/derivers'
 import { buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
 import { AgentLabel } from '@/components/shared/agent-label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -259,8 +260,12 @@ export const TimelineRewind = memo(function TimelineRewind({
               <div className="flex-1 relative h-full">
                 {agentEvents.map((event) => {
                   const left = LEFT_PADDING + (event.timestamp - sessionStart) * pixelsPerMs
-                  const Icon = getEventIcon(event.subtype, event.toolName)
-                  const { dotColor, customHex } = getEventColor(event.subtype, event.toolName)
+                  // Per the three-layer contract, derive subtype/toolName
+                  // from the wire event before resolving icon + color.
+                  const subtype = deriveSubtype(event)
+                  const toolName = deriveToolName(event)
+                  const Icon = getEventIcon(subtype, toolName)
+                  const { dotColor, customHex } = getEventColor(subtype, toolName)
 
                   return (
                     <Tooltip key={event.id}>

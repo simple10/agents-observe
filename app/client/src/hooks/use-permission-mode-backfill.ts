@@ -38,7 +38,7 @@ export function usePermissionModeBackfill(
     let permissionMode: string | null = null
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
-      if (e.subtype === 'SessionStart' && mainAgentIds.has(e.agentId)) {
+      if (e.hookName === 'SessionStart' && mainAgentIds.has(e.agentId)) {
         const mode = (e.payload as any)?.permission_mode ?? (e.payload as any)?.permissionMode
         if (typeof mode === 'string') {
           permissionMode = mode

@@ -7,7 +7,7 @@ function makeEvent(overrides: Partial<EnrichedEvent> & { timestamp: number }): E
     id: 1,
     agentId: 'agent-1',
     sessionId: 'sess-1',
-    hookName: null,
+    hookName: '',
     createdAt: overrides.timestamp,
     type: 'hook',
     subtype: null,

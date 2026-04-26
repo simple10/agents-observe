@@ -64,8 +64,6 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     startedAt: Date.now() - 60000,
     stoppedAt: null,
     metadata: null,
-    agentCount: 1,
-    eventCount: 5,
     lastActivity: null,
     agentClasses: [],
     ...overrides,

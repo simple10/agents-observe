@@ -1,11 +1,14 @@
 import type { ParsedEvent } from '@/types'
+import { deriveSubtype, deriveToolName } from '@/agents/claude-code/derivers'
 
 export interface StaticFilter {
   label: string
   // Simple subtype matching (OR'd together)
   subtypes?: string[]
-  // Custom match function for payload-level filtering
-  match?: (event: ParsedEvent) => boolean
+  // Custom match function for payload-level filtering. Receives the raw
+  // wire event plus the derived subtype/toolName so each match
+  // implementation doesn't have to re-derive.
+  match?: (event: ParsedEvent, subtype: string | null, toolName: string | null) => boolean
 }
 
 // Row 1: Static filters that group related hook subtypes.
@@ -16,28 +19,26 @@ export const STATIC_FILTERS: StaticFilter[] = [
     label: 'Tools',
     subtypes: ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'],
     // Exclude MCP tools — those are covered by the MCP filter
-    match: (e) =>
-      (e.subtype === 'PreToolUse' ||
-        e.subtype === 'PostToolUse' ||
-        e.subtype === 'PostToolUseFailure') &&
-      !!e.toolName &&
-      !e.toolName.startsWith('mcp__'),
+    match: (_e, subtype, toolName) =>
+      (subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure') &&
+      !!toolName &&
+      !toolName.startsWith('mcp__'),
   },
   {
     label: 'Agents',
     subtypes: ['SubagentStart', 'SubagentStop'],
-    match: (e) => e.toolName === 'Agent',
+    match: (_e, _subtype, toolName) => toolName === 'Agent',
   },
   {
     label: 'Tasks',
     subtypes: ['TaskCreated', 'TaskCompleted'],
-    match: (e) => e.toolName === 'TaskCreate' || e.toolName === 'TaskUpdate',
+    match: (_e, _subtype, toolName) => toolName === 'TaskCreate' || toolName === 'TaskUpdate',
   },
   { label: 'Session', subtypes: ['SessionStart', 'SessionEnd'] },
   {
     label: 'MCP',
     subtypes: ['Elicitation', 'ElicitationResult'],
-    match: (e) => !!e.toolName?.startsWith('mcp__'),
+    match: (_e, _subtype, toolName) => !!toolName?.startsWith('mcp__'),
   },
   { label: 'Permissions', subtypes: ['PermissionRequest'] },
   { label: 'Notifications', subtypes: ['Notification'] },
@@ -45,13 +46,13 @@ export const STATIC_FILTERS: StaticFilter[] = [
   { label: 'Compaction', subtypes: ['PreCompact', 'PostCompact'] },
   {
     label: 'Errors',
-    match: (e) => {
-      const payload = e.payload
+    match: (e, subtype, _toolName) => {
+      const payload = e.payload as Record<string, unknown> | undefined
       if (!payload) return false
       // Match events with a non-empty error field
       if (payload.error && payload.error !== '') return true
       // Also match tool failure subtypes
-      if (e.subtype === 'PostToolUseFailure' || e.subtype === 'StopFailure') return true
+      if (subtype === 'PostToolUseFailure' || subtype === 'StopFailure') return true
       return false
     },
   },
@@ -87,15 +88,17 @@ function normalizeMcpName(name: string): string {
 export function getDynamicFilterNames(events: ParsedEvent[]): string[] {
   const names = new Set<string>()
   for (const e of events) {
+    const subtype = deriveSubtype(e)
+    const toolName = deriveToolName(e)
     // 1. Tool-name pills (existing behavior)
-    if (e.subtype && DYNAMIC_SUBTYPES.has(e.subtype) && e.toolName) {
-      const name = e.toolName.startsWith('mcp__') ? normalizeMcpName(e.toolName) : e.toolName
+    if (subtype && DYNAMIC_SUBTYPES.has(subtype) && toolName) {
+      const name = toolName.startsWith('mcp__') ? normalizeMcpName(toolName) : toolName
       names.add(name)
       continue
     }
     // 2. Catchall: any hook subtype not covered by a static filter
-    if (e.subtype && !STATIC_COVERED_SUBTYPES.has(e.subtype)) {
-      names.add(e.subtype)
+    if (subtype && !STATIC_COVERED_SUBTYPES.has(subtype)) {
+      names.add(subtype)
     }
   }
   return Array.from(names).sort()
@@ -107,11 +110,13 @@ export function getFiltersWithMatches(events: ParsedEvent[]): Set<string> {
   for (const filter of STATIC_FILTERS) {
     if (matched.has(filter.label)) continue
     for (const e of events) {
-      if (filter.match && filter.match(e)) {
+      const subtype = deriveSubtype(e)
+      const toolName = deriveToolName(e)
+      if (filter.match && filter.match(e, subtype, toolName)) {
         matched.add(filter.label)
         break
       }
-      if (filter.subtypes && e.subtype && filter.subtypes.includes(e.subtype)) {
+      if (filter.subtypes && subtype && filter.subtypes.includes(subtype)) {
         matched.add(filter.label)
         break
       }
@@ -132,13 +137,16 @@ export function eventMatchesFilters(
   const hasStaticFilters = activeStaticLabels.length > 0
   const hasToolFilters = activeToolNames.length > 0
 
+  const subtype = deriveSubtype(event)
+  const toolName = deriveToolName(event)
+
   const matchesStatic =
     hasStaticFilters &&
     activeStaticLabels.some((label) => {
       const filter = FILTER_BY_LABEL.get(label)
       if (!filter) return false
-      if (filter.match && filter.match(event)) return true
-      if (filter.subtypes && event.subtype && filter.subtypes.includes(event.subtype)) return true
+      if (filter.match && filter.match(event, subtype, toolName)) return true
+      if (filter.subtypes && subtype && filter.subtypes.includes(subtype)) return true
       return false
     })
 
@@ -146,12 +154,12 @@ export function eventMatchesFilters(
     hasToolFilters &&
     activeToolNames.some((t) => {
       // Tool-name match (e.g. "Read", "mcp__chrome-devtools")
-      if (event.toolName != null) {
-        if (event.toolName === t) return true
-        if (event.toolName.startsWith(t + '__')) return true
+      if (toolName != null) {
+        if (toolName === t) return true
+        if (toolName.startsWith(t + '__')) return true
       }
       // Catchall subtype match (e.g. "CwdChanged", "FileChanged")
-      if (event.subtype === t) return true
+      if (subtype === t) return true
       return false
     })
 

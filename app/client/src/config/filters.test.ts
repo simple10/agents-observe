@@ -8,21 +8,37 @@ import {
 } from './filters'
 import type { ParsedEvent } from '@/types'
 
-function makeEvent(overrides: Partial<ParsedEvent>): ParsedEvent {
-  return {
+/** Translates legacy `subtype`/`toolName` overrides into the new wire
+ *  shape (hookName + payload.tool_name). The filters module derives
+ *  subtype/toolName from those fields via the claude-code derivers.
+ *  `type`/`status` overrides are accepted but ignored. */
+function makeEvent(
+  overrides: Partial<ParsedEvent> & {
+    subtype?: string | null
+    toolName?: string | null
+    type?: string
+    status?: string
+  },
+): ParsedEvent {
+  const { subtype, toolName, type: _type, status: _status, ...rest } = overrides
+  const hookName = rest.hookName ?? subtype ?? ''
+  const basePayload =
+    (rest.payload as Record<string, unknown> | undefined) ?? ({} as Record<string, unknown>)
+  const payload =
+    toolName && basePayload.tool_name === undefined
+      ? { ...basePayload, tool_name: toolName }
+      : basePayload
+  const merged = {
     id: 1,
     agentId: 'agent-1',
     sessionId: 'sess-1',
-    hookName: null,
-    type: 'hook',
-    subtype: null,
-    toolName: null,
-    status: 'pending',
     timestamp: Date.now(),
     createdAt: Date.now(),
-    payload: {},
-    ...overrides,
-  }
+    ...rest,
+  } as ParsedEvent
+  merged.hookName = hookName
+  merged.payload = payload
+  return merged
 }
 
 describe('eventMatchesFilters', () => {

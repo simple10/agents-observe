@@ -93,7 +93,9 @@ export function SessionItem({
   }, [editValue, label, session.id, onRename])
 
   const statusLabel = session.status === 'active' ? 'Active' : 'Ended'
-  const eventCount = eventCountOverride ?? session.eventCount
+  // `session.eventCount` is no longer part of the wire shape — derive
+  // counts client-side via `useAgents` and pass through the override.
+  const eventCount = eventCountOverride
   const lastActivityTs = session.lastActivity ?? session.startedAt
   const needsAttention = useSessionHasNotification(session.id)
   // True for ACTIVITY_CONFIG.pulseDurationMs after the server

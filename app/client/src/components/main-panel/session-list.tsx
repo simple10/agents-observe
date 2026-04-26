@@ -127,11 +127,9 @@ function SessionRow({
         )}
         <span className="text-sm font-medium truncate">{label}</span>
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          {session.eventCount != null && session.eventCount > 0 && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-              {session.eventCount} events
-            </Badge>
-          )}
+          {/* event count badge removed — counts are no longer
+              denormalized on the session row. Re-add via
+              GROUP BY or use-agents-derived counts when needed. */}
         </div>
       </div>
       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">

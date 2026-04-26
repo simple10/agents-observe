@@ -103,7 +103,9 @@ export function ProjectsTab() {
         hasActiveSession: false,
         cwd: null,
       }
-      prev.eventCount += s.eventCount ?? 0
+      // session.eventCount is no longer in the wire shape; left at 0
+      // until the projects-tab gets its own GROUP BY-derived count.
+      prev.eventCount += 0
       if (la > prev.lastActivity) {
         prev.lastActivity = la
         const cwd = typeof s.metadata?.cwd === 'string' ? s.metadata.cwd : null

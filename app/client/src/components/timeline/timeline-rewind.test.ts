@@ -8,13 +8,9 @@ function makeEvent(id: number, timestamp: number): ParsedEvent {
     agentId: 'a',
     sessionId: 's',
     hookName: 'PreToolUse',
-    type: 'tool',
-    subtype: 'PreToolUse',
-    toolName: 'Bash',
-    status: 'completed',
     timestamp,
     createdAt: timestamp,
-    payload: {},
+    payload: { tool_name: 'Bash' },
   }
 }
 

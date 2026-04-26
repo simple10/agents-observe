@@ -542,9 +542,8 @@ function SessionRow({
             }`}
           />
           <span className="shrink-0">{activityTime}</span>
-          {session.eventCount != null && (
-            <span className="shrink-0">{session.eventCount} events</span>
-          )}
+          {/* event count display removed — was denormalized from the
+              session row, now derived via useAgents when needed. */}
           {cwd && <span className="ml-auto truncate">{cwd}</span>}
         </div>
       </div>

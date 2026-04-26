@@ -20,8 +20,9 @@ export function SessionBreadcrumb() {
 
   if (!selectedProjectId || !selectedSessionId || !session) return null
 
-  // Extract cwd from the first SessionStart event
-  const sessionStartEvent = events?.find((e) => e.subtype === 'SessionStart')
+  // Extract cwd from the first SessionStart event. Per the new wire
+  // shape we filter by `hookName` (subtype is derived client-side).
+  const sessionStartEvent = events?.find((e) => e.hookName === 'SessionStart')
   const cwd = (sessionStartEvent?.payload as Record<string, any>)?.cwd as string | undefined
 
   const projectName = session.projectSlug || session.projectName || 'Project'
