@@ -14,7 +14,10 @@ export interface Label {
 
 export interface Session {
   id: string
-  projectId: number
+  // Sessions whose project hasn't been resolved yet have `projectId:
+  // null`. The sidebar groups those into a synthetic "Unassigned"
+  // bucket; users can move them via the SessionEditModal.
+  projectId: number | null
   projectSlug?: string
   projectName?: string
   transcriptPath?: string | null
@@ -73,9 +76,12 @@ export interface ParsedEvent {
 
 export interface RecentSession {
   id: string
-  projectId: number
-  projectSlug: string
-  projectName: string
+  // Sessions whose project hasn't been resolved yet carry `projectId:
+  // null`. The /sessions/recent endpoint includes them so the sidebar
+  // Unassigned bucket can pick them up alongside assigned sessions.
+  projectId: number | null
+  projectSlug: string | null
+  projectName: string | null
   slug: string | null
   transcriptPath?: string | null
   // Derived server-side from stoppedAt (see Session.status comment).

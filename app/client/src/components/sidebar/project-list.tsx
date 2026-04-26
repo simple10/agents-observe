@@ -1,9 +1,17 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useProjects } from '@/hooks/use-projects'
 import { useSessions } from '@/hooks/use-sessions'
+import { useUnassignedSessions } from '@/hooks/use-unassigned-sessions'
 import { useEvents } from '@/hooks/use-events'
 import { useUIStore } from '@/stores/ui-store'
-import { ChevronDown, ChevronRight, Folder, Pencil, Clock, CalendarDays } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Pencil,
+  Clock,
+  CalendarDays,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useQueryClient } from '@tanstack/react-query'
@@ -132,7 +140,15 @@ export function ProjectList({ collapsed }: ProjectListProps) {
     setModalProjectId(project.id)
   }, [])
 
-  if (!projects?.length) {
+  // Sessions whose project hasn't been resolved yet (server may emit
+  // them per the three-layer contract — sessions only auto-resolve when
+  // `flags.resolveProject` is set or `_meta.project.slug` is supplied).
+  // These render in a synthetic "Unassigned" bucket above the real
+  // projects; the bucket only appears when at least one such session
+  // exists.
+  const unassignedSessions = useUnassignedSessions()
+
+  if (!projects?.length && unassignedSessions.length === 0) {
     return (
       <TooltipProvider>
         <div className="text-xs text-muted-foreground p-2">
@@ -145,7 +161,10 @@ export function ProjectList({ collapsed }: ProjectListProps) {
   return (
     <TooltipProvider>
       <div className="space-y-1">
-        {projects.map((project) => {
+        {unassignedSessions.length > 0 && (
+          <UnassignedBucket sessions={unassignedSessions} collapsed={collapsed} />
+        )}
+        {(projects ?? []).map((project) => {
           const isSelected = selectedProjectId === project.id
           const displayLabel = project.name
 
@@ -229,6 +248,90 @@ export function ProjectList({ collapsed }: ProjectListProps) {
         }}
       />
     </TooltipProvider>
+  )
+}
+
+/**
+ * Synthetic project bucket for sessions whose `project_id` is NULL on
+ * the server. The server now keeps sessions unassigned by default
+ * (only auto-resolving when the envelope explicitly opts in), so this
+ * bucket is the user's surface for moving them into a real project via
+ * the SessionEditModal. Renders nothing when the input list is empty —
+ * the parent only mounts it when there's at least one such session.
+ */
+function UnassignedBucket({ sessions, collapsed }: { sessions: Session[]; collapsed: boolean }) {
+  const [expanded, setExpanded] = useState(true)
+  const { selectedSessionId, setSelectedSessionId, setEditingSessionId } = useUIStore()
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            data-testid="unassigned-bucket-collapsed"
+            className="relative flex h-8 w-8 mx-auto items-center justify-center rounded-md text-xs cursor-pointer text-muted-foreground/70 hover:bg-accent"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label="Unassigned sessions"
+          >
+            <Folder className="h-4 w-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">Unassigned ({sessions.length})</TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  const toggle = () => setExpanded((v) => !v)
+
+  return (
+    <div data-testid="unassigned-bucket">
+      <div
+        role="button"
+        tabIndex={0}
+        data-sidebar-item=""
+        aria-expanded={expanded}
+        className="group flex items-center gap-2 w-full rounded-md px-2 py-0.5 text-sm transition-colors cursor-pointer text-muted-foreground hover:bg-accent focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggle()
+          }
+        }}
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+        <span className="truncate italic">Unassigned</span>
+        <Badge variant="secondary" className="ml-auto text-[10px] h-4 px-1">
+          {sessions.length}
+        </Badge>
+      </div>
+      {expanded && (
+        <div className="ml-3.5 mt-1 pb-3 border-l border-border">
+          {sessions.map((session) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              isSelected={selectedSessionId === session.id}
+              isPinned={false}
+              onSelect={() => setSelectedSessionId(session.id)}
+              onTogglePin={() => {}}
+              // Inline rename isn't useful for unassigned sessions —
+              // the SessionEditModal is where the user moves them into
+              // a project. Always route the pencil to the modal.
+              onRename={async () => {}}
+              onEdit={() => setEditingSessionId(session.id)}
+              showCwd={false}
+              cwd={typeof session.metadata?.cwd === 'string' ? session.metadata.cwd : null}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
