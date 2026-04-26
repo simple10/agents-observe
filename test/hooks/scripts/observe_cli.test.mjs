@@ -97,8 +97,9 @@ describe('observe_cli', () => {
         expect(mock.received.some((r) => r.url === '/api/events')).toBe(true)
         const eventReq = mock.received.find((r) => r.url === '/api/events')
         const parsed = JSON.parse(eventReq.body)
-        expect(parsed.hook_payload.hook_event_name).toBe('SessionStart')
-        expect(parsed.meta.agentClass).toBe('claude-code')
+        expect(parsed.payload.hook_event_name).toBe('SessionStart')
+        expect(parsed.agentClass).toBe('claude-code')
+        expect(parsed.sessionId).toBe('test-1')
       } finally {
         server.close()
       }
@@ -121,15 +122,15 @@ describe('observe_cli', () => {
         await new Promise((r) => setTimeout(r, 200))
         const eventReq = mock.received.find((r) => r.url === '/api/events')
         const parsed = JSON.parse(eventReq.body)
-        expect(parsed.meta.env.AGENTS_OBSERVE_PROJECT_SLUG).toBe('my-repo')
-        expect(parsed.hook_payload.project_name).toBeUndefined()
-        expect(parsed.hook_payload.hook_event_name).toBe('SessionStart')
+        expect(parsed._meta.project.slug).toBe('my-repo')
+        expect(parsed.payload.project_name).toBeUndefined()
+        expect(parsed.payload.hook_event_name).toBe('SessionStart')
       } finally {
         server.close()
       }
     })
 
-    it('stamps meta.isNotification on Notification events', async () => {
+    it('sets flags.startsNotification on Notification events', async () => {
       const mock = mockApiHandler({
         'POST /api/events': { status: 201, body: { ok: true } },
       })
@@ -143,14 +144,14 @@ describe('observe_cli', () => {
         await new Promise((r) => setTimeout(r, 200))
         const eventReq = mock.received.find((r) => r.url === '/api/events')
         const parsed = JSON.parse(eventReq.body)
-        expect(parsed.meta.isNotification).toBe(true)
-        expect(parsed.meta.clearsNotification).toBeUndefined()
+        expect(parsed.flags.startsNotification).toBe(true)
+        expect(parsed.flags.clearsNotification).toBeUndefined()
       } finally {
         server.close()
       }
     })
 
-    it('stamps meta.clearsNotification:false on SubagentStop events', async () => {
+    it('sets flags.clearsNotification on UserPromptSubmit events', async () => {
       const mock = mockApiHandler({
         'POST /api/events': { status: 201, body: { ok: true } },
       })
@@ -158,20 +159,20 @@ describe('observe_cli', () => {
 
       try {
         await runCli(['hook'], {
-          stdin: JSON.stringify({ hook_event_name: 'SubagentStop', session_id: 'test-s' }),
+          stdin: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 'test-u' }),
           env: { AGENTS_OBSERVE_API_BASE_URL: `${url}/api` },
         })
         await new Promise((r) => setTimeout(r, 200))
         const eventReq = mock.received.find((r) => r.url === '/api/events')
         const parsed = JSON.parse(eventReq.body)
-        expect(parsed.meta.clearsNotification).toBe(false)
-        expect(parsed.meta.isNotification).toBeUndefined()
+        expect(parsed.flags.clearsNotification).toBe(true)
+        expect(parsed.flags.startsNotification).toBeUndefined()
       } finally {
         server.close()
       }
     })
 
-    it('leaves ordinary events unflagged', async () => {
+    it('leaves ordinary events with no flags object', async () => {
       const mock = mockApiHandler({
         'POST /api/events': { status: 201, body: { ok: true } },
       })
@@ -179,14 +180,17 @@ describe('observe_cli', () => {
 
       try {
         await runCli(['hook'], {
-          stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash' }),
+          stdin: JSON.stringify({
+            hook_event_name: 'PreToolUse',
+            session_id: 'test-p',
+            tool_name: 'Bash',
+          }),
           env: { AGENTS_OBSERVE_API_BASE_URL: `${url}/api` },
         })
         await new Promise((r) => setTimeout(r, 200))
         const eventReq = mock.received.find((r) => r.url === '/api/events')
         const parsed = JSON.parse(eventReq.body)
-        expect(parsed.meta.isNotification).toBeUndefined()
-        expect(parsed.meta.clearsNotification).toBeUndefined()
+        expect(parsed.flags).toBeUndefined()
       } finally {
         server.close()
       }

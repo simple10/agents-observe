@@ -1,56 +1,34 @@
-import { readFileSync } from 'node:fs'
-import { isNotificationEvent } from './index.mjs'
+// hooks/scripts/lib/agents/codex.mjs
+// Codex hook lib. Composes default.mjs and overrides agentClass only —
+// Codex hook payloads use the same identity-field shape as Claude
+// (session_id, agent_id, hook_event_name, cwd, transcript_path), so the
+// default lib's extraction works without further overrides.
 
-function buildEnv(config) {
-  const env = {}
-  if (config?.projectSlug) {
-    env.AGENTS_OBSERVE_PROJECT_SLUG = config.projectSlug
-  }
-  return env
+import { readFileSync } from 'node:fs'
+import { defaultLib } from './default.mjs'
+
+export function buildEnv(config) {
+  return defaultLib.buildEnv(config)
 }
 
 /**
  * Build the event envelope for a Codex hook payload.
  *
- * Notification semantics: Codex has no native "awaiting user"
- * equivalent of Claude Code's `Notification` hook, so by default every
- * event clears any pending notification. Users can opt specific Codex
- * hook events into triggering the bell via
- * `AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS` — e.g. setting it to `Stop`
- * will fire the bell when Codex finishes a turn. No NON_CLEARING set
- * is maintained here; revisit when real-world Codex usage shows a need.
+ * Codex does NOT have Claude's UserPromptSubmit/SessionEnd hooks, so we
+ * never set flags.clearsNotification or flags.stopsSession. Notification
+ * opt-in is handled by the default lib via
+ * AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS. If future Codex versions add
+ * equivalent semantic events, set the flags here.
  *
  * @param {object} config
- * @param {object} _log
- * @param {object} hookPayload
+ * @param {object} log
+ * @param {object} payload
  * @returns {{ envelope: object, hookEvent: string, toolName: string }}
  */
-export function buildHookEvent(config, _log, hookPayload) {
-  const hookName = hookPayload?.hook_event_name || 'unknown'
-  const toolName = hookPayload?.tool_name || hookPayload?.tool?.name || null
-  const sessionId = hookPayload?.session_id || undefined
-  const agentId = hookPayload?.agent_id || null
-
-  const flags = {}
-  if (isNotificationEvent(config, hookName, hookPayload)) {
-    flags.isNotification = true
-  }
-
-  const envelope = {
-    hook_payload: hookPayload,
-    meta: {
-      agentClass: 'codex',
-      env: buildEnv(config),
-      hookName,
-      // type / subtype left null — Codex → cross-class category mapping
-      // is a future spec.
-      toolName,
-      sessionId,
-      agentId,
-      ...flags,
-    },
-  }
-  return { envelope, hookEvent: hookName, toolName: toolName || '' }
+export function buildHookEvent(config, log, payload) {
+  const result = defaultLib.buildHookEvent(config, log, payload)
+  result.envelope.agentClass = 'codex'
+  return result
 }
 
 /**
@@ -73,7 +51,9 @@ export function buildHookEvent(config, _log, hookPayload) {
  *   { slug: null, git: { branch: string|null, repository_url: string|null } }
  *
  * @param {object} args
- * @param {string} [args.transcript_path] Absolute path to the jsonl transcript.
+ * @param {string} [args.transcriptPath] Absolute path to the jsonl transcript.
+ * @param {string} [args.transcript_path] Snake-case alias accepted for
+ *   back-compat with older callers.
  * @param {string} [args.agentClass] The session's agent class — always
  *   "codex" by the time this handler is dispatched, but kept in the arg
  *   signature for symmetry with other agents.
@@ -84,17 +64,18 @@ export function buildHookEvent(config, _log, hookPayload) {
  * @param {object} ctx
  * @param {object} ctx.log Logger with debug/warn/etc.
  */
-export function getSessionInfo({ transcript_path, agentClass: _agentClass, cwd: _cwd }, { log }) {
-  if (!transcript_path) {
-    log.debug('codex.getSessionInfo: no transcript_path provided')
+export function getSessionInfo(args, { log }) {
+  const transcriptPath = args?.transcriptPath ?? args?.transcript_path
+  if (!transcriptPath) {
+    log.debug('codex.getSessionInfo: no transcriptPath provided')
     return null
   }
 
   let content
   try {
-    content = readFileSync(transcript_path, 'utf8')
+    content = readFileSync(transcriptPath, 'utf8')
   } catch (err) {
-    log.warn(`codex.getSessionInfo: cannot read transcript ${transcript_path}: ${err.message}`)
+    log.warn(`codex.getSessionInfo: cannot read transcript ${transcriptPath}: ${err.message}`)
     return null
   }
 
@@ -130,7 +111,7 @@ export function getSessionInfo({ transcript_path, agentClass: _agentClass, cwd: 
   }
 
   if (branch === null && repository_url === null) {
-    log.debug(`codex.getSessionInfo: no git info in ${transcript_path}`)
+    log.debug(`codex.getSessionInfo: no git info in ${transcriptPath}`)
   } else {
     log.debug(`codex.getSessionInfo: branch=${branch} repo=${repository_url}`)
   }
