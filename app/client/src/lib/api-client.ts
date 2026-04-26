@@ -121,19 +121,12 @@ export const api = {
       `/sessions/${encodeURIComponent(sessionId)}/events${qs ? `?${qs}` : ''}`,
     )
   },
-  getThread: (eventId: number) => fetchJson<ParsedEvent[]>(`/events/${eventId}/thread`),
   deleteSession: (sessionId: string) =>
     fetchVoid(`/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   clearSessionEvents: (sessionId: string) =>
     fetchVoid(`/sessions/${encodeURIComponent(sessionId)}/events`, { method: 'DELETE' }),
   deleteProject: (projectId: number) => fetchVoid(`/projects/${projectId}`, { method: 'DELETE' }),
   deleteAllData: () => fetchVoid(`/data`, { method: 'DELETE' }),
-  updateAgentMetadata: (agentId: string, data: { agentType?: string; name?: string }) =>
-    fetchVoid(`/agents/${encodeURIComponent(agentId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
   updateSessionSlug: (sessionId: string, slug: string) =>
     fetchVoid(`/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PATCH',

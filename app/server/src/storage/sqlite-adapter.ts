@@ -667,62 +667,6 @@ export class SqliteAdapter implements EventStore {
       .all(agentId) as StoredEvent[]
   }
 
-  async getThreadForEvent(eventId: number): Promise<StoredEvent[]> {
-    const event = this.db.prepare('SELECT * FROM events WHERE id = ?').get(eventId) as
-      | StoredEvent
-      | undefined
-    if (!event) return []
-
-    const sessionId = event.session_id
-    const agentId = event.agent_id
-
-    // For SubagentStop or events from a non-root agent:
-    // return all events belonging to that specific agent
-    const isSubagent = agentId !== sessionId
-    if (event.subtype === 'SubagentStop' || isSubagent) {
-      return this.db
-        .prepare('SELECT * FROM events WHERE agent_id = ? ORDER BY timestamp ASC')
-        .all(agentId) as StoredEvent[]
-    }
-
-    // For root agent events: find the turn boundary (Prompt -> Stop)
-    const prevPrompt = this.db
-      .prepare(
-        `SELECT timestamp FROM events
-         WHERE session_id = ? AND subtype = 'UserPromptSubmit' AND timestamp <= ?
-         ORDER BY timestamp DESC LIMIT 1`,
-      )
-      .get(sessionId, event.timestamp) as { timestamp: number } | undefined
-
-    const startTs = prevPrompt ? prevPrompt.timestamp : 0
-
-    // End at the first Stop or next UserPromptSubmit
-    const nextBoundary = this.db
-      .prepare(
-        `SELECT timestamp FROM events
-         WHERE session_id = ? AND timestamp > ?
-           AND (subtype = 'UserPromptSubmit' OR subtype = 'Stop' OR subtype = 'SubagentStop')
-         ORDER BY timestamp ASC LIMIT 1`,
-      )
-      .get(sessionId, startTs) as { timestamp: number } | undefined
-
-    const endTs = nextBoundary ? nextBoundary.timestamp : Infinity
-
-    if (endTs === Infinity) {
-      return this.db
-        .prepare(
-          'SELECT * FROM events WHERE session_id = ? AND timestamp >= ? ORDER BY timestamp ASC',
-        )
-        .all(sessionId, startTs) as StoredEvent[]
-    }
-
-    return this.db
-      .prepare(
-        'SELECT * FROM events WHERE session_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC',
-      )
-      .all(sessionId, startTs, endTs) as StoredEvent[]
-  }
-
   async getEventsSince(sessionId: string, sinceTimestamp: number): Promise<StoredEvent[]> {
     return this.db
       .prepare(

@@ -33,46 +33,6 @@ describe('agent routes', () => {
     app.route('/api', agentsRouter)
   })
 
-  describe('PATCH /api/agents/:id', () => {
-    test('updates agent name', async () => {
-      mockStore.getAgentById.mockResolvedValue({ id: 'agent-1', name: 'old' })
-      mockStore.updateAgentName.mockResolvedValue(undefined)
-
-      const res = await app.request('/api/agents/agent-1', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'new-name' }),
-      })
-      expect(res.status).toBe(200)
-      expect(mockStore.updateAgentName).toHaveBeenCalledWith('agent-1', 'new-name')
-    })
-
-    test('updates agent type', async () => {
-      mockStore.getAgentById.mockResolvedValue({ id: 'agent-1' })
-      mockStore.updateAgentType.mockResolvedValue(undefined)
-
-      const res = await app.request('/api/agents/agent-1', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentType: 'researcher' }),
-      })
-      expect(res.status).toBe(200)
-      expect(mockStore.updateAgentType).toHaveBeenCalledWith('agent-1', 'researcher')
-    })
-
-    test('returns 404 for unknown agent', async () => {
-      mockStore.getAgentById.mockResolvedValue(null)
-
-      const res = await app.request('/api/agents/unknown', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'test' }),
-      })
-      expect(res.status).toBe(404)
-      expect(mockStore.updateAgentName).not.toHaveBeenCalled()
-    })
-  })
-
   describe('GET /api/agents/:id', () => {
     test('returns agentClass in response', async () => {
       mockStore.getAgentById.mockResolvedValue({

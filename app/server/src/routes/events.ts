@@ -420,27 +420,6 @@ router.post('/events', async (c) => {
   }
 })
 
-// GET /events/:id/thread
-router.get('/events/:id/thread', async (c) => {
-  const store = c.get('store')
-  const eventId = parseInt(c.req.param('id'))
-  const rows = await store.getThreadForEvent(eventId)
-  const events: ParsedEvent[] = rows.map((r) => ({
-    id: r.id,
-    agentId: r.agent_id,
-    sessionId: r.session_id,
-    hookName: r.hook_name ?? null,
-    type: r.type,
-    subtype: r.subtype,
-    toolName: r.tool_name,
-    status: deriveEventStatus(r.subtype),
-    timestamp: r.timestamp,
-    createdAt: r.created_at || r.timestamp,
-    payload: JSON.parse(r.payload),
-  }))
-  return c.json(events)
-})
-
 /** Remove a single session from the in-memory root agent cache */
 export function removeSessionRootAgent(sessionId: string): void {
   sessionRootAgents.delete(sessionId)
