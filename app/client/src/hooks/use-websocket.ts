@@ -119,7 +119,6 @@ export function useWebSocket(sessionId: string | null) {
         const event: ParsedEvent = {
           id: wire.id,
           timestamp: wire.timestamp,
-          createdAt: wire.createdAt ?? wire.created_at ?? wire.timestamp,
           agentId: (wire.agentId ?? wire.agent_id ?? '') as string,
           sessionId,
           hookName: (wire.hookName ?? wire.hook_name ?? '') as string,

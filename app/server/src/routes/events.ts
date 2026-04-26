@@ -175,7 +175,6 @@ router.post('/events', async (c) => {
       sessionId: envelope.sessionId,
       hookName: envelope.hookName,
       timestamp,
-      createdAt: Date.now(),
       cwd: envelope.cwd ?? null,
       _meta: (envelope._meta as Record<string, unknown> | undefined) ?? null,
       payload: envelope.payload,

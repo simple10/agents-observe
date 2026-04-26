@@ -78,15 +78,18 @@ export interface Agent {
 }
 
 export interface ParsedEvent {
+  // Required
   id: number
   agentId: string
-  sessionId: string
   hookName: string
   timestamp: number
-  createdAt: number
-  cwd: string | null
-  _meta: Record<string, unknown> | null
   payload: Record<string, unknown>
+
+  // Optional — only present on WS broadcasts that carry them or `fields=`
+  // GET /events responses that opt in.
+  sessionId?: string
+  cwd?: string | null
+  _meta?: Record<string, unknown> | null
 }
 
 // === Event Envelope (Layer 1 → Layer 2 contract) ===

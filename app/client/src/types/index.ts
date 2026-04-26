@@ -67,19 +67,23 @@ export interface Agent extends ServerAgent {
 
 /**
  * Wire-shape event from the server. Identity + raw payload only — Layer
- * 3 derives display fields (subtype, toolName, status, type, etc.) per
- * agent class. The previously-server-derived fields (`type`, `subtype`,
- * `toolName`, `status`) live on `EnrichedEvent` after runtime
- * processing — they are NOT wire fields.
+ * 3 derives display fields (toolName, status, etc.) per agent class.
+ *
+ * The default `/sessions/:id/events` response includes only the
+ * REQUIRED fields below. Clients can opt into the optional fields via
+ * `?fields=sessionId,cwd,createdAt,_meta`.
  */
 export interface ParsedEvent {
+  // Required — always returned
   id: number
   agentId: string
-  sessionId: string
   hookName: string
   timestamp: number
-  createdAt: number
   payload: Record<string, unknown>
+
+  // Optional — opt-in via `fields=` or carried by WS broadcast
+  sessionId?: string
+  createdAt?: number
   cwd?: string | null
   _meta?: Record<string, unknown> | null
 }
@@ -134,8 +138,6 @@ export interface WSEventBroadcast {
   hook_name?: string
   sessionId?: string
   session_id?: string
-  createdAt?: number
-  created_at?: number
   cwd?: string | null
   _meta?: Record<string, unknown> | null
   payload: Record<string, unknown>
