@@ -342,26 +342,3 @@ describe('POST /api/events — callbacks (`requests` array)', () => {
   })
 })
 
-describe('POST /api/events — legacy compatibility', () => {
-  test('accepts the pre-Phase-4 `{ hook_payload, meta }` envelope', async () => {
-    const res = await postEvent({
-      hook_payload: {
-        hook_event_name: 'PreToolUse',
-        session_id: 'legacy-sess',
-        tool_name: 'Bash',
-        cwd: '/Users/joe/repo',
-      },
-      meta: {
-        agentClass: 'claude-code',
-        hookName: 'PreToolUse',
-        sessionId: 'legacy-sess',
-      },
-    })
-    expect(res.status).toBe(201)
-    const events = await store.getEventsForSession('legacy-sess')
-    expect(events).toHaveLength(1)
-    expect(events[0].hook_name).toBe('PreToolUse')
-    const session = await store.getSessionById('legacy-sess')
-    expect(session.start_cwd).toBe('/Users/joe/repo')
-  })
-})

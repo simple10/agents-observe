@@ -11,23 +11,10 @@ export interface InsertEventParams {
   cwd?: string | null
   /** Envelope creation hints persisted for traceability. Optional. */
   _meta?: Record<string, unknown> | null
-  /**
-   * @deprecated Phase 3+: notification state is driven by route-layer
-   * calls to startSessionNotification / clearSessionNotification, which
-   * apply envelope flags directly. The adapter still honors these for
-   * the older test fixtures in sqlite-adapter.test.ts; remove once
-   * those migrate.
-   */
-  isNotification?: boolean
-  /** @deprecated see `isNotification`. */
-  clearsNotification?: boolean
 }
-
-export type NotificationTransition = 'set' | 'cleared' | 'none'
 
 export interface InsertEventResult {
   eventId: number
-  notificationTransition: NotificationTransition
 }
 
 export interface EventFilters {

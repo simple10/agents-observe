@@ -126,10 +126,6 @@ router.post('/events', async (c) => {
       payload: envelope.payload,
       cwd: envelope.cwd ?? null,
       _meta: eventStoreMeta,
-      // Pass-through neutral signals: notification state is now driven
-      // explicitly by envelope flags below, so the adapter must not
-      // touch pending state when inserting a routine event.
-      clearsNotification: false,
     })
 
     // ---- Step 6: apply flags in spec order (clear → start → stop) --------
@@ -209,17 +205,7 @@ router.post('/events', async (c) => {
       })
     }
 
-    const responseBody: Record<string, unknown> = {
-      id: eventId,
-      // Legacy shape that pre-Phase-4 hook clients still read. Phase 4
-      // can remove these once the CLIs only need `id`.
-      status: 'OK',
-      meta: {
-        event_id: eventId,
-        session_id: envelope.sessionId,
-        project_id: resolvedProjectId ?? sessionAfter?.project_id ?? null,
-      },
-    }
+    const responseBody: Record<string, unknown> = { id: eventId }
     if (requests.length > 0) responseBody.requests = requests
     return c.json(responseBody, 201)
   } catch (error) {
@@ -228,14 +214,5 @@ router.post('/events', async (c) => {
     return apiError(c, 500, 'Failed to process event', { details: message })
   }
 })
-
-/** Backwards-compat shims for callers that imported these from the old
- *  events.ts module. Phase 3 removed the in-memory subagent pairing
- *  maps; nothing to clear, but the exports stay so the index/admin
- *  routes that called them keep compiling. */
-export function removeSessionRootAgent(_sessionId: string): void {
-  void _sessionId
-}
-export function clearSessionRootAgents(): void {}
 
 export default router

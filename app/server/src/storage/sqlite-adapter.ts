@@ -8,7 +8,6 @@ import type {
   InsertEventParams,
   InsertEventResult,
   EventFilters,
-  NotificationTransition,
   StoredEvent,
   OrphanRepairResult,
 } from './types'
@@ -96,9 +95,11 @@ export class SqliteAdapter implements EventStore {
     }
     // Notification tracking — `pending_notification_ts` holds the ts of
     // the event that put the session into "awaiting user" state. NULL
-    // means no pending notification. Flags on the incoming event envelope
-    // (meta.isNotification / meta.clearsNotification) decide transitions;
-    // the server never inspects the raw subtype for notification purposes.
+    // means no pending notification. Envelope flags
+    // (flags.startsNotification / flags.clearsNotification) decide
+    // transitions, applied by the route layer via
+    // startSessionNotification / clearSessionNotification; the server
+    // never inspects the raw payload for notification purposes.
     const hasPending = sessionCols.some((c) => c.name === 'pending_notification_ts')
     const hasLegacy = sessionCols.some((c) => c.name === 'last_notification_ts')
     if (!hasPending && hasLegacy) {
@@ -698,52 +699,20 @@ export class SqliteAdapter implements EventStore {
         JSON.stringify(params.payload),
       )
 
-    // Read pending state BEFORE the session update so we can report the
-    // transition the caller needs to broadcast.
-    const before = this.db
-      .prepare('SELECT pending_notification_ts FROM sessions WHERE id = ?')
-      .get(params.sessionId) as { pending_notification_ts: number | null } | undefined
+    // Bump session activity so the dashboard knows the session is live.
+    // Notification state transitions are owned by the route layer
+    // (startSessionNotification / clearSessionNotification, applied per
+    // envelope flag in spec order); insertEvent does not touch
+    // pending_notification_ts.
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+          last_activity = MAX(COALESCE(last_activity, 0), ?)
+        WHERE id = ?`,
+      )
+      .run(params.timestamp, params.sessionId)
 
-    // Flag-driven state update. The server never inspects subtype for
-    // notification purposes — agent-class-specific semantics live in the
-    // CLI, which stamps meta.isNotification / meta.clearsNotification on
-    // the envelope.
-    let nextPendingTs: number | null | undefined
-    if (params.isNotification === true) {
-      nextPendingTs = params.timestamp
-    } else if (params.clearsNotification !== false) {
-      nextPendingTs = null
-    } else {
-      nextPendingTs = undefined // leave column alone
-    }
-
-    if (nextPendingTs === undefined) {
-      this.db
-        .prepare(
-          `UPDATE sessions SET
-            last_activity = MAX(COALESCE(last_activity, 0), ?)
-          WHERE id = ?`,
-        )
-        .run(params.timestamp, params.sessionId)
-    } else {
-      this.db
-        .prepare(
-          `UPDATE sessions SET
-            last_activity = MAX(COALESCE(last_activity, 0), ?),
-            pending_notification_ts = ?
-          WHERE id = ?`,
-        )
-        .run(params.timestamp, nextPendingTs, params.sessionId)
-    }
-
-    const beforeTs = before?.pending_notification_ts ?? null
-    const afterTs = nextPendingTs === undefined ? beforeTs : nextPendingTs
-    let notificationTransition: NotificationTransition
-    if (beforeTs === null && afterTs !== null) notificationTransition = 'set'
-    else if (beforeTs !== null && afterTs === null) notificationTransition = 'cleared'
-    else notificationTransition = 'none'
-
-    return { eventId: Number(result.lastInsertRowid), notificationTransition }
+    return { eventId: Number(result.lastInsertRowid) }
   }
 
   async getSessionsWithPendingNotifications(sinceTs: number): Promise<any[]> {

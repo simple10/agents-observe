@@ -25,8 +25,6 @@ async function insertHookEvent(opts: {
   timestamp: number
   payload?: Record<string, unknown>
   cwd?: string | null
-  isNotification?: boolean
-  clearsNotification?: boolean
 }) {
   return store.insertEvent({
     agentId: opts.agentId,
@@ -35,8 +33,6 @@ async function insertHookEvent(opts: {
     timestamp: opts.timestamp,
     payload: opts.payload ?? {},
     cwd: opts.cwd ?? null,
-    isNotification: opts.isNotification,
-    clearsNotification: opts.clearsNotification,
   })
 }
 
@@ -285,43 +281,20 @@ describe('SqliteAdapter — sessions', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Pending-notification tracking: insertEvent applies envelope flags
-  // (isNotification / clearsNotification) to `pending_notification_ts`.
+  // Pending-notification tracking. Post-Phase-4: notification state is
+  // owned by the route layer via startSessionNotification /
+  // clearSessionNotification, applied per envelope flag. insertEvent only
+  // bumps last_activity. These tests pin the storage adapter behavior;
+  // route-layer flag dispatch is covered in routes/events.test.ts.
   // -------------------------------------------------------------------------
-  async function insertNotification(sessionId: string, ts: number) {
-    return insertHookEvent({
-      agentId: sessionId,
-      sessionId,
-      hookName: 'Notification',
-      timestamp: ts,
-      isNotification: true,
-    })
-  }
-  async function insertTool(sessionId: string, ts: number) {
-    return insertHookEvent({
-      agentId: sessionId,
-      sessionId,
-      hookName: 'PreToolUse',
-      timestamp: ts,
-    })
-  }
-  async function insertNeutral(sessionId: string, ts: number) {
-    return insertHookEvent({
-      agentId: sessionId,
-      sessionId,
-      hookName: 'SubagentStop',
-      timestamp: ts,
-      clearsNotification: false,
-    })
-  }
 
   test('getSessionsWithPendingNotifications — returns sessions with unresolved notifications', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertTool('sess1', 1000)
-    await insertNotification('sess1', 2000)
+    await insertHookEvent({ agentId: 'sess1', sessionId: 'sess1', hookName: 'PreToolUse', timestamp: 1000 })
+    await store.startSessionNotification('sess1', 2000)
 
     const rows = await store.getSessionsWithPendingNotifications(0)
     expect(rows).toHaveLength(1)
@@ -330,13 +303,28 @@ describe('SqliteAdapter — sessions', () => {
     expect(rows[0].pending_notification_ts).toBe(2000)
   })
 
-  test('auto-clears once a non-notification event arrives after the notification', async () => {
+  test('routine events do NOT clear pending state (route-layer owns clear)', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertNotification('sess1', 2000)
-    await insertTool('sess1', 3000)
+    await store.startSessionNotification('sess1', 2000)
+    await insertHookEvent({ agentId: 'sess1', sessionId: 'sess1', hookName: 'PreToolUse', timestamp: 3000 })
+
+    // PreToolUse is a routine event with no clearsNotification flag — the
+    // adapter's insertEvent must NOT touch pending state.
+    const rows = await store.getSessionsWithPendingNotifications(0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].pending_notification_ts).toBe(2000)
+  })
+
+  test('clearSessionNotification clears pending state', async () => {
+    const projId = await store.createProject('proj1', 'Project 1')
+    await store.upsertSession('sess1', projId, null, null, 100)
+    await store.upsertAgent('sess1', 'sess1', null, null, null)
+
+    await store.startSessionNotification('sess1', 2000)
+    await store.clearSessionNotification('sess1')
 
     const rows = await store.getSessionsWithPendingNotifications(0)
     expect(rows).toHaveLength(0)
@@ -349,75 +337,58 @@ describe('SqliteAdapter — sessions', () => {
     await store.upsertAgent('sess-a', 'sess-a', null, null, null)
     await store.upsertAgent('sess-b', 'sess-b', null, null, null)
 
-    await insertNotification('sess-a', 1500)
-    await insertNotification('sess-b', 2500)
+    await store.startSessionNotification('sess-a', 1500)
+    await store.startSessionNotification('sess-b', 2500)
 
     const rows = await store.getSessionsWithPendingNotifications(2000)
     expect(rows.map((r: any) => r.session_id)).toEqual(['sess-b'])
   })
 
-  test('repeated notifications advance the pending timestamp', async () => {
+  test('repeated startSessionNotification calls advance the pending timestamp', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertTool('sess1', 500)
-    await insertNotification('sess1', 1000)
-    await insertNotification('sess1', 2000)
-    await insertNotification('sess1', 3000)
+    await store.startSessionNotification('sess1', 1000)
+    await store.startSessionNotification('sess1', 2000)
+    await store.startSessionNotification('sess1', 3000)
 
     const rows = await store.getSessionsWithPendingNotifications(0)
     expect(rows).toHaveLength(1)
     expect(rows[0].pending_notification_ts).toBe(3000)
   })
 
-  test('new notification after a clearing event re-enters pending state', async () => {
+  test('new notification after a clear re-enters pending state', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertNotification('sess1', 1000)
-    await insertTool('sess1', 2000) // clears the session
-    await insertNotification('sess1', 3000) // new pending notification
+    await store.startSessionNotification('sess1', 1000)
+    await store.clearSessionNotification('sess1')
+    await store.startSessionNotification('sess1', 3000)
 
     const rows = await store.getSessionsWithPendingNotifications(0)
     expect(rows).toHaveLength(1)
     expect(rows[0].pending_notification_ts).toBe(3000)
   })
 
-  test('neutral events (clearsNotification:false) do not clear pending state', async () => {
+  test('insertEvent bumps last_activity but does not change pending state', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 100)
     await store.upsertAgent('sess1', 'sess1', null, null, null)
 
-    await insertNotification('sess1', 2000)
-    await insertNeutral('sess1', 3000)
-    await insertNeutral('sess1', 4000)
+    await store.startSessionNotification('sess1', 1000)
+    const result = await insertHookEvent({
+      agentId: 'sess1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 2000,
+    })
+    expect(result.eventId).toBeGreaterThan(0)
 
-    const rows = await store.getSessionsWithPendingNotifications(0)
-    expect(rows).toHaveLength(1)
-    expect(rows[0].pending_notification_ts).toBe(2000)
-  })
-
-  test('insertEvent returns notificationTransition signal', async () => {
-    const projId = await store.createProject('proj1', 'Project 1')
-    await store.upsertSession('sess1', projId, null, null, 100)
-    await store.upsertAgent('sess1', 'sess1', null, null, null)
-
-    const r1 = await insertTool('sess1', 500)
-    expect(r1.notificationTransition).toBe('none')
-
-    const r2 = await insertNotification('sess1', 1000)
-    expect(r2.notificationTransition).toBe('set')
-
-    const r3 = await insertNeutral('sess1', 1500)
-    expect(r3.notificationTransition).toBe('none')
-
-    const r4 = await insertTool('sess1', 2000)
-    expect(r4.notificationTransition).toBe('cleared')
-
-    const r5 = await insertTool('sess1', 2500)
-    expect(r5.notificationTransition).toBe('none')
+    const session = await store.getSessionById('sess1')
+    expect(session.pending_notification_ts).toBe(1000) // unchanged
+    expect(session.last_activity).toBe(2000) // bumped
   })
 
   test('upsertSession stores and preserves transcript_path', async () => {

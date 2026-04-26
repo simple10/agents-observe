@@ -46,27 +46,29 @@ export async function handleCallbackRequests(requests, { config, log }) {
   const allowedCallbacks = config.allowedCallbacks
 
   for (const req of requests) {
+    // Spec uses `name`; older test fixtures used `cmd`. Accept either.
+    const reqName = req.name ?? req.cmd
     log.trace(
-      `Callback request: cmd=${req.cmd} callback=${req.callback || 'none'} args=${JSON.stringify(
+      `Callback request: name=${reqName} callback=${req.callback || 'none'} args=${JSON.stringify(
         req.args || {},
       )}`,
     )
 
-    if (allowedCallbacks && !allowedCallbacks.has(req.cmd)) {
-      log.warn(`Blocked callback: ${req.cmd} (not in AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS)`)
+    if (allowedCallbacks && !allowedCallbacks.has(reqName)) {
+      log.warn(`Blocked callback: ${reqName} (not in AGENTS_OBSERVE_ALLOW_LOCAL_CALLBACKS)`)
       continue
     }
 
-    const handler = callbackHandlers[req.cmd]
+    const handler = callbackHandlers[reqName]
 
     if (!handler) {
-      log.warn(`No handler for callback: ${req.cmd}`)
+      log.warn(`No handler for callback: ${reqName}`)
       continue
     }
 
     const result = handler(req.args || {}, { config, log })
 
-    log.debug(`Callback ${req.cmd} result: ${JSON.stringify(result)}`)
+    log.debug(`Callback ${reqName} result: ${JSON.stringify(result)}`)
 
     if (result && req.callback) {
       // Mirror the request's agentClass + cwd into the response so the
