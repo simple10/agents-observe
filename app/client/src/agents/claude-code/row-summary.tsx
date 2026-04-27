@@ -1,78 +1,61 @@
 // Claude Code agent class — row summary component.
-// Renders the summary line for a collapsed event row (the agent-owned section).
+// Renders the agent-owned section of the row. All per-hookName decisions
+// (what goes in each slot, status pills, etc.) live in `processEvent`.
+// This component is a dumb renderer for the slot fields.
 
-import { getEventColor } from './icons'
 import { computeRuntimeMs, formatRuntime } from './runtime'
-import type { EventProps } from '../types'
+import type { FrameworkDataApi } from '../types'
+import type { ClaudeCodeEnrichedEvent } from './types'
 
-const STOP_SUBTYPES = new Set(['Stop', 'stop_hook_summary', 'SubagentStop'])
-
-/**
- * Renders the one-line summary for a Claude Code event.
- * The framework handles the chrome (agent label, type badge, icon, timestamp).
- * This component renders the content area — tool name, status, and summary text.
- */
-/** Extract [binary] prefix from summary if present */
-function parseBinaryPrefix(summary: string): { binary: string | null; rest: string } {
-  const match = summary.match(/^\[([^\]]+)\]\s*(.*)$/)
-  if (match) return { binary: match[1], rest: match[2] }
-  return { binary: null, rest: summary }
+interface Props {
+  event: ClaudeCodeEnrichedEvent
+  dataApi: FrameworkDataApi
 }
 
-export function ClaudeCodeRowSummary({ event, dataApi }: EventProps) {
-  const summary = (event.summary as string) || ''
-  const toolName = event.toolName
-  const isTool =
-    event.subtype === 'PreToolUse' ||
-    event.subtype === 'PostToolUse' ||
-    event.subtype === 'PostToolUseFailure'
-  const { binary, rest } = isTool ? parseBinaryPrefix(summary) : { binary: null, rest: summary }
-  const expansionType =
-    event.subtype === 'UserPromptExpansion'
-      ? (event.payload as Record<string, unknown>)?.expansion_type
-      : null
+const STOP_HOOKS = new Set(['Stop', 'stop_hook_summary', 'SubagentStop'])
 
+export function ClaudeCodeRowSummary({ event, dataApi }: Props) {
   // For Stop / SubagentStop events, compute runtime from the matching
   // start in the same turn and render it as a trailing muted pill.
   let runtimeLabel: string | null = null
-  if (event.subtype && STOP_SUBTYPES.has(event.subtype) && event.turnId) {
+  if (STOP_HOOKS.has(event.hookName) && event.turnId) {
     const turnEvents = dataApi.getTurnEvents(event.turnId)
     const ms = computeRuntimeMs(event, null, turnEvents)
     if (ms != null) runtimeLabel = formatRuntime(ms)
   }
 
+  const summary = event.summary
+  const summaryHasNewline = summary.includes('\n')
+
   return (
     <>
-      {/* Show hook subtype when dedup is off so you know exactly what this event is */}
-      {!event.dedupMode && event.subtype && (
-        <span className="text-[10px] text-muted-foreground/40 shrink-0">{event.subtype}</span>
+      {/* Show hook name when dedup is off so you know exactly what this event is */}
+      {!event.dedupMode && (
+        <span className="text-[10px] text-muted-foreground/40 shrink-0">{event.hookName}</span>
       )}
-      {isTool && toolName && (
+      {/* Slot 1: colored "tool" slot — uses iconColor from the enriched event */}
+      {event.summaryTool && (
         <span
-          className={`text-xs font-medium shrink-0 ${getEventColor(event.subtype, event.toolName).iconColor || 'text-blue-700 dark:text-blue-400'}`}
+          className={`text-xs font-medium shrink-0 ${event.iconColor || 'text-blue-700 dark:text-blue-400'}`}
         >
-          {toolName.startsWith('mcp__') ? 'MCP' : toolName}
+          {event.summaryTool}
         </span>
       )}
-      {isTool && toolName?.startsWith('mcp__') && (
-        <span className="text-[10px] text-muted-foreground/50 shrink-0">{toolName}</span>
+      {/* Slot 2: gray "cmd" slot */}
+      {event.summaryCmd && (
+        <span className="text-[10px] text-muted-foreground/50 shrink-0">{event.summaryCmd}</span>
       )}
-      {binary && <span className="text-[10px] text-muted-foreground/50 shrink-0">{binary}</span>}
-      {typeof expansionType === 'string' && expansionType && (
-        <span className="text-xs font-medium text-blue-700 dark:text-blue-400 shrink-0">
-          {expansionType}
-        </span>
-      )}
-      {rest.includes('\n') ? (
+      {/* Summary text */}
+      {summaryHasNewline ? (
         <div className="text-xs text-muted-foreground flex-1 min-w-0">
-          {rest.split('\n').map((line, i) => (
+          {summary.split('\n').map((line, i) => (
             <div key={i} className="truncate">
               {line}
             </div>
           ))}
         </div>
       ) : (
-        <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{rest}</span>
+        <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{summary}</span>
       )}
       {runtimeLabel && (
         <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">

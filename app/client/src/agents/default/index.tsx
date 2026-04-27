@@ -8,14 +8,8 @@ import type {
   EnrichedEvent,
   EventStatus,
   ProcessingContext,
-  ProcessEventResult,
-  EventProps,
+  FrameworkDataApi,
 } from '../types'
-
-/** Default subtype derivation: identity — the raw hookName. */
-function deriveSubtype(event: RawEvent): string | null {
-  return event.hookName || null
-}
 
 /** Default tool-name derivation: read `payload.tool_name` if present. */
 function deriveToolName(event: RawEvent): string | null {
@@ -24,40 +18,31 @@ function deriveToolName(event: RawEvent): string | null {
   return typeof tn === 'string' ? tn : null
 }
 
-/** Default status: no per-class derivation — return null and let the
- *  consumer fall back to 'completed'. */
+/** Default status: no per-class derivation. */
 function deriveStatus(_event: RawEvent, _grouped: RawEvent[]): EventStatus | null {
   return null
 }
 
-export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult {
+export function processEvent(raw: RawEvent, ctx: ProcessingContext): { event: EnrichedEvent } {
   const turnId = ctx.getCurrentTurn(raw.agentId)
-  // Some agent classes carry tool_use_id on the payload under that exact
-  // key; the default processor surfaces it as the groupId for Pre/Post
-  // pairing. Reads from payload rather than a top-level field because the
-  // server no longer promotes tool_use_id to a column.
   const payloadToolUseId = (raw.payload as Record<string, unknown>).tool_use_id
   const toolUseId = typeof payloadToolUseId === 'string' ? payloadToolUseId : null
 
-  const subtype = deriveSubtype(raw)
   const toolName = deriveToolName(raw)
+  const hookName = raw.hookName
 
   const enriched: EnrichedEvent = {
     id: raw.id,
     agentId: raw.agentId,
-    sessionId: raw.sessionId,
-    hookName: raw.hookName,
+    hookName,
     timestamp: raw.timestamp,
-    createdAt: raw.createdAt,
-    type: subtype ? 'system' : 'hook',
-    subtype,
     toolName,
     groupId: toolUseId,
     turnId,
     displayEventStream: true,
     displayTimeline: true,
-    label: subtype || 'Event',
-    toolUseId,
+    label: hookName || 'Event',
+    labelTooltip: hookName,
     icon: null,
     iconColor: 'text-muted-foreground',
     dedupMode: ctx.dedupEnabled,
@@ -65,24 +50,25 @@ export function processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEven
     iconColorHex: null,
     status: 'completed',
     filterTags: { static: null, dynamic: toolName ? [toolName] : [] },
-    searchText: [subtype, toolName, JSON.stringify(raw.payload)]
+    searchText: [hookName, toolName, JSON.stringify(raw.payload)]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
       .slice(0, 500),
     payload: raw.payload,
-    summary: subtype || '',
+    summary: hookName || '',
   }
 
   return { event: enriched }
 }
 
-export function DefaultRowSummary({ event }: EventProps) {
-  const summary = (event.summary as string) || ''
-  return <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{summary}</span>
+export function DefaultRowSummary({ event }: { event: EnrichedEvent; dataApi: FrameworkDataApi }) {
+  return (
+    <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{event.summary}</span>
+  )
 }
 
-export function DefaultEventDetail({ event }: EventProps) {
+export function DefaultEventDetail({ event }: { event: EnrichedEvent; dataApi: FrameworkDataApi }) {
   return (
     <pre className="overflow-x-auto rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed max-h-60 overflow-y-auto">
       {JSON.stringify(event.payload, null, 2)}
@@ -104,7 +90,6 @@ AgentRegistry.registerDefault({
   displayName: 'unknown',
   Icon: CircleDot,
   processEvent,
-  deriveSubtype,
   deriveToolName,
   deriveStatus,
   getEventIcon: () => CircleDot,

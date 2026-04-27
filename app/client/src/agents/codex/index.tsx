@@ -12,14 +12,6 @@ import {
 import type { RawEvent, EventStatus } from '../types'
 import { parseTranscriptEvent } from './parse-transcript'
 
-/** Codex subtype derivation: prefer the transcript-format parser, fall
- *  back to the raw hookName when the payload uses the standard hook
- *  shape (hook_event_name set in the wrapping payload). */
-function deriveSubtype(event: RawEvent): string | null {
-  const fromTranscript = parseTranscriptEvent(event.payload).subtype
-  return fromTranscript ?? event.hookName ?? null
-}
-
 /** Codex tool-name derivation: prefer the transcript-format parser; if
  *  the payload carries a Claude-Code-style `tool_name`, surface that. */
 function deriveToolName(event: RawEvent): string | null {
@@ -50,7 +42,6 @@ AgentRegistry.register({
   displayName: 'codex',
   Icon: Terminal,
   processEvent,
-  deriveSubtype,
   deriveToolName,
   deriveStatus,
   getEventIcon: () => Terminal,

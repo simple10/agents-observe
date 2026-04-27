@@ -1,15 +1,15 @@
 import { format } from 'timeago.js'
 import { getEventSummary } from '@/lib/event-summary'
 import type { ParsedEvent } from '@/types'
-import { deriveSubtype, deriveToolName } from '@/agents/claude-code/derivers'
+import { deriveToolName } from '@/agents/claude-code/derivers'
 
 // Friendly label for event types shown at the top of the tooltip
 function tooltipLabel(event: ParsedEvent): string {
-  // The wire ParsedEvent no longer carries subtype/toolName — derive on
-  // the fly. Timeline dots are claude-code-specific today; if more
-  // agent classes need this, route through the registration's
-  // deriveSubtype/deriveToolName.
-  const subtype = deriveSubtype(event)
+  // The wire ParsedEvent no longer carries toolName — derive on the
+  // fly. Timeline dots are claude-code-specific today; if more agent
+  // classes need this, route through the registration's
+  // deriveToolName.
+  const subtype = event.hookName || null
   const toolName = deriveToolName(event)
   if (subtype === 'PreToolUse' || subtype === 'PostToolUse') {
     return toolName || 'Tool'
@@ -42,7 +42,7 @@ export function DotTooltipContent({ event }: { event: ParsedEvent }) {
   const summary = getEventSummary(event)
   const time = formatTimeOfDay(event.timestamp)
   const relative = format(event.timestamp)
-  const subtype = deriveSubtype(event)
+  const subtype = event.hookName || null
   const hook = subtype && subtype !== label ? subtype : null
 
   return (

@@ -146,30 +146,30 @@ const defaultEventColor: [string, string] = [
   'bg-muted-foreground dark:bg-muted-foreground',
 ]
 
-export function resolveEventKey(subtype: string | null, toolName?: string | null): string {
+export function resolveEventKey(hookName: string | null, toolName?: string | null): string {
   const isTool =
-    subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure'
+    hookName === 'PreToolUse' || hookName === 'PostToolUse' || hookName === 'PostToolUseFailure'
   if (isTool && toolName) {
     // MCP tools resolve to _MCP for icon/color (individual tools can be customized)
     if (toolName.startsWith('mcp__')) return '_MCP'
     return toolName
   }
-  return subtype || 'unknown'
+  return hookName || 'unknown'
 }
 
-function toolFallbackKey(subtype: string | null): string {
-  if (subtype === 'PostToolUseFailure') return '_ToolFailure'
-  if (subtype === 'PostToolUse') return '_ToolSuccess'
+function toolFallbackKey(hookName: string | null): string {
+  if (hookName === 'PostToolUseFailure') return '_ToolFailure'
+  if (hookName === 'PostToolUse') return '_ToolSuccess'
   return '_ToolDefault'
 }
 
 export function getEventColor(
-  subtype: string | null,
+  hookName: string | null,
   toolName?: string | null,
 ): { iconColor: string; dotColor: string; customHex?: string } {
-  const key = resolveEventKey(subtype, toolName)
+  const key = resolveEventKey(hookName, toolName)
   const isTool =
-    subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure'
+    hookName === 'PreToolUse' || hookName === 'PostToolUse' || hookName === 'PostToolUseFailure'
 
   const custom = getIconCustomization(key)
   if (custom?.colorName === 'custom' && custom.customHex) {
@@ -181,15 +181,15 @@ export function getEventColor(
   }
 
   let color = eventColors[key]
-  if (!color && isTool) color = eventColors[toolFallbackKey(subtype)]
+  if (!color && isTool) color = eventColors[toolFallbackKey(hookName)]
   const [iconColor, dotColor] = color || defaultEventColor
   return { iconColor, dotColor }
 }
 
-export function getEventIcon(subtype: string | null, toolName?: string | null): LucideIcon {
-  const key = resolveEventKey(subtype, toolName)
+export function getEventIcon(hookName: string | null, toolName?: string | null): LucideIcon {
+  const key = resolveEventKey(hookName, toolName)
   const isTool =
-    subtype === 'PreToolUse' || subtype === 'PostToolUse' || subtype === 'PostToolUseFailure'
+    hookName === 'PreToolUse' || hookName === 'PostToolUse' || hookName === 'PostToolUseFailure'
 
   const custom = getIconCustomization(key)
   if (custom?.iconName) {
@@ -203,6 +203,6 @@ export function getEventIcon(subtype: string | null, toolName?: string | null): 
   }
 
   if (eventIcons[key]) return eventIcons[key]
-  if (isTool) return eventIcons[toolFallbackKey(subtype)] || defaultEventIcon
+  if (isTool) return eventIcons[toolFallbackKey(hookName)] || defaultEventIcon
   return defaultEventIcon
 }

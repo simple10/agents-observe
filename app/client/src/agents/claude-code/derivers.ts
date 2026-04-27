@@ -4,11 +4,6 @@
 
 import type { RawEvent, EventStatus } from '../types'
 
-/** Claude Code: subtype is the raw hookName (1:1 mapping). */
-export function deriveSubtype(event: RawEvent): string | null {
-  return event.hookName || null
-}
-
 /** Claude Code: tool name lives under `payload.tool_name`. */
 export function deriveToolName(event: RawEvent): string | null {
   const p = event.payload as Record<string, unknown> | undefined

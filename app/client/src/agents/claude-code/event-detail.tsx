@@ -1,7 +1,7 @@
 // Claude Code agent class — event detail component.
 // Faithfully ports the rendering logic from the original
 // components/event-stream/event-detail.tsx, adapted for the new
-// EventProps / EnrichedEvent / FrameworkDataApi interface.
+// ClaudeCodeEnrichedEvent / FrameworkDataApi interface.
 
 import { useState, lazy, Suspense } from 'react'
 import Markdown from 'react-markdown'
@@ -22,7 +22,8 @@ import { getAgentDisplayName } from '@/lib/agent-utils'
 import { getEventIcon } from './icons'
 import { getEventSummary, relativePath } from './helpers'
 import { computeRuntimeMs, formatRuntime } from './runtime'
-import type { EventProps, EnrichedEvent, FrameworkDataApi } from '../types'
+import type { FrameworkDataApi } from '../types'
+import type { ClaudeCodeEnrichedEvent } from './types'
 import type { Agent } from '@/types'
 
 // ── Markdown rendering config ──────────────────────────────
@@ -147,15 +148,15 @@ const mdComponents = {
 
 // Merge PostToolUse into PreToolUse by toolUseId (same as main stream).
 // Only show PreToolUse if there's no matching PostToolUse (failed tool).
-function dedupeThread(events: EnrichedEvent[]): EnrichedEvent[] {
-  const result: EnrichedEvent[] = []
+function dedupeThread(events: ClaudeCodeEnrichedEvent[]): ClaudeCodeEnrichedEvent[] {
+  const result: ClaudeCodeEnrichedEvent[] = []
   const toolUseMap = new Map<string, number>()
 
   for (const e of events) {
-    if (e.subtype === 'PreToolUse' && e.toolUseId) {
+    if (e.hookName === 'PreToolUse' && e.toolUseId) {
       toolUseMap.set(e.toolUseId, result.length)
       result.push({ ...e })
-    } else if (e.subtype === 'PostToolUse' && e.toolUseId && toolUseMap.has(e.toolUseId)) {
+    } else if (e.hookName === 'PostToolUse' && e.toolUseId && toolUseMap.has(e.toolUseId)) {
       const idx = toolUseMap.get(e.toolUseId)!
       result[idx] = { ...result[idx], status: 'completed' }
     } else {
@@ -184,11 +185,17 @@ const LABEL_MAP: Record<string, string> = {
 
 const THREAD_SUBTYPES = ['UserPromptSubmit', 'Stop', 'SubagentStart', 'SubagentStop']
 
-export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
+export function ClaudeCodeEventDetail({
+  event,
+  dataApi,
+}: {
+  event: ClaudeCodeEnrichedEvent
+  dataApi: FrameworkDataApi
+}) {
   const payload = event.payload as Record<string, any>
-  const cwd = (event.cwd as string) || undefined
+  const cwd = event.cwd
 
-  const showThread = THREAD_SUBTYPES.includes(event.subtype || '')
+  const showThread = THREAD_SUBTYPES.includes(event.hookName)
 
   // Load turn events for thread-style display
   const turnEvents = event.turnId ? dataApi.getTurnEvents(event.turnId) : []
@@ -203,7 +210,7 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
   return (
     <div className="space-y-2 text-xs">
       {/* Show hook name when dedup is off */}
-      {!event.dedupMode && event.subtype && <DetailRow label="Hook" value={event.subtype} />}
+      {!event.dedupMode && <DetailRow label="Hook" value={event.hookName} />}
 
       {/* Per-event-type rich detail */}
       <ToolDetail
@@ -218,8 +225,8 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
 
       {/* Error from payload (shown for any event type with an error field,
           unless handled by ToolDetail already) */}
-      {event.subtype !== 'PostToolUseFailure' &&
-        event.subtype !== 'StopFailure' &&
+      {event.hookName !== 'PostToolUseFailure' &&
+        event.hookName !== 'StopFailure' &&
         typeof payload.error === 'string' &&
         payload.error && <DetailCode label="Error" value={payload.error} />}
 
@@ -254,12 +261,12 @@ export function ClaudeCodeEventDetail({ event, dataApi }: EventProps) {
       {pairedEvent ? (
         <>
           <RawPayloadSection
-            label={event.subtype || 'PreToolUse'}
+            label={event.hookName}
             timestamp={event.timestamp}
             payload={event.payload as Record<string, unknown>}
           />
           <RawPayloadSection
-            label={pairedEvent.subtype || 'PostToolUse'}
+            label={pairedEvent.hookName}
             timestamp={pairedEvent.timestamp}
             payload={pairedEvent.payload as Record<string, unknown>}
           />
@@ -349,13 +356,13 @@ function ToolDetail({
   dataApi,
   pairedEvent,
 }: {
-  event: EnrichedEvent
+  event: ClaudeCodeEnrichedEvent
   payload: Record<string, any>
   cwd?: string
-  turnEvents: EnrichedEvent[]
+  turnEvents: ClaudeCodeEnrichedEvent[]
   getAgent: (id: string) => Agent | undefined
   dataApi: FrameworkDataApi
-  pairedEvent: EnrichedEvent | null
+  pairedEvent: ClaudeCodeEnrichedEvent | null
 }) {
   const ti = payload.tool_input || {}
   const result = pairedEvent
@@ -364,10 +371,10 @@ function ToolDetail({
 
   // ── Non-tool events ──────────────────────────────────
 
-  if (event.subtype === 'UserPromptSubmit') {
+  if (event.hookName === 'UserPromptSubmit') {
     // Find the Stop event in the turn to show the final assistant message
     const stopEvent = turnEvents.find(
-      (e) => e.subtype === 'Stop' || e.subtype === 'stop_hook_summary',
+      (e) => e.hookName === 'Stop' || e.hookName === 'stop_hook_summary',
     )
     const finalMessage = (stopEvent?.payload as any)?.last_assistant_message
     return (
@@ -378,9 +385,9 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'Stop') {
+  if (event.hookName === 'Stop') {
     // Find the prompt from the turn events or payload
-    const promptEvent = turnEvents.find((e) => e.subtype === 'UserPromptSubmit')
+    const promptEvent = turnEvents.find((e) => e.hookName === 'UserPromptSubmit')
     const promptText = promptEvent
       ? (promptEvent.payload as any)?.prompt || (promptEvent.payload as any)?.message?.content
       : null
@@ -395,7 +402,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'SubagentStop') {
+  if (event.hookName === 'SubagentStop') {
     const agentResult = payload.last_assistant_message
     const subAgent = getAgent(event.agentId)
     const assignedName = subAgent ? getAgentDisplayName(subAgent) : null
@@ -403,7 +410,7 @@ function ToolDetail({
     // Find spawn info from parent Agent tool call
     const parentAgentEvents = dataApi.getAgentEvents(event.agentId)
     const spawnEvent = parentAgentEvents.find(
-      (e) => e.subtype === 'PreToolUse' && e.toolName === 'Agent',
+      (e) => e.hookName === 'PreToolUse' && e.toolName === 'Agent',
     )
     const spawnDesc = (spawnEvent?.payload as any)?.tool_input?.description
     const spawnPrompt = (spawnEvent?.payload as any)?.tool_input?.prompt
@@ -417,7 +424,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'SessionStart') {
+  if (event.hookName === 'SessionStart') {
     return (
       <div className="space-y-1">
         <DetailRow label="Source" value={payload.source || 'new'} />
@@ -428,7 +435,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'SessionEnd') {
+  if (event.hookName === 'SessionEnd') {
     return (
       <div className="space-y-1">
         <DetailRow label="Status" value="Session ended" />
@@ -436,7 +443,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'StopFailure') {
+  if (event.hookName === 'StopFailure') {
     let errorType = payload.error as string | undefined
     let errorMessage = payload.error_message as string | undefined
     if (payload.error_details) {
@@ -462,17 +469,17 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'SubagentStart') {
+  if (event.hookName === 'SubagentStart') {
     const subAgent = getAgent(event.agentId)
     const assignedName = subAgent ? getAgentDisplayName(subAgent) : null
     const rawName = payload.agent_name as string | undefined
     // Pull result from SubagentStop in the turn events
-    const stopEvent = turnEvents.find((e) => e.subtype === 'SubagentStop')
+    const stopEvent = turnEvents.find((e) => e.hookName === 'SubagentStop')
     const agentResult = (stopEvent?.payload as any)?.last_assistant_message
     // Find spawn info from parent Agent tool call
     const parentAgentEvents = dataApi.getAgentEvents(event.agentId)
     const spawnEvent = parentAgentEvents.find(
-      (e) => e.subtype === 'PreToolUse' && e.toolName === 'Agent',
+      (e) => e.hookName === 'PreToolUse' && e.toolName === 'Agent',
     )
     const spawnDesc = (spawnEvent?.payload as any)?.tool_input?.description
     const spawnPrompt = (spawnEvent?.payload as any)?.tool_input?.prompt
@@ -488,7 +495,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'PostToolUseFailure') {
+  if (event.hookName === 'PostToolUseFailure') {
     const failTi = payload.tool_input || {}
     return (
       <div className="space-y-1.5">
@@ -508,7 +515,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'PermissionRequest') {
+  if (event.hookName === 'PermissionRequest') {
     const permTi = payload.tool_input as Record<string, any> | undefined
     return (
       <div className="space-y-1.5">
@@ -533,7 +540,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'TaskCreated' || event.subtype === 'TaskCompleted') {
+  if (event.hookName === 'TaskCreated' || event.hookName === 'TaskCompleted') {
     const subject = payload.task_subject as string | undefined
     const description = (payload.task_description || payload.description) as string | undefined
     const taskGrouped = event.groupId ? dataApi.getGroupedEvents(event.groupId) : []
@@ -556,13 +563,13 @@ function ToolDetail({
                   | string
                   | undefined
                 const label =
-                  e.subtype === 'TaskCreated'
+                  e.hookName === 'TaskCreated'
                     ? 'Created'
-                    : e.subtype === 'TaskCompleted'
+                    : e.hookName === 'TaskCompleted'
                       ? 'Completed'
                       : e.toolName === 'TaskUpdate'
                         ? `Updated → ${statusTo || '?'}`
-                        : e.label || e.subtype || 'Event'
+                        : e.label || e.hookName || 'Event'
                 const detail = activeForm || desc
                 return (
                   <div
@@ -579,12 +586,12 @@ function ToolDetail({
                           ? 'text-green-600 dark:text-green-500'
                           : statusTo === 'in_progress'
                             ? 'text-yellow-600 dark:text-yellow-500/70'
-                            : e.subtype === 'TaskCompleted'
+                            : e.hookName === 'TaskCompleted'
                               ? 'text-green-600 dark:text-green-500'
                               : 'text-muted-foreground/50',
                       )}
                     >
-                      {statusTo === 'completed' || e.subtype === 'TaskCompleted' ? (
+                      {statusTo === 'completed' || e.hookName === 'TaskCompleted' ? (
                         <Check className="h-3 w-3" />
                       ) : statusTo === 'in_progress' ? (
                         <Loader className="h-3 w-3" />
@@ -616,7 +623,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'TeammateIdle') {
+  if (event.hookName === 'TeammateIdle') {
     return (
       <div className="space-y-1">
         {payload.teammate_name && (
@@ -626,7 +633,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'InstructionsLoaded') {
+  if (event.hookName === 'InstructionsLoaded') {
     return (
       <div className="space-y-1">
         {payload.file_path && (
@@ -636,7 +643,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'ConfigChange') {
+  if (event.hookName === 'ConfigChange') {
     return (
       <div className="space-y-1">
         {payload.file_path && (
@@ -646,7 +653,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'CwdChanged') {
+  if (event.hookName === 'CwdChanged') {
     return (
       <div className="space-y-1">
         {payload.old_cwd && <DetailRow label="From" value={payload.old_cwd as string} />}
@@ -655,7 +662,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'FileChanged') {
+  if (event.hookName === 'FileChanged') {
     return (
       <div className="space-y-1">
         {payload.file_path && (
@@ -665,7 +672,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'UserPromptExpansion') {
+  if (event.hookName === 'UserPromptExpansion') {
     const expansionType = payload.expansion_type as string | undefined
     const commandName = payload.command_name as string | undefined
     const commandArgs = payload.command_args as string | undefined
@@ -682,7 +689,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'PreCompact' || event.subtype === 'PostCompact') {
+  if (event.hookName === 'PreCompact' || event.hookName === 'PostCompact') {
     // After pairing, a PreCompact row's payload is merged with PostCompact's,
     // so the fields below coexist and we render them together. When dedup is
     // disabled, each event renders only its own fields. The row's spinner /
@@ -709,7 +716,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'Elicitation') {
+  if (event.hookName === 'Elicitation') {
     return (
       <div className="space-y-1.5">
         {payload.message && <DetailCode label="Question" value={payload.message as string} />}
@@ -718,7 +725,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'ElicitationResult') {
+  if (event.hookName === 'ElicitationResult') {
     return (
       <div className="space-y-1.5">
         {payload.response && <DetailCode label="Response" value={payload.response as string} />}
@@ -727,7 +734,7 @@ function ToolDetail({
     )
   }
 
-  if (event.subtype === 'WorktreeCreate' || event.subtype === 'WorktreeRemove') {
+  if (event.hookName === 'WorktreeCreate' || event.hookName === 'WorktreeRemove') {
     return (
       <div className="space-y-1">
         {payload.path && <DetailRow label="Path" value={payload.path as string} />}
@@ -738,7 +745,7 @@ function ToolDetail({
 
   // ── Tool events ──────────────────────────────────────
 
-  if (event.subtype !== 'PreToolUse' && event.subtype !== 'PostToolUse') return null
+  if (event.hookName !== 'PreToolUse' && event.hookName !== 'PostToolUse') return null
 
   switch (event.toolName) {
     case 'Bash': {
@@ -1093,16 +1100,19 @@ function DetailDiff({ oldValue, newValue }: { oldValue: string; newValue: string
 
 // ── Thread event (for conversation view) ──────────────────
 
-function ThreadEvent({ event, isCurrentEvent }: { event: EnrichedEvent; isCurrentEvent: boolean }) {
-  const Icon = event.icon || getEventIcon(event.subtype, event.toolName)
-  const isTool = event.subtype === 'PreToolUse' || event.subtype === 'PostToolUse'
+function ThreadEvent({
+  event,
+  isCurrentEvent,
+}: {
+  event: ClaudeCodeEnrichedEvent
+  isCurrentEvent: boolean
+}) {
+  const Icon = event.icon || getEventIcon(event.hookName, event.toolName)
+  const isTool = event.hookName === 'PreToolUse' || event.hookName === 'PostToolUse'
   const isCompleted = event.status === 'completed'
-  const rawLabel = event.subtype || event.type
+  const rawLabel = event.hookName
   const displayLabel = LABEL_MAP[rawLabel] || rawLabel
-  // EnrichedEvent already has subtype/toolName from runtime derivation;
-  // pass them through so the helper doesn't re-derive.
-  const summary =
-    (event.summary as string) || getEventSummary(event as any, event.subtype, event.toolName)
+  const summary = event.summary || getEventSummary(event as any, event.hookName, event.toolName)
 
   return (
     <div

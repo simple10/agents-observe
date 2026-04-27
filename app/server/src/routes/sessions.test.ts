@@ -235,9 +235,7 @@ describe('GET /api/sessions/:id/events — fields= allow-list', () => {
     ])
     mockStore.getSessionById.mockResolvedValue({ stopped_at: null })
 
-    const res = await app.request(
-      '/api/sessions/sess-1/events?fields=cwd,bogus,createdAt',
-    )
+    const res = await app.request('/api/sessions/sess-1/events?fields=cwd,bogus,createdAt')
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body[0]).toHaveProperty('cwd', '/tmp')

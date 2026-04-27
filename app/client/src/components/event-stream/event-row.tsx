@@ -115,7 +115,7 @@ export const EventRow = memo(function EventRow({
           <span
             className={cn('shrink-0', !customHex && iconColor)}
             style={customHex ? { color: customHex } : undefined}
-            title={event.subtype || event.type}
+            title={event.labelTooltip ?? event.hookName}
           >
             <Icon className="h-4 w-4" />
           </span>
@@ -123,7 +123,7 @@ export const EventRow = memo(function EventRow({
           {/* Label (framework-owned) */}
           <span
             className="text-xs font-medium w-16 shrink-0 truncate text-muted-foreground"
-            title={event.subtype || event.type}
+            title={event.labelTooltip ?? event.hookName}
           >
             {event.label}
           </span>

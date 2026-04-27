@@ -15,20 +15,20 @@ export function computeRuntimeMs(
   turnEvents: EnrichedEvent[],
 ): number | null {
   if (pairedEvent) return Math.abs(pairedEvent.timestamp - event.timestamp)
-  if (event.subtype === 'UserPromptSubmit') {
-    const end = turnEvents.find((e) => e.subtype === 'Stop' || e.subtype === 'stop_hook_summary')
+  if (event.hookName === 'UserPromptSubmit') {
+    const end = turnEvents.find((e) => e.hookName === 'Stop' || e.hookName === 'stop_hook_summary')
     if (end) return Math.abs(end.timestamp - event.timestamp)
   }
-  if (event.subtype === 'SubagentStart') {
-    const end = turnEvents.find((e) => e.subtype === 'SubagentStop')
+  if (event.hookName === 'SubagentStart') {
+    const end = turnEvents.find((e) => e.hookName === 'SubagentStop')
     if (end) return Math.abs(end.timestamp - event.timestamp)
   }
-  if (event.subtype === 'Stop' || event.subtype === 'stop_hook_summary') {
-    const start = turnEvents.find((e) => e.subtype === 'UserPromptSubmit')
+  if (event.hookName === 'Stop' || event.hookName === 'stop_hook_summary') {
+    const start = turnEvents.find((e) => e.hookName === 'UserPromptSubmit')
     if (start) return Math.abs(event.timestamp - start.timestamp)
   }
-  if (event.subtype === 'SubagentStop') {
-    const start = turnEvents.find((e) => e.subtype === 'SubagentStart')
+  if (event.hookName === 'SubagentStop') {
+    const start = turnEvents.find((e) => e.hookName === 'SubagentStart')
     if (start) return Math.abs(event.timestamp - start.timestamp)
   }
   return null

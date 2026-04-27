@@ -64,17 +64,18 @@ export function oneLine(s: string): string {
 }
 
 /** Generate one-line summary text from a raw event. Takes derived
- *  subtype/toolName as arguments — those fields are no longer on the
- *  wire `RawEvent`. */
+ *  toolName as an argument since it's per-agent-class. The hookName
+ *  comes from the wire event directly (claude-code's deriveSubtype was
+ *  identity, so subtype === hookName always). */
 export function getEventSummary(
   event: RawEvent,
-  subtype: string | null,
+  hookName: string | null,
   toolName: string | null,
 ): string {
   const p = event.payload as Record<string, any>
-  const cwd = (event.cwd ?? (p.cwd as string | undefined)) as string | undefined
+  const cwd = (p.cwd as string | undefined) ?? undefined
 
-  switch (subtype) {
+  switch (hookName) {
     case 'UserPromptSubmit':
       return oneLine(p.prompt || p.message?.content || '')
     case 'UserPromptExpansion': {
@@ -192,23 +193,14 @@ function getToolSummary(
   }
 }
 
-/** Build pre-computed searchText from an event and its summary. Derived
- *  fields (subtype/toolName/type) are passed in since the wire event no
- *  longer carries them. */
-export function buildSearchText(
-  event: RawEvent,
-  summary: string,
-  subtype: string | null,
-  toolName: string | null,
-  type: string | null,
-): string {
+/** Build pre-computed searchText from an event and its summary.
+ *  toolName is passed since it's derived per agent class. */
+export function buildSearchText(event: RawEvent, summary: string, toolName: string | null): string {
   const parts: string[] = [summary]
   if (toolName) parts.push(toolName)
-  if (subtype) parts.push(subtype)
-  if (type) parts.push(type)
+  if (event.hookName) parts.push(event.hookName)
 
   const p = event.payload as Record<string, any>
-  // Include key payload fields for search
   if (p.tool_input?.command) parts.push(p.tool_input.command)
   if (p.tool_input?.file_path) parts.push(p.tool_input.file_path)
   if (p.tool_input?.pattern) parts.push(p.tool_input.pattern)

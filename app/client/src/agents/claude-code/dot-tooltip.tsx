@@ -9,7 +9,7 @@ function formatTimeOfDay(ts: number): string {
 }
 
 function tooltipLabel(event: EnrichedEvent): string {
-  const sub = event.subtype
+  const sub = event.hookName
   if (sub === 'UserPromptSubmit') return 'Prompt'
   if (sub === 'Stop' || sub === 'stop_hook_summary') return 'Stop'
   if (sub === 'SessionStart') return 'Session Start'
@@ -33,9 +33,7 @@ export function ClaudeCodeDotTooltip({ event }: { event: EnrichedEvent }) {
       <div className="opacity-60 text-[10px]">
         {formatTimeOfDay(event.timestamp)} · {format(event.timestamp)}
       </div>
-      {event.subtype && event.subtype !== label && (
-        <div className="opacity-40 text-[9px]">{event.subtype}</div>
-      )}
+      {event.hookName !== label && <div className="opacity-40 text-[9px]">{event.hookName}</div>}
     </div>
   )
 }

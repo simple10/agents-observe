@@ -6,18 +6,14 @@ function makeEvent(overrides: Partial<EnrichedEvent> & { timestamp: number }): E
   return {
     id: 1,
     agentId: 'agent-1',
-    sessionId: 'sess-1',
     hookName: '',
-    createdAt: overrides.timestamp,
-    type: 'hook',
-    subtype: null,
     groupId: null,
     turnId: null,
     displayEventStream: true,
     displayTimeline: true,
     label: '',
+    labelTooltip: null,
     toolName: null,
-    toolUseId: null,
     icon: null,
     iconColor: null,
     dotColor: null,
@@ -26,6 +22,7 @@ function makeEvent(overrides: Partial<EnrichedEvent> & { timestamp: number }): E
     filterTags: { static: null, dynamic: [] },
     searchText: '',
     dedupMode: false,
+    summary: '',
     payload: {},
     ...overrides,
   }
@@ -65,8 +62,8 @@ describe('formatRuntime', () => {
 
 describe('computeRuntimeMs', () => {
   it('returns the absolute delta when a pairedEvent is supplied', () => {
-    const pre = makeEvent({ timestamp: 1000, subtype: 'PreToolUse' })
-    const post = makeEvent({ id: 2, timestamp: 3500, subtype: 'PostToolUse' })
+    const pre = makeEvent({ timestamp: 1000, hookName: 'PreToolUse' })
+    const post = makeEvent({ id: 2, timestamp: 3500, hookName: 'PostToolUse' })
     expect(computeRuntimeMs(pre, post, [])).toBe(2500)
   })
 
@@ -77,70 +74,70 @@ describe('computeRuntimeMs', () => {
   })
 
   it('finds Stop in the turn for UserPromptSubmit', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
-    const stop = makeEvent({ id: 2, timestamp: 4000, subtype: 'Stop' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 4000, hookName: 'Stop' })
     expect(computeRuntimeMs(prompt, null, [prompt, stop])).toBe(3000)
   })
 
   it('accepts stop_hook_summary as an end event for UserPromptSubmit', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
-    const stop = makeEvent({ id: 2, timestamp: 2500, subtype: 'stop_hook_summary' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 2500, hookName: 'stop_hook_summary' })
     expect(computeRuntimeMs(prompt, null, [prompt, stop])).toBe(1500)
   })
 
   it('finds SubagentStop in the turn for SubagentStart', () => {
-    const start = makeEvent({ timestamp: 2000, subtype: 'SubagentStart' })
-    const stop = makeEvent({ id: 2, timestamp: 8000, subtype: 'SubagentStop' })
+    const start = makeEvent({ timestamp: 2000, hookName: 'SubagentStart' })
+    const stop = makeEvent({ id: 2, timestamp: 8000, hookName: 'SubagentStop' })
     expect(computeRuntimeMs(start, null, [start, stop])).toBe(6000)
   })
 
   it('returns null for UserPromptSubmit with no Stop event in the turn', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
     expect(computeRuntimeMs(prompt, null, [prompt])).toBeNull()
   })
 
   it('returns null for SubagentStart with no SubagentStop in the turn', () => {
-    const start = makeEvent({ timestamp: 1000, subtype: 'SubagentStart' })
+    const start = makeEvent({ timestamp: 1000, hookName: 'SubagentStart' })
     expect(computeRuntimeMs(start, null, [start])).toBeNull()
   })
 
   it('finds UserPromptSubmit in the turn for Stop', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
-    const stop = makeEvent({ id: 2, timestamp: 4500, subtype: 'Stop' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 4500, hookName: 'Stop' })
     expect(computeRuntimeMs(stop, null, [prompt, stop])).toBe(3500)
   })
 
   it('finds UserPromptSubmit in the turn for stop_hook_summary', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
-    const stop = makeEvent({ id: 2, timestamp: 2200, subtype: 'stop_hook_summary' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
+    const stop = makeEvent({ id: 2, timestamp: 2200, hookName: 'stop_hook_summary' })
     expect(computeRuntimeMs(stop, null, [prompt, stop])).toBe(1200)
   })
 
   it('finds SubagentStart in the turn for SubagentStop', () => {
-    const start = makeEvent({ timestamp: 2000, subtype: 'SubagentStart' })
-    const stop = makeEvent({ id: 2, timestamp: 5000, subtype: 'SubagentStop' })
+    const start = makeEvent({ timestamp: 2000, hookName: 'SubagentStart' })
+    const stop = makeEvent({ id: 2, timestamp: 5000, hookName: 'SubagentStop' })
     expect(computeRuntimeMs(stop, null, [start, stop])).toBe(3000)
   })
 
   it('returns null for Stop with no UserPromptSubmit in the turn', () => {
-    const stop = makeEvent({ timestamp: 4000, subtype: 'Stop' })
+    const stop = makeEvent({ timestamp: 4000, hookName: 'Stop' })
     expect(computeRuntimeMs(stop, null, [stop])).toBeNull()
   })
 
   it('returns null for SubagentStop with no SubagentStart in the turn', () => {
-    const stop = makeEvent({ timestamp: 4000, subtype: 'SubagentStop' })
+    const stop = makeEvent({ timestamp: 4000, hookName: 'SubagentStop' })
     expect(computeRuntimeMs(stop, null, [stop])).toBeNull()
   })
 
   it('returns null for event types without a known pairing strategy', () => {
-    const session = makeEvent({ timestamp: 1000, subtype: 'SessionStart' })
+    const session = makeEvent({ timestamp: 1000, hookName: 'SessionStart' })
     expect(computeRuntimeMs(session, null, [])).toBeNull()
   })
 
   it('prefers pairedEvent over turn lookup when both would match', () => {
-    const prompt = makeEvent({ timestamp: 1000, subtype: 'UserPromptSubmit' })
+    const prompt = makeEvent({ timestamp: 1000, hookName: 'UserPromptSubmit' })
     const paired = makeEvent({ id: 2, timestamp: 1500 })
-    const stop = makeEvent({ id: 3, timestamp: 9000, subtype: 'Stop' })
+    const stop = makeEvent({ id: 3, timestamp: 9000, hookName: 'Stop' })
     expect(computeRuntimeMs(prompt, paired, [prompt, stop])).toBe(500)
   })
 })

@@ -1,5 +1,5 @@
 import type { ParsedEvent } from '@/types'
-import { deriveSubtype, deriveToolName } from '@/agents/claude-code/derivers'
+import { deriveToolName } from '@/agents/claude-code/derivers'
 
 export interface StaticFilter {
   label: string
@@ -103,7 +103,7 @@ function normalizeMcpName(name: string): string {
 export function getDynamicFilterNames(events: ParsedEvent[]): string[] {
   const names = new Set<string>()
   for (const e of events) {
-    const subtype = deriveSubtype(e)
+    const subtype = e.hookName || null
     const toolName = deriveToolName(e)
     // 1. Tool-name pills (existing behavior)
     if (subtype && DYNAMIC_SUBTYPES.has(subtype) && toolName) {
@@ -125,7 +125,7 @@ export function getFiltersWithMatches(events: ParsedEvent[]): Set<string> {
   for (const filter of STATIC_FILTERS) {
     if (matched.has(filter.label)) continue
     for (const e of events) {
-      const subtype = deriveSubtype(e)
+      const subtype = e.hookName || null
       const toolName = deriveToolName(e)
       if (filter.match && filter.match(e, subtype, toolName)) {
         matched.add(filter.label)
@@ -152,7 +152,7 @@ export function eventMatchesFilters(
   const hasStaticFilters = activeStaticLabels.length > 0
   const hasToolFilters = activeToolNames.length > 0
 
-  const subtype = deriveSubtype(event)
+  const subtype = event.hookName || null
   const toolName = deriveToolName(event)
 
   const matchesStatic =

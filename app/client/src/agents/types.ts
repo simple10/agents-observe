@@ -14,30 +14,23 @@ export type RawEvent = ParsedEvent
 export type EventStatus = 'running' | 'completed' | 'failed' | 'pending'
 
 export interface EnrichedEvent {
-  // Core fields (from raw server event)
+  // Identity (from raw server event)
   id: number
   agentId: string
-  sessionId: string
   hookName: string
   timestamp: number
-  createdAt: number
 
-  // ---- Derived fields (populated by the runtime via per-class -----------
-  // `deriveSubtype` / `deriveToolName` / `deriveStatus` hooks). These are
-  // NOT wire fields; the server returns only `hookName + payload` and the
-  // client decides what these mean per agent class. ---------------------
-  type: string
-  subtype: string | null
+  // Per-class enrichment (every agent class populates these)
   toolName: string | null
   status: EventStatus
-
-  // Agent-class enrichment
   groupId: string | null
   turnId: string | null
   displayEventStream: boolean
   displayTimeline: boolean
+  /** Short label shown on the row (e.g. "Tool", "Prompt"). */
   label: string
-  toolUseId: string | null
+  /** Tooltip for the label / icon. Defaults to `hookName` when null. */
+  labelTooltip: string | null
   icon: ComponentType | null
   iconColor: string | null
   dotColor: string | null
@@ -51,11 +44,11 @@ export interface EnrichedEvent {
   // Whether this event was processed with dedup enabled
   dedupMode: boolean
 
+  /** One-line summary text shown in the row. Universal across agent classes. */
+  summary: string
+
   // Original payload (same reference, no copy)
   payload: Record<string, unknown>
-
-  // Agent-class can stash extra fields (tool_input, cwd, etc.)
-  [key: string]: unknown
 }
 
 // ---------------------------------------------------------------------------
@@ -125,14 +118,6 @@ export interface FrameworkDataApi {
 }
 
 // ---------------------------------------------------------------------------
-// Props passed to agent-class render components
-// ---------------------------------------------------------------------------
-export interface EventProps {
-  event: EnrichedEvent
-  dataApi: FrameworkDataApi
-}
-
-// ---------------------------------------------------------------------------
 // Agent class registration
 // ---------------------------------------------------------------------------
 export interface EventColor {
@@ -141,24 +126,15 @@ export interface EventColor {
   customHex?: string
 }
 
-export interface AgentClassRegistration {
+export interface AgentClassRegistration<TEvent extends EnrichedEvent = EnrichedEvent> {
   agentClass: string
   displayName: string
   Icon: ComponentType<{ className?: string }>
 
-  processEvent(raw: RawEvent, ctx: ProcessingContext): ProcessEventResult
+  processEvent(raw: RawEvent, ctx: ProcessingContext): { event: TEvent }
 
   // ---- Per-class derivation hooks --------------------------------------
-  // These map a wire event (hookName + payload) to display fields. The
-  // runtime calls them when reshaping a `ParsedEvent` into the
-  // `EnrichedEvent` consumed by render code. They are also the bridge
-  // back to the server for endpoints that still accept legacy
-  // `type` / `subtype` filters (see `api.getEvents`).
-
-  /** Map a hookName + payload to a display "subtype" used by row
-   *  summaries and filter pills. Returns null if the event has no
-   *  canonical subtype. */
-  deriveSubtype(event: RawEvent): string | null
+  // These map a wire event (hookName + payload) to display fields.
 
   /** Map a hookName + payload to a tool name (for tool-related events).
    *  Returns null when the event doesn't reference a tool. */
@@ -171,11 +147,11 @@ export interface AgentClassRegistration {
 
   // Render-time icon/color resolvers — called per-row so live icon
   // customization propagates without a full reprocess.
-  getEventIcon(event: EnrichedEvent): ComponentType<{ className?: string }>
-  getEventColor(event: EnrichedEvent): EventColor
+  getEventIcon(event: TEvent): ComponentType<{ className?: string }>
+  getEventColor(event: TEvent): EventColor
 
   // Rendering components
-  RowSummary: ComponentType<EventProps>
-  EventDetail: ComponentType<EventProps>
-  DotTooltip: ComponentType<{ event: EnrichedEvent }>
+  RowSummary: ComponentType<{ event: TEvent; dataApi: FrameworkDataApi }>
+  EventDetail: ComponentType<{ event: TEvent; dataApi: FrameworkDataApi }>
+  DotTooltip: ComponentType<{ event: TEvent }>
 }
