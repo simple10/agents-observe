@@ -184,7 +184,9 @@ export class SqliteAdapter implements EventStore {
           updated_at INTEGER NOT NULL
         );
         INSERT INTO sessions_new (id, project_id, slug, started_at, stopped_at, transcript_path, start_cwd, metadata, last_activity, pending_notification_ts, created_at, updated_at)
-        SELECT id, project_id, slug, started_at, stopped_at, transcript_path, NULL, metadata, last_activity, pending_notification_ts, created_at, updated_at FROM sessions;
+        SELECT id, project_id, slug, started_at, stopped_at, transcript_path,
+               json_extract(metadata, '$.cwd'),
+               metadata, last_activity, pending_notification_ts, created_at, updated_at FROM sessions;
         DROP TABLE sessions;
         ALTER TABLE sessions_new RENAME TO sessions;
         COMMIT;
@@ -210,19 +212,6 @@ export class SqliteAdapter implements EventStore {
         'UPDATE sessions SET last_notification_ts = pending_notification_ts WHERE pending_notification_ts IS NOT NULL',
       )
     }
-
-    // Backfill `start_cwd` from `metadata.cwd` for rows the v2 rebuild
-    // populated with NULL. Project resolution matches new sessions to
-    // existing ones by start_cwd; without this, sessions migrated from
-    // v1 can't be picked up by the cwd-based resolver. The WHERE clause
-    // makes this a no-op once every row has a value.
-    this.db.exec(`
-      UPDATE sessions
-      SET start_cwd = json_extract(metadata, '$.cwd')
-      WHERE start_cwd IS NULL
-        AND metadata IS NOT NULL
-        AND json_extract(metadata, '$.cwd') IS NOT NULL
-    `)
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS agents (

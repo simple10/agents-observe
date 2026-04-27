@@ -282,64 +282,68 @@ describe('SqliteAdapter — sessions', () => {
     expect(session.project_id).toBeNull()
   })
 
-  test('backfills start_cwd from metadata.cwd on adapter open', async () => {
-    const tmpPath = `${tmpdir()}/agents-observe-backfill-${Date.now()}-${Math.random()}.db`
+  test('v1→v2 rebuild backfills start_cwd from metadata.cwd', async () => {
+    const tmpPath = `${tmpdir()}/agents-observe-rebuild-${Date.now()}-${Math.random()}.db`
     try {
-      const first = new SqliteAdapter(tmpPath)
-      // Bypass upsertSession (which would set start_cwd from input)
-      // to simulate a row that survived the v2 rebuild with a NULL
-      // start_cwd but a populated metadata.cwd.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(first as any).db
+      // Build a fake v1-shape sessions table directly so the constructor's
+      // table-rebuild fires (gated by sessionsHasStatus). The rebuild
+      // SELECT pulls start_cwd from json_extract(metadata, '$.cwd').
+      const Database = (await import('better-sqlite3')).default
+      const seed = new Database(tmpPath)
+      seed.exec(`
+        CREATE TABLE projects (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          slug TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          project_id INTEGER REFERENCES projects(id),
+          slug TEXT,
+          started_at INTEGER NOT NULL,
+          stopped_at INTEGER,
+          transcript_path TEXT,
+          metadata TEXT,
+          last_activity INTEGER,
+          pending_notification_ts INTEGER,
+          status TEXT,
+          event_count INTEGER,
+          agent_count INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `)
+      seed
         .prepare(
-          `INSERT INTO sessions (id, started_at, metadata, start_cwd, created_at, updated_at)
-           VALUES (?, ?, ?, NULL, ?, ?)`,
+          `INSERT INTO sessions (id, started_at, metadata, status, event_count, agent_count, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', 0, 0, ?, ?)`,
         )
-        .run('sess-legacy', 1000, JSON.stringify({ cwd: '/legacy/cwd' }), 1000, 1000)
-      // Sanity: the row really has NULL start_cwd before the next boot.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const before = (first as any).db
-        .prepare("SELECT start_cwd FROM sessions WHERE id = 'sess-legacy'")
-        .get() as { start_cwd: string | null }
-      expect(before.start_cwd).toBeNull()
-
-      // Reopen → constructor migration fires the backfill UPDATE.
-      const second = new SqliteAdapter(tmpPath)
-      const row = await second.getSessionById('sess-legacy')
-      expect(row?.start_cwd).toBe('/legacy/cwd')
-    } finally {
-      try {
-        unlinkSync(tmpPath)
-      } catch {
-        // ignore
-      }
-    }
-  })
-
-  test('start_cwd backfill leaves rows without metadata.cwd alone', async () => {
-    const tmpPath = `${tmpdir()}/agents-observe-backfill-skip-${Date.now()}-${Math.random()}.db`
-    try {
-      const first = new SqliteAdapter(tmpPath)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(first as any).db
+        .run('sess-with-cwd', 1000, JSON.stringify({ cwd: '/legacy/cwd' }), 1000, 1000)
+      seed
         .prepare(
-          `INSERT INTO sessions (id, started_at, metadata, start_cwd, created_at, updated_at)
-           VALUES (?, ?, ?, NULL, ?, ?)`,
+          `INSERT INTO sessions (id, started_at, metadata, status, event_count, agent_count, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', 0, 0, ?, ?)`,
         )
         .run('sess-no-meta', 1000, null, 1000, 1000)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(first as any).db
+      seed
         .prepare(
-          `INSERT INTO sessions (id, started_at, metadata, start_cwd, created_at, updated_at)
-           VALUES (?, ?, ?, NULL, ?, ?)`,
+          `INSERT INTO sessions (id, started_at, metadata, status, event_count, agent_count, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', 0, 0, ?, ?)`,
         )
         .run('sess-meta-no-cwd', 1000, JSON.stringify({ otherKey: 'x' }), 1000, 1000)
+      seed.close()
 
-      const second = new SqliteAdapter(tmpPath)
-      const a = await second.getSessionById('sess-no-meta')
-      const b = await second.getSessionById('sess-meta-no-cwd')
-      expect(a?.start_cwd).toBeNull()
+      // Open the adapter — constructor sees legacy columns + missing
+      // start_cwd column, fires the rebuild, populates start_cwd.
+      const store = new SqliteAdapter(tmpPath)
+      const a = await store.getSessionById('sess-with-cwd')
+      const b = await store.getSessionById('sess-no-meta')
+      const c = await store.getSessionById('sess-meta-no-cwd')
+      expect(a?.start_cwd).toBe('/legacy/cwd')
       expect(b?.start_cwd).toBeNull()
+      expect(c?.start_cwd).toBeNull()
     } finally {
       try {
         unlinkSync(tmpPath)
