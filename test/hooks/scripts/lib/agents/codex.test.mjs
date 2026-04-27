@@ -144,6 +144,31 @@ describe('codex.buildHookEvent', () => {
     expect(envelope._meta?.session?.transcriptPath).toBe('/tmp/sess.jsonl')
   })
 
+  it('preserves real Codex hook payload fields on the opaque payload', () => {
+    const { envelope } = buildHookEvent(config, makeLog(), {
+      session_id: 'cdx-sess-1',
+      hook_event_name: 'PreToolUse',
+      cwd: '/repo',
+      model: 'gpt-5.5',
+      turn_id: 'turn-1',
+      tool_name: 'Bash',
+      tool_use_id: 'tool-1',
+      tool_input: { command: 'echo codex' },
+      transcript_path: '/Users/me/.codex/sessions/2026/04/27/session.jsonl',
+    })
+    expect(envelope.agentClass).toBe('codex')
+    expect(envelope.hookName).toBe('PreToolUse')
+    expect(envelope.sessionId).toBe('cdx-sess-1')
+    expect(envelope.agentId).toBe('cdx-sess-1')
+    expect(envelope.payload.model).toBe('gpt-5.5')
+    expect(envelope.payload.turn_id).toBe('turn-1')
+    expect(envelope.payload.tool_name).toBe('Bash')
+    expect(envelope.payload.tool_use_id).toBe('tool-1')
+    expect(envelope._meta?.session?.transcriptPath).toBe(
+      '/Users/me/.codex/sessions/2026/04/27/session.jsonl',
+    )
+  })
+
   it('does not set Claude-only flags (clearsNotification, stopsSession, resolveProject)', () => {
     for (const hook_event_name of [
       'UserPromptSubmit',
@@ -174,7 +199,16 @@ describe('codex.buildHookEvent', () => {
   })
 
   describe('notificationOnEvents opt-in', () => {
-    it('default config: no events fire startsNotification (apart from "Notification")', () => {
+    it('default config: PermissionRequest fires startsNotification', () => {
+      const { envelope } = buildHookEvent(config, makeLog(), {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'cdx-1',
+      })
+      expect(envelope.flags?.startsNotification).toBe(true)
+      expect(envelope.flags?.clearsNotification).toBeUndefined()
+    })
+
+    it('default config: Stop does not fire startsNotification', () => {
       const { envelope } = buildHookEvent(config, makeLog(), {
         hook_event_name: 'Stop',
         session_id: 'cdx-1',
@@ -200,10 +234,10 @@ describe('codex.buildHookEvent', () => {
       expect(envelope.flags?.startsNotification).toBeUndefined()
     })
 
-    it('empty list suppresses startsNotification on Notification events', () => {
+    it('empty list suppresses startsNotification on PermissionRequest events', () => {
       const optOut = { ...config, notificationOnEvents: [] }
       const { envelope } = buildHookEvent(optOut, makeLog(), {
-        hook_event_name: 'Notification',
+        hook_event_name: 'PermissionRequest',
         session_id: 'cdx-1',
       })
       expect(envelope.flags?.startsNotification).toBeUndefined()

@@ -151,6 +151,46 @@ describe('observe_cli', () => {
       }
     })
 
+    it('dispatches Codex hook payloads when AGENTS_OBSERVE_AGENT_CLASS=codex', async () => {
+      const mock = mockApiHandler({
+        'POST /api/events': { status: 201, body: { ok: true } },
+      })
+      const { server, url } = await startMockServer(mock.handler)
+
+      try {
+        await runCli(['hook'], {
+          stdin: JSON.stringify({
+            session_id: 'codex-session-1',
+            hook_event_name: 'PreToolUse',
+            model: 'gpt-5.5',
+            turn_id: 'turn-1',
+            tool_name: 'Bash',
+            tool_use_id: 'tool-1',
+            tool_input: { command: 'echo codex' },
+          }),
+          env: {
+            AGENTS_OBSERVE_API_BASE_URL: `${url}/api`,
+            AGENTS_OBSERVE_AGENT_CLASS: 'codex',
+            AGENTS_OBSERVE_PROJECT_SLUG: 'codex-project',
+          },
+        })
+        await new Promise((r) => setTimeout(r, 200))
+        const eventReq = mock.received.find((r) => r.url === '/api/events')
+        const parsed = JSON.parse(eventReq.body)
+        expect(parsed.agentClass).toBe('codex')
+        expect(parsed.hookName).toBe('PreToolUse')
+        expect(parsed.sessionId).toBe('codex-session-1')
+        expect(parsed.agentId).toBe('codex-session-1')
+        expect(parsed.payload.model).toBe('gpt-5.5')
+        expect(parsed.payload.turn_id).toBe('turn-1')
+        expect(parsed.payload.tool_name).toBe('Bash')
+        expect(parsed.payload.tool_use_id).toBe('tool-1')
+        expect(parsed._meta.project.slug).toBe('codex-project')
+      } finally {
+        server.close()
+      }
+    })
+
     it('sets flags.clearsNotification on UserPromptSubmit events', async () => {
       const mock = mockApiHandler({
         'POST /api/events': { status: 201, body: { ok: true } },

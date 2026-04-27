@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS=Stop bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\"",
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\"",
             "statusMessage": "Starting Agents Observe"
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS=Stop bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
           }
         ]
       }
@@ -29,7 +29,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS=Stop bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
           }
         ]
       }
@@ -39,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS=Stop bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
           }
         ]
       }
@@ -49,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS=Stop bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
+            "command": "AGENTS_OBSERVE_LOG_LEVEL=trace AGENTS_OBSERVE_AGENT_CLASS=codex bash \"$(git rev-parse --show-toplevel)/hooks/scripts/hook.sh\""
           }
         ]
       }

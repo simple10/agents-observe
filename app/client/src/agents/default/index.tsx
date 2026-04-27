@@ -24,8 +24,14 @@ function deriveStatus(_event: RawEvent, _grouped: RawEvent[]): EventStatus | nul
 }
 
 export function processEvent(raw: RawEvent, ctx: ProcessingContext): { event: EnrichedEvent } {
-  const turnId = ctx.getCurrentTurn(raw.agentId)
-  const payloadToolUseId = (raw.payload as Record<string, unknown>).tool_use_id
+  const payload = raw.payload as Record<string, unknown>
+  const payloadTurnId = payload.turn_id
+  const turnId = typeof payloadTurnId === 'string' ? payloadTurnId : ctx.getCurrentTurn(raw.agentId)
+  // Some agent classes carry tool_use_id on the payload under that exact
+  // key; the default processor surfaces it as the groupId for Pre/Post
+  // pairing. Reads from payload rather than a top-level field because the
+  // server no longer promotes tool_use_id to a column.
+  const payloadToolUseId = payload.tool_use_id
   const toolUseId = typeof payloadToolUseId === 'string' ? payloadToolUseId : null
 
   const toolName = deriveToolName(raw)

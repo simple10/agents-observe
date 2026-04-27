@@ -1,11 +1,19 @@
 // hooks/scripts/lib/agents/codex.mjs
-// Codex hook lib. Composes default.mjs and overrides agentClass only —
-// Codex hook payloads use the same identity-field shape as Claude
-// (session_id, agent_id, hook_event_name, cwd, transcript_path), so the
-// default lib's extraction works without further overrides.
+// Codex hook lib. Composes default.mjs, overrides agentClass, and uses
+// PermissionRequest as Codex's default notification event. Codex hook
+// payloads use the same identity-field shape as Claude (session_id,
+// agent_id, hook_event_name, cwd, transcript_path), so the default lib's
+// extraction works without further overrides.
 
 import { readFileSync } from 'node:fs'
 import { defaultLib } from './default.mjs'
+
+const CODEX_DEFAULT_NOTIFICATION_EVENTS = ['PermissionRequest']
+
+function codexNotificationConfig(config) {
+  if (config?.notificationOnEvents !== undefined) return config
+  return { ...config, notificationOnEvents: CODEX_DEFAULT_NOTIFICATION_EVENTS }
+}
 
 export function buildEnv(config) {
   return defaultLib.buildEnv(config)
@@ -14,11 +22,13 @@ export function buildEnv(config) {
 /**
  * Build the event envelope for a Codex hook payload.
  *
- * Codex does NOT have Claude's UserPromptSubmit/SessionEnd hooks, so we
- * never set flags.clearsNotification or flags.stopsSession. Notification
- * opt-in is handled by the default lib via
- * AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS. If future Codex versions add
- * equivalent semantic events, set the flags here.
+ * Notification semantics: Codex's PermissionRequest is the point where
+ * the agent is blocked on user approval, so it is the default dashboard
+ * notification event. Users can override this with
+ * AGENTS_OBSERVE_NOTIFICATION_ON_EVENTS.
+ *
+ * Codex does not have Claude's UserPromptSubmit/SessionEnd hooks, so this
+ * adapter does not set flags.clearsNotification or flags.stopsSession.
  *
  * @param {object} config
  * @param {object} log
@@ -26,7 +36,7 @@ export function buildEnv(config) {
  * @returns {{ envelope: object, hookEvent: string, toolName: string }}
  */
 export function buildHookEvent(config, log, payload) {
-  const result = defaultLib.buildHookEvent(config, log, payload)
+  const result = defaultLib.buildHookEvent(codexNotificationConfig(config), log, payload)
   result.envelope.agentClass = 'codex'
   return result
 }
