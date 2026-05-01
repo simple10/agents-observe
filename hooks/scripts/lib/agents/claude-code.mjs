@@ -114,7 +114,7 @@ export function getSessionUsage(args, { log }) {
     } catch {
       continue
     }
-    const usage = entry?.usage
+    const usage = entry?.message?.usage ?? entry?.usage
     if (!usage || typeof usage !== 'object') continue
 
     input += usage.input_tokens ?? 0
