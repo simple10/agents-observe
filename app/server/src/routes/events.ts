@@ -168,6 +168,22 @@ router.post('/events', async (c) => {
       })
     }
 
+    // Request token usage extraction when the session ends and we have
+    // a transcript path. The hook reads the transcript JSONL, sums all
+    // assistant message usage blocks, and POSTs the totals back.
+    const transcriptPath =
+      envelope._meta?.session?.transcriptPath ?? sessionAfter?.transcript_path ?? null
+    if (flags.stopsSession && transcriptPath) {
+      requests.push({
+        name: 'getSessionUsage',
+        callback: `/api/callbacks/session-usage/${encodeURIComponent(envelope.sessionId)}`,
+        args: {
+          transcriptPath,
+          agentClass: envelope.agentClass,
+        },
+      })
+    }
+
     // ---- Step 8: broadcast ------------------------------------------------
     const event: ParsedEvent = {
       id: eventId,

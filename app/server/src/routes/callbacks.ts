@@ -113,4 +113,55 @@ router.post('/callbacks/session-info/:sessionId', async (c) => {
   }
 })
 
+interface SessionUsagePayload {
+  input?: number
+  output?: number
+  cacheRead?: number
+  cacheCreation?: number
+  agentClass?: string | null
+  cwd?: string | null
+}
+
+// POST /callbacks/session-usage/:sessionId
+//
+// Called by the hook after reading the transcript on SessionEnd.
+// Patches the session's metadata with root agent token usage totals.
+router.post('/callbacks/session-usage/:sessionId', async (c) => {
+  const store = c.get('store')
+  const broadcastToAll = c.get('broadcastToAll')
+
+  try {
+    const sessionId = decodeURIComponent(c.req.param('sessionId'))
+    const data = (await c.req.json()) as SessionUsagePayload
+
+    const input = typeof data.input === 'number' ? data.input : 0
+    const output = typeof data.output === 'number' ? data.output : 0
+    const cacheRead = typeof data.cacheRead === 'number' ? data.cacheRead : 0
+    const cacheCreation = typeof data.cacheCreation === 'number' ? data.cacheCreation : 0
+
+    if (input === 0 && output === 0) {
+      return apiError(c, 400, 'No usage data provided')
+    }
+
+    await store.patchSessionMetadata(sessionId, {
+      usage: { input, output, cacheRead, cacheCreation },
+    })
+
+    broadcastToAll({
+      type: 'session_update',
+      data: { id: sessionId, metadata: { usage: { input, output, cacheRead, cacheCreation } } },
+    })
+
+    if (LOG_LEVEL === 'debug') {
+      console.log(
+        `[CALLBACK] Session ${sessionId.slice(0, 8)} usage: in=${input} out=${output} cacheRead=${cacheRead} cacheCreation=${cacheCreation}`,
+      )
+    }
+
+    return c.json({ ok: true })
+  } catch {
+    return apiError(c, 400, 'Invalid request')
+  }
+})
+
 export default router

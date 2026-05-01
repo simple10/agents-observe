@@ -68,6 +68,73 @@ export function buildHookEvent(config, log, payload) {
  * @param {object} ctx
  * @param {object} ctx.log Logger with debug/warn/etc.
  */
+/**
+ * Scan a Claude Code transcript jsonl for cumulative token usage.
+ * Each assistant message includes a `usage` block with input_tokens,
+ * output_tokens, cache_read_input_tokens, cache_creation_input_tokens.
+ * We sum all of them to produce the root agent's total token consumption.
+ *
+ * @param {object} args
+ * @param {string} [args.transcriptPath] Absolute path to the jsonl transcript.
+ * @param {string} [args.transcript_path] Snake-case alias.
+ * @param {object} ctx
+ * @param {object} ctx.log Logger.
+ */
+export function getSessionUsage(args, { log }) {
+  const transcriptPath = args?.transcriptPath ?? args?.transcript_path
+  if (!transcriptPath) {
+    log.debug('claude-code.getSessionUsage: no transcriptPath provided')
+    return null
+  }
+
+  let content
+  try {
+    content = readFileSync(transcriptPath, 'utf8')
+  } catch (err) {
+    log.warn(`claude-code.getSessionUsage: cannot read transcript ${transcriptPath}: ${err.message}`)
+    return null
+  }
+
+  let input = 0
+  let output = 0
+  let cacheRead = 0
+  let cacheCreation = 0
+
+  let pos = 0
+  while (pos < content.length) {
+    const nextNewline = content.indexOf('\n', pos)
+    const end = nextNewline === -1 ? content.length : nextNewline
+    const line = content.slice(pos, end).trim()
+    pos = end + 1
+    if (!line || !line.includes('"usage"')) continue
+
+    let entry
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const usage = entry?.usage
+    if (!usage || typeof usage !== 'object') continue
+
+    input += usage.input_tokens ?? 0
+    output += usage.output_tokens ?? 0
+    cacheRead += usage.cache_read_input_tokens ?? 0
+    cacheCreation += usage.cache_creation_input_tokens ?? 0
+  }
+
+  if (input === 0 && output === 0) {
+    log.debug(`claude-code.getSessionUsage: no usage data in ${transcriptPath}`)
+    return null
+  }
+
+  log.debug(
+    `claude-code.getSessionUsage: input=${input} output=${output} cacheRead=${cacheRead} cacheCreation=${cacheCreation}`,
+  )
+
+  return { input, output, cacheRead, cacheCreation }
+}
+
 export function getSessionInfo(args, { log }) {
   const transcriptPath = args?.transcriptPath ?? args?.transcript_path
   if (!transcriptPath) {

@@ -2,7 +2,7 @@ import { postJson } from './http.mjs'
 import { AGENT_LIBS } from './agents/index.mjs'
 
 /* Array of all available callbacks */
-export const ALL_CALLBACK_HANDLERS = ['getSessionInfo']
+export const ALL_CALLBACK_HANDLERS = ['getSessionInfo', 'getSessionUsage']
 
 /* Callbacks are functions invoked by the server via requests in API server response */
 const callbackHandlers = {
@@ -26,6 +26,18 @@ const callbackHandlers = {
       return null
     }
     return agent.getSessionInfo(args, ctx)
+  },
+
+  getSessionUsage(args, ctx) {
+    const agentClass = args.agentClass
+    const agent = agentClass ? AGENT_LIBS[agentClass] : null
+    if (!agent || typeof agent.getSessionUsage !== 'function') {
+      ctx.log.debug(
+        `getSessionUsage: no agent handler for agentClass="${agentClass ?? ''}"; skipping`,
+      )
+      return null
+    }
+    return agent.getSessionUsage(args, ctx)
   },
 }
 

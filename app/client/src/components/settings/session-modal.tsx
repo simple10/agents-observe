@@ -483,6 +483,13 @@ interface AgentTokenUsage {
   } | null
 }
 
+interface RootAgentUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheCreation: number
+}
+
 interface SessionStatsData {
   duration: string
   totalEvents: number
@@ -499,9 +506,14 @@ interface SessionStatsData {
   turns: number
   agentUsage: AgentTokenUsage[]
   totalTokens: { input: number; output: number; cacheRead: number; cacheCreation: number }
+  rootUsage: RootAgentUsage | null
+  combinedTokens: { input: number; output: number; cacheRead: number; cacheCreation: number }
 }
 
-function computeStats(events: ParsedEvent[]): SessionStatsData {
+function computeStats(
+  events: ParsedEvent[],
+  sessionMetadata?: Record<string, unknown> | null,
+): SessionStatsData {
   let toolCalls = 0
   let subagentsSpawned = 0
   let userPrompts = 0
@@ -662,6 +674,27 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
     .slice(0, 8)
     .map(([name, count]) => ({ name, count }))
 
+  // Root agent usage from session metadata (populated by getSessionUsage callback)
+  const metaUsage = sessionMetadata?.usage as
+    | { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
+    | undefined
+  const rootUsage: RootAgentUsage | null =
+    metaUsage && (metaUsage.input || metaUsage.output)
+      ? {
+          input: metaUsage.input ?? 0,
+          output: metaUsage.output ?? 0,
+          cacheRead: metaUsage.cacheRead ?? 0,
+          cacheCreation: metaUsage.cacheCreation ?? 0,
+        }
+      : null
+
+  const combinedTokens = {
+    input: totalTokens.input + (rootUsage?.input ?? 0),
+    output: totalTokens.output + (rootUsage?.output ?? 0),
+    cacheRead: totalTokens.cacheRead + (rootUsage?.cacheRead ?? 0),
+    cacheCreation: totalTokens.cacheCreation + (rootUsage?.cacheCreation ?? 0),
+  }
+
   return {
     duration,
     totalEvents: events.length,
@@ -678,6 +711,8 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
     turns,
     agentUsage,
     totalTokens,
+    rootUsage,
+    combinedTokens,
   }
 }
 
@@ -697,6 +732,14 @@ function SessionStats({ sessionId }: { sessionId: string }) {
   const setEditingSessionId = useUIStore((s) => s.setEditingSessionId)
   const setScrollToEventId = useUIStore((s) => s.setScrollToEventId)
 
+  const { data: session } = useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: () => api.getSession(sessionId),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  })
+
   // Stats is a point-in-time snapshot — no benefit to refetching while
   // the user looks at numbers that won't change on this view. gcTime:0
   // mirrors useEvents' deliberate "drop large payloads as soon as
@@ -713,7 +756,10 @@ function SessionStats({ sessionId }: { sessionId: string }) {
   const agents = useAgents(sessionId, events)
   const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
 
-  const stats = useMemo(() => (events ? computeStats(events) : null), [events])
+  const stats = useMemo(
+    () => (events ? computeStats(events, session?.metadata) : null),
+    [events, session?.metadata],
+  )
 
   // Find first event for an agent (for scroll-to on click)
   const scrollToAgent = (agentId: string) => {
@@ -803,41 +849,83 @@ function SessionStats({ sessionId }: { sessionId: string }) {
       )}
 
       {/* Token usage */}
-      {(stats.totalTokens.input > 0 || stats.totalTokens.output > 0) && (
+      {(stats.combinedTokens.input > 0 ||
+        stats.combinedTokens.output > 0 ||
+        stats.combinedTokens.cacheRead > 0) && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
-            Token Usage (Subagents)
+            Token Usage
           </div>
           <div className="grid grid-cols-3 gap-3 mb-3">
             <StatCard
               label="Total Input"
               value={formatTokens(
-                stats.totalTokens.input +
-                  stats.totalTokens.cacheRead +
-                  stats.totalTokens.cacheCreation,
+                stats.combinedTokens.input +
+                  stats.combinedTokens.cacheRead +
+                  stats.combinedTokens.cacheCreation,
               )}
             />
-            <StatCard label="Total Output" value={formatTokens(stats.totalTokens.output)} />
+            <StatCard label="Total Output" value={formatTokens(stats.combinedTokens.output)} />
             <StatCard
               label="Cache Hit Rate"
               value={
-                stats.totalTokens.input +
-                  stats.totalTokens.cacheRead +
-                  stats.totalTokens.cacheCreation >
+                stats.combinedTokens.input +
+                  stats.combinedTokens.cacheRead +
+                  stats.combinedTokens.cacheCreation >
                 0
                   ? `${Math.round(
-                      (stats.totalTokens.cacheRead /
-                        (stats.totalTokens.input +
-                          stats.totalTokens.cacheRead +
-                          stats.totalTokens.cacheCreation)) *
+                      (stats.combinedTokens.cacheRead /
+                        (stats.combinedTokens.input +
+                          stats.combinedTokens.cacheRead +
+                          stats.combinedTokens.cacheCreation)) *
                         100,
                     )}%`
                   : '—'
               }
             />
           </div>
+
+          {/* Root agent row */}
+          {stats.rootUsage && (
+            <div className="mb-2">
+              <div className="text-[10px] text-muted-foreground/60 mb-1">Root Agent</div>
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard
+                  label="Input"
+                  value={formatTokens(
+                    stats.rootUsage.input +
+                      stats.rootUsage.cacheRead +
+                      stats.rootUsage.cacheCreation,
+                  )}
+                />
+                <StatCard label="Output" value={formatTokens(stats.rootUsage.output)} />
+                <StatCard
+                  label="Cache Hit"
+                  value={
+                    stats.rootUsage.input +
+                      stats.rootUsage.cacheRead +
+                      stats.rootUsage.cacheCreation >
+                    0
+                      ? `${Math.round(
+                          (stats.rootUsage.cacheRead /
+                            (stats.rootUsage.input +
+                              stats.rootUsage.cacheRead +
+                              stats.rootUsage.cacheCreation)) *
+                            100,
+                        )}%`
+                      : '—'
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Subagent table */}
           {stats.agentUsage.length > 0 && (
             <TooltipProvider>
+              {stats.rootUsage && (
+                <div className="text-[10px] text-muted-foreground/60 mb-1">Subagents</div>
+              )}
               <div className="rounded-md border border-border/50 overflow-hidden">
                 <table className="w-full text-[10px]">
                   <thead>
@@ -901,6 +989,13 @@ function SessionStats({ sessionId }: { sessionId: string }) {
                 </table>
               </div>
             </TooltipProvider>
+          )}
+
+          {/* No data hint for active sessions */}
+          {!stats.rootUsage && stats.agentUsage.length === 0 && (
+            <div className="text-[10px] text-muted-foreground/60 italic">
+              Root agent token usage is captured when the session ends.
+            </div>
           )}
         </div>
       )}
