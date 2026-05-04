@@ -99,6 +99,15 @@ export async function resolveProject(
     })
     if (sibling) return sibling.projectId
 
+    // Worktree-aware match against an EXISTING project. Match-only —
+    // never creates from the walk-up candidate, so unrelated ancestor
+    // dirs (e.g. `Development`, `joe`) cannot become projects.
+    const worktreeSlug = findExistingWorktreeProjectSlug(input.startCwd)
+    if (worktreeSlug) {
+      const existing = await store.getProjectBySlug(worktreeSlug)
+      if (existing) return existing.id
+    }
+
     const slugSource = input.startCwd ?? transcriptBasedir
     if (slugSource) {
       const slug = deriveSlugFromPath(slugSource)

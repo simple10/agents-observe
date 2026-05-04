@@ -203,6 +203,46 @@ describe('resolveProject', () => {
     })
     expect(result).toBe(first.id)
   })
+
+  test('flags.resolveProject — worktree path joins existing parent project', async () => {
+    const proj = await store.findOrCreateProjectBySlug('my-app')
+    const result = await resolveProject(store, {
+      sessionId: 'wt-sess',
+      flags: { resolveProject: true },
+      currentProjectId: null,
+      startCwd: '/Users/joe/dev/my-app/.worktrees/feat-foo',
+      transcriptPath: null,
+    })
+    expect(result).toBe(proj.id)
+    // The worktree-branch slug must NOT have been auto-created.
+    const featProj = await store.getProjectBySlug('feat-foo')
+    expect(featProj).toBeNull()
+  })
+
+  test('flags.resolveProject — .claude/worktrees variant joins existing parent', async () => {
+    const proj = await store.findOrCreateProjectBySlug('my-app')
+    const result = await resolveProject(store, {
+      sessionId: 'wt-sess',
+      flags: { resolveProject: true },
+      currentProjectId: null,
+      startCwd: '/Users/joe/dev/my-app/.claude/worktrees/feat-foo',
+      transcriptPath: null,
+    })
+    expect(result).toBe(proj.id)
+  })
+
+  test('flags.resolveProject — worktree path with no matching parent project creates branch-name project (regression guard)', async () => {
+    const result = await resolveProject(store, {
+      sessionId: 'wt-sess',
+      flags: { resolveProject: true },
+      currentProjectId: null,
+      startCwd: '/Users/joe/dev/my-app/.worktrees/feat-foo',
+      transcriptPath: null,
+    })
+    expect(result).not.toBeNull()
+    const proj = await store.getProjectById(result!)
+    expect(proj.slug).toBe('feat-foo')
+  })
 })
 
 describe('findExistingWorktreeProjectSlug', () => {
