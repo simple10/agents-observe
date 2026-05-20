@@ -1538,10 +1538,41 @@ describe('filters', () => {
     expect(all?.kind).toBe('default')
     expect(all?.enabled).toBe(true)
     expect(all?.combinator).toBe('and')
-    expect(all?.patterns).toEqual([
-      { target: 'hook', regex: '^PostToolBatch$', negate: true },
-    ])
+    expect(all?.patterns).toEqual([{ target: 'hook', regex: '^PostToolBatch$', negate: true }])
     expect(all?.config).toEqual({ role: 'all-exclusions' })
+  })
+
+  test('init backfills missing seed defaults on upgrade without touching existing rows', async () => {
+    // Simulate the upgrade scenario: an installation already has the
+    // filters table populated, but a new release adds a seed (default-all)
+    // that's missing. The init pass must insert the missing seed without
+    // disturbing user customizations to other defaults.
+    const adapter = new SqliteAdapter(':memory:')
+    await adapter.seedDefaultFilters()
+
+    // User customizes an existing default.
+    await adapter.updateFilter('default-tools', { name: 'My Tools', enabled: false })
+
+    // Delete default-all to mimic the pre-upgrade state.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;((adapter as any).db as { prepare: (s: string) => { run: (...a: unknown[]) => void } })
+      .prepare("DELETE FROM filters WHERE id = 'default-all'")
+      .run()
+    expect(await adapter.getFilterById('default-all')).toBeNull()
+
+    // Run the upgrade hook: install only missing seeds.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).installMissingSeedDefaults()
+
+    // default-all is now present.
+    const all = await adapter.getFilterById('default-all')
+    expect(all).not.toBeNull()
+    expect(all?.name).toBe('All')
+
+    // The user's customization on default-tools is preserved.
+    const tools = await adapter.getFilterById('default-tools')
+    expect(tools?.name).toBe('My Tools')
+    expect(tools?.enabled).toBe(false)
   })
 
   test('resetDefaultFilters reapplies seed content but preserves enabled', async () => {

@@ -400,6 +400,11 @@ export class SqliteAdapter implements EventStore {
         )
       `)
       this.runSeedDefaults()
+    } else {
+      // Existing installations: backfill seeds added in newer releases.
+      // Purely additive — never updates an existing row, so user
+      // customizations to defaults are preserved.
+      this.installMissingSeedDefaults()
     }
 
     // Create indexes
@@ -987,6 +992,35 @@ export class SqliteAdapter implements EventStore {
 
   async seedDefaultFilters(): Promise<void> {
     this.runSeedDefaults()
+  }
+
+  // Insert any SEED_FILTERS rows whose id isn't already in the filters
+  // table. Used during init on existing installs so a new release that
+  // adds a default (e.g. `default-all`) lands without disturbing rows
+  // the user has already customized. Never updates existing rows.
+  private installMissingSeedDefaults(): void {
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO filters
+       (id, name, pill_name, display, combinator, patterns, kind, enabled, config, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'default', 1, ?, ?, ?)`,
+    )
+    const now = Date.now()
+    const tx = this.db.transaction(() => {
+      for (const s of SEED_FILTERS) {
+        insert.run(
+          s.id,
+          s.name,
+          s.pillName,
+          s.display,
+          s.combinator,
+          JSON.stringify(s.patterns),
+          JSON.stringify(s.config ?? {}),
+          now,
+          now,
+        )
+      }
+    })
+    tx()
   }
 
   async resetDefaultFilters(): Promise<Filter[]> {

@@ -171,9 +171,11 @@ New tests:
 
 ## Migration
 
-No DB migration is required — the seed-filters logic handles inserts idempotently on container start.
+No DB schema change. But the existing `runSeedDefaults()` only fires when the `filters` table is being created for the first time — by design, so that user-customized defaults aren't overwritten on every boot. That means a brand-new default like `default-all` would never land for users who already have a filters table.
 
-For users with existing data, the first restart after this change inserts the `default-all` row. Subsequent restarts preserve any customizations they make to its patterns. Existing `PostToolBatch` events already in the database immediately disappear from the timeline and event stream the next time the client reprocesses (which happens on filter compile change, triggered by the WebSocket `filter:created` broadcast).
+The fix is a new `installMissingSeedDefaults()` pass that runs on every init when the table already exists. It uses `INSERT OR IGNORE` so it only adds rows whose `id` isn't already present; existing rows (including user customizations to other defaults) are untouched. This is purely additive — any new seed added in a future release will likewise land automatically on the next boot without disturbing anything else.
+
+Existing `PostToolBatch` events already in the database immediately disappear from the timeline and event stream the next time the client reprocesses (which happens on filter compile change, triggered by the WebSocket `filter:created` broadcast).
 
 ## Open questions
 
