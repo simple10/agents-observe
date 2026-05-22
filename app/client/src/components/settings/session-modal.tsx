@@ -33,6 +33,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { MoveSessionModal } from './project-modal'
+import { TokenUsageCard } from './token-usage-card'
 import { AgentLabel } from '@/components/shared/agent-label'
 import { buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
 import { useAgents } from '@/hooks/use-agents'
@@ -911,6 +912,11 @@ function SessionStats({ sessionId }: { sessionId: string }) {
           )}
         </div>
       )}
+
+      {/* Main-agent token stats from the on-disk transcript jsonl.
+          Opt-in via AGENTS_OBSERVE_TRANSCRIPT_STATS=1 on the server;
+          renders an informative disabled message otherwise. */}
+      <TokenUsageCard sessionId={sessionId} />
     </div>
   )
 }
