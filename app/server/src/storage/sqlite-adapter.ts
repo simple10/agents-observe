@@ -843,6 +843,13 @@ export class SqliteAdapter implements EventStore {
     )
   }
 
+  async getSessionTranscriptPath(sessionId: string): Promise<string | null> {
+    const row = this.db
+      .prepare(`SELECT transcript_path FROM sessions WHERE id = ?`)
+      .get(sessionId) as { transcript_path: string | null } | undefined
+    return row?.transcript_path ?? null
+  }
+
   async getAgentById(agentId: string): Promise<any | null> {
     return this.db.prepare(`SELECT * FROM agents WHERE id = ?`).get(agentId) || null
   }

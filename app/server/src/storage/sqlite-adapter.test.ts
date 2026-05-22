@@ -235,6 +235,25 @@ describe('SqliteAdapter — sessions', () => {
     expect(session).toBeNull()
   })
 
+  test('getSessionTranscriptPath returns the transcript_path column or null', async () => {
+    const projId = await store.createProject('proj-tp', 'P')
+    await store.upsertSession(
+      'sess-with-tp',
+      projId,
+      null,
+      null,
+      1000,
+      '/Users/test/.claude/projects/proj/sess-with-tp.jsonl',
+    )
+    await store.upsertSession('sess-no-tp', projId, null, null, 1000, null)
+
+    expect(await store.getSessionTranscriptPath('sess-with-tp')).toBe(
+      '/Users/test/.claude/projects/proj/sess-with-tp.jsonl',
+    )
+    expect(await store.getSessionTranscriptPath('sess-no-tp')).toBeNull()
+    expect(await store.getSessionTranscriptPath('nonexistent')).toBeNull()
+  })
+
   test('updateSessionStatus("stopped") sets stopped_at', async () => {
     const projId = await store.createProject('proj1', 'Project 1')
     await store.upsertSession('sess1', projId, null, null, 1000)
