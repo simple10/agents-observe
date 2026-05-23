@@ -730,7 +730,14 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.round(ms / 60_000)}m`
+  if (ms < 3_600_000) {
+    const m = Math.floor(ms / 60_000)
+    const s = Math.round((ms % 60_000) / 1000)
+    return s === 0 ? `${m}m` : `${m}m ${s}s`
+  }
+  const h = Math.floor(ms / 3_600_000)
+  const m = Math.round((ms % 3_600_000) / 60_000)
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 function SessionStats({ sessionId }: { sessionId: string }) {
@@ -879,7 +886,7 @@ function SessionStats({ sessionId }: { sessionId: string }) {
               className="text-right font-normal py-1.5 px-2 border-l border-border/30"
               colSpan={3}
             >
-              <span className="text-[9px] uppercase tracking-wide">Duration (ms)</span>
+              <span className="text-[9px] uppercase tracking-wide">Duration</span>
             </th>
           </tr>
           <tr className="text-muted-foreground/70 border-b border-border">
@@ -909,13 +916,13 @@ function SessionStats({ sessionId }: { sessionId: string }) {
                 </td>
                 <td className="py-1 px-2 text-right text-muted-foreground">{t.count}</td>
                 <td className="py-1 px-2 text-right text-muted-foreground border-l border-border/30">
-                  {t.minMs == null ? '—' : t.minMs.toLocaleString()}
+                  {t.minMs == null ? '—' : formatDuration(t.minMs)}
                 </td>
                 <td className="py-1 px-2 text-right text-muted-foreground">
-                  {t.medianMs == null ? '—' : t.medianMs.toLocaleString()}
+                  {t.medianMs == null ? '—' : formatDuration(t.medianMs)}
                 </td>
                 <td className="py-1 px-2 text-right text-muted-foreground">
-                  {t.maxMs == null ? '—' : t.maxMs.toLocaleString()}
+                  {t.maxMs == null ? '—' : formatDuration(t.maxMs)}
                 </td>
               </tr>
             )
