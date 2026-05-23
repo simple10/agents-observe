@@ -64,7 +64,7 @@ export function SortableTable<T>({ rows, columns, defaultSort }: SortableTablePr
                 key={col.key}
                 onClick={() => onHeaderClick(col)}
                 className={cn(
-                  'font-normal py-1.5 px-2 cursor-pointer select-none',
+                  'font-normal py-1.5 px-2 cursor-pointer select-none whitespace-nowrap',
                   col.align === 'right' && 'text-right',
                   isActive && 'text-amber-500',
                   col.className,

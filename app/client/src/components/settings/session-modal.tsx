@@ -891,11 +891,11 @@ function SessionStats({ sessionId }: { sessionId: string }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-muted-foreground border-b border-border">
-            <th className="text-left font-normal py-1.5 px-2">Tool</th>
-            <th className="text-left font-normal py-1.5 px-2 w-2/5">Graph</th>
-            <th className="text-right font-normal py-1.5 px-2">Count</th>
+            <th className="text-left font-normal py-1.5 px-2 whitespace-nowrap">Tool</th>
+            <th className="text-left font-normal py-1.5 px-2 w-2/5 whitespace-nowrap">Graph</th>
+            <th className="text-right font-normal py-1.5 px-2 whitespace-nowrap">Count</th>
             <th
-              className="text-right font-normal py-1.5 px-2 border-l border-border/30"
+              className="text-right font-normal py-1.5 px-2 border-l border-border/30 whitespace-nowrap"
               colSpan={3}
             >
               <span className="text-[9px] uppercase tracking-wide">Duration</span>

@@ -4,12 +4,19 @@ import {
   api,
   type TranscriptStatsErrorCode,
   type TranscriptStatsByModel,
+  type TranscriptStatsModelPricing,
   type TranscriptStatsPrompt,
 } from '@/lib/api-client'
 import { AgentLabel } from '@/components/shared/agent-label'
 import { getAgentColorById, buildAgentColorMap } from '@/lib/agent-utils'
 import type { Agent } from '@/types'
 import { useMemo } from 'react'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from '@/components/ui/tooltip'
 import { ModelBadge } from './model-badge'
 import { SortableTable, type SortableColumn } from './sortable-table'
 
@@ -23,6 +30,125 @@ function fmtCents(c: number | null): string {
 function fmtPct(r: number): string {
   return `${(r * 100).toFixed(1)}%`
 }
+function fmtUsd(n: number, decimals = 4): string {
+  return `$${n.toFixed(decimals)}`
+}
+
+/**
+ * Tooltip-wrapped cost cell that, when present pricing + breakdown,
+ * shows a mini table of the cost calculation:
+ *   line item  ×  rate  =  $X.XXXX
+ *
+ * Falls back to the bare cost string (clickable cursor: help) when
+ * pricing isn't known. Pass `inputTokens` as the BUNDLED input
+ * (server returns it that way) — fresh = bundled - cacheRead - cacheWrite.
+ */
+function CostCell({
+  costCents,
+  pricing,
+  inputTokens,
+  outputTokens,
+  cacheReadTokens,
+  cacheCreate5mTokens,
+  cacheCreate1hTokens,
+}: {
+  costCents: number | null
+  pricing: TranscriptStatsModelPricing | null
+  /** Bundled input (fresh + cache_read + cache_write). */
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreate5mTokens: number
+  cacheCreate1hTokens: number
+}) {
+  if (costCents == null || !pricing) {
+    return <span className="text-amber-500">{fmtCents(costCents)}</span>
+  }
+  const fresh = Math.max(
+    0,
+    inputTokens - cacheReadTokens - cacheCreate5mTokens - cacheCreate1hTokens,
+  )
+  const lines: Array<{ label: string; tokens: number; rate: number; cost: number }> = [
+    {
+      label: 'Input',
+      tokens: fresh,
+      rate: pricing.inputPerM,
+      cost: (fresh * pricing.inputPerM) / 1_000_000,
+    },
+    {
+      label: 'Output',
+      tokens: outputTokens,
+      rate: pricing.outputPerM,
+      cost: (outputTokens * pricing.outputPerM) / 1_000_000,
+    },
+    {
+      label: 'Cache read',
+      tokens: cacheReadTokens,
+      rate: pricing.cacheReadPerM,
+      cost: (cacheReadTokens * pricing.cacheReadPerM) / 1_000_000,
+    },
+    {
+      label: 'Cache write (5m)',
+      tokens: cacheCreate5mTokens,
+      rate: pricing.cacheCreate5mPerM,
+      cost: (cacheCreate5mTokens * pricing.cacheCreate5mPerM) / 1_000_000,
+    },
+    {
+      label: 'Cache write (1h)',
+      tokens: cacheCreate1hTokens,
+      rate: pricing.cacheCreate1hPerM,
+      cost: (cacheCreate1hTokens * pricing.cacheCreate1hPerM) / 1_000_000,
+    },
+  ]
+  const total = costCents / 100
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-amber-500 cursor-help">{fmtCents(costCents)}</span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="left"
+          align="start"
+          className="!bg-popover !text-popover-foreground border border-border max-w-md p-3 shadow-md"
+        >
+          <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1.5">
+            Cost breakdown
+          </div>
+          <table className="w-full font-mono text-[11px]">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="text-left font-normal pb-1">Item</th>
+                <th className="text-right font-normal pb-1 pl-3">Tokens</th>
+                <th className="text-right font-normal pb-1 pl-3">Rate</th>
+                <th className="text-right font-normal pb-1 pl-3">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.label}>
+                  <td className="py-0.5 text-muted-foreground">{l.label}</td>
+                  <td className="py-0.5 text-right">{l.tokens.toLocaleString()}</td>
+                  <td className="py-0.5 text-right text-muted-foreground">
+                    ${l.rate.toFixed(2)}/M
+                  </td>
+                  <td className="py-0.5 text-right">{fmtUsd(l.cost)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-border/40">
+                <td className="pt-1.5 text-muted-foreground uppercase text-[9px]" colSpan={3}>
+                  Total
+                </td>
+                <td className="pt-1.5 text-right text-amber-500 font-medium">{fmtUsd(total, 2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function fmtMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(0)}s`
@@ -219,7 +345,17 @@ export function TokenUsageSection({
       label: 'Est Cost',
       sortType: 'number',
       align: 'right',
-      render: (r) => <span className="text-amber-500">{fmtCents(r.costCents)}</span>,
+      render: (r) => (
+        <CostCell
+          costCents={r.costCents}
+          pricing={stats.models[r.model]?.pricing ?? null}
+          inputTokens={r.inputTokens}
+          outputTokens={r.outputTokens}
+          cacheReadTokens={r.cacheReadTokens}
+          cacheCreate5mTokens={r.cacheCreate5mTokens}
+          cacheCreate1hTokens={r.cacheCreate1hTokens}
+        />
+      ),
       sortValue: (r) => r.costCents ?? 0,
       className: 'border-l border-border/30',
     },
@@ -386,6 +522,9 @@ export function TokenUsageSection({
     requests: number
     inputTokens: number
     outputTokens: number
+    cacheReadTokens: number
+    cacheCreate5mTokens: number
+    cacheCreate1hTokens: number
     durationMs: number
     toolCount: number
     costCents: number | null
@@ -400,6 +539,9 @@ export function TokenUsageSection({
       requests: s.requests,
       inputTokens: s.inputTokens,
       outputTokens: s.outputTokens,
+      cacheReadTokens: s.cacheReadTokens,
+      cacheCreate5mTokens: s.cacheCreate5mTokens,
+      cacheCreate1hTokens: s.cacheCreate1hTokens,
       durationMs: s.durationMs,
       toolCount: s.toolCount,
       costCents: s.costCents,
@@ -485,7 +627,17 @@ export function TokenUsageSection({
       label: 'Est Cost',
       sortType: 'number',
       align: 'right',
-      render: (r) => <span className="text-amber-500">{fmtCents(r.costCents)}</span>,
+      render: (r) => (
+        <CostCell
+          costCents={r.costCents}
+          pricing={r.model ? stats.models[r.model]?.pricing ?? null : null}
+          inputTokens={r.inputTokens}
+          outputTokens={r.outputTokens}
+          cacheReadTokens={r.cacheReadTokens}
+          cacheCreate5mTokens={r.cacheCreate5mTokens}
+          cacheCreate1hTokens={r.cacheCreate1hTokens}
+        />
+      ),
       sortValue: (r) => r.costCents ?? 0,
     },
   ]
