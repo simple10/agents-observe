@@ -187,7 +187,27 @@ export async function parseClaudeSession(
     const jsonlPath = `${subagentsDir}/agent-${agentId}.jsonl`
     const metaPath = `${subagentsDir}/agent-${agentId}.meta.json`
 
-    let parsed: JsonlParseResult
+    // Read meta first — independent of jsonl existence. Some subagents
+    // have a .meta.json without a .jsonl (older agents whose transcripts
+    // were pruned, etc.).
+    let meta: { agentType: string | null; description: string | null; toolUseId: string | null } = {
+      agentType: null,
+      description: null,
+      toolUseId: null,
+    }
+    try {
+      const metaRaw = await fsp.readFile(metaPath, 'utf8')
+      const parsedMeta = JSON.parse(metaRaw)
+      meta = {
+        agentType: typeof parsedMeta.agentType === 'string' ? parsedMeta.agentType : null,
+        description: typeof parsedMeta.description === 'string' ? parsedMeta.description : null,
+        toolUseId: typeof parsedMeta.toolUseId === 'string' ? parsedMeta.toolUseId : null,
+      }
+    } catch {
+      // Meta missing or malformed — keep nulls.
+    }
+
+    let parsed: JsonlParseResult | null = null
     try {
       parsed = await parseJsonlFile(jsonlPath)
     } catch (err: any) {
@@ -213,26 +233,12 @@ export async function parseClaudeSession(
           message: err?.message ?? String(err),
         })
       }
-      continue
     }
 
-    let meta: { agentType: string | null; description: string | null; toolUseId: string | null } = {
-      agentType: null,
-      description: null,
-      toolUseId: null,
-    }
-    try {
-      const metaRaw = await fsp.readFile(metaPath, 'utf8')
-      const parsedMeta = JSON.parse(metaRaw)
-      meta = {
-        agentType: typeof parsedMeta.agentType === 'string' ? parsedMeta.agentType : null,
-        description: typeof parsedMeta.description === 'string' ? parsedMeta.description : null,
-        toolUseId: typeof parsedMeta.toolUseId === 'string' ? parsedMeta.toolUseId : null,
-      }
-    } catch {
-      // Meta missing or malformed — keep nulls.
-    }
-
+    // Push the row even when the jsonl couldn't be loaded — agents that
+    // exist in the DB but have no transcript on disk still appear in the
+    // Agents table with zero stats, so the user sees they exist. The
+    // load failure is still surfaced via `errors[]`.
     subagents.push(buildSubagentRow(agentId, meta, parsed))
   }
 
@@ -247,7 +253,7 @@ export async function parseClaudeSession(
 function buildSubagentRow(
   agentId: string,
   meta: { agentType: string | null; description: string | null; toolUseId: string | null },
-  parsed: JsonlParseResult,
+  parsed: JsonlParseResult | null,
 ): TranscriptSubagent {
   let inputTokens = 0
   let outputTokens = 0
@@ -255,9 +261,9 @@ function buildSubagentRow(
   let cacheCreate5mTokens = 0
   let cacheCreate1hTokens = 0
   let model = ''
-  for (const c of parsed.calls) {
+  const calls = parsed?.calls ?? []
+  for (const c of calls) {
     if (!model && c.model) model = c.model
-    // Bundled input = fresh + cache_read + cache_create
     inputTokens +=
       c.usage.inputTokens +
       c.usage.cacheReadTokens +
@@ -274,14 +280,14 @@ function buildSubagentRow(
     description: meta.description,
     toolUseId: meta.toolUseId,
     model,
-    requests: parsed.calls.length,
+    requests: calls.length,
     inputTokens,
     outputTokens,
     cacheReadTokens,
     cacheCreate5mTokens,
     cacheCreate1hTokens,
-    durationMs: parsed.lastTimestamp - parsed.firstTimestamp,
-    toolCount: parsed.toolCount,
+    durationMs: parsed ? parsed.lastTimestamp - parsed.firstTimestamp : 0,
+    toolCount: parsed?.toolCount ?? 0,
     costCents: null, // populated by parseSessionTranscripts
   }
 }
