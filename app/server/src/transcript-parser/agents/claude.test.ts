@@ -200,9 +200,9 @@ describe('parseClaudeSession — subagents', () => {
     expect(sub.durationMs).toBe(10_000)
   })
 
-  test('missing subagent jsonl pushes to errors[] and still emits a stub row', async () => {
+  test('missing subagent jsonl pushes to errors[] and is filtered out of subagents[]', async () => {
     const result = await parseClaudeSession(FIXTURE_PATH, ['nonexistent-id'])
-    // We surface the load failure in errors[]…
+    // The load failure is surfaced for diagnostics…
     expect(result.errors).toContainEqual(
       expect.objectContaining({
         scope: 'subagent',
@@ -210,14 +210,9 @@ describe('parseClaudeSession — subagents', () => {
         code: 'missing',
       }),
     )
-    // …and also include a row in subagents[] with zero stats, so the
-    // agent still shows up in the UI table.
-    const stub = result.subagents.find((s) => s.agentId === 'nonexistent-id')
-    expect(stub).toBeDefined()
-    expect(stub!.requests).toBe(0)
-    expect(stub!.inputTokens).toBe(0)
-    expect(stub!.outputTokens).toBe(0)
-    expect(stub!.model).toBe('')
+    // …but the agent itself is skipped from the table since it has
+    // zero LLM activity — these are typically cruft entries in the DB.
+    expect(result.subagents.find((s) => s.agentId === 'nonexistent-id')).toBeUndefined()
   })
 
   test('subagent without .meta.json still parses with null meta fields', async () => {

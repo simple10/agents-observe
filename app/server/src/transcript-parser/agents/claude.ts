@@ -235,11 +235,13 @@ export async function parseClaudeSession(
       }
     }
 
-    // Push the row even when the jsonl couldn't be loaded — agents that
-    // exist in the DB but have no transcript on disk still appear in the
-    // Agents table with zero stats, so the user sees they exist. The
-    // load failure is still surfaced via `errors[]`.
-    subagents.push(buildSubagentRow(agentId, meta, parsed))
+    // Skip agents that produced no LLM activity (no calls === no
+    // tokens, no duration, no tools). These are typically cruft in the
+    // DB — agent rows we recorded but never actually used. The load
+    // failure (if any) stays in `errors[]` for diagnostics.
+    const row = buildSubagentRow(agentId, meta, parsed)
+    if (row.requests === 0) continue
+    subagents.push(row)
   }
 
   return {
