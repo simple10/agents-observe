@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { SessionItem } from './session-item'
@@ -139,7 +139,9 @@ describe('SessionItem accessibility', () => {
       </TooltipProvider>,
     )
     const container = screen.getAllByText('my-session')[0].closest('[role="button"]') as HTMLElement
-    container.focus()
+    // Focusing inside a Tooltip triggers a React state update — wrap in act
+    // so the Radix open-state effect doesn't fire outside the test boundary.
+    act(() => container.focus())
     await userEvent.keyboard('{Enter}')
     expect(onSelect).toHaveBeenCalledTimes(1)
   })
@@ -159,7 +161,7 @@ describe('SessionItem accessibility', () => {
       </TooltipProvider>,
     )
     const container = screen.getAllByText('my-session')[0].closest('[role="button"]') as HTMLElement
-    container.focus()
+    act(() => container.focus())
     await userEvent.keyboard(' ')
     expect(onSelect).toHaveBeenCalledTimes(1)
   })

@@ -7,27 +7,69 @@ import { getServerHealth } from '@/lib/server-health'
 // Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function parseHash(): { projectSlug: string | null; sessionId: string | null } {
+/**
+ * Parses the deep-link view string (the part after `:` in the hash).
+ * Convention:
+ *   - `:<name>`                  → global modal              (scope='global', target=null)
+ *   - `:<scope>.<name>`          → scope-bound to URL context (target=null)
+ *   - `:<scope>.<name>@<id>`     → scope-bound to explicit id (target=<id>)
+ * Scopes other than 'session' / 'project' fall back to 'global'.
+ */
+export function parseView(view: string): {
+  scope: 'global' | 'session' | 'project'
+  name: string
+  target: string | null
+} {
+  let target: string | null = null
+  let body = view
+  const atIdx = view.indexOf('@')
+  if (atIdx !== -1) {
+    target = view.slice(atIdx + 1) || null
+    body = view.slice(0, atIdx)
+  }
+  const dotIdx = body.indexOf('.')
+  if (dotIdx === -1) {
+    return { scope: 'global', name: body, target }
+  }
+  const scope = body.slice(0, dotIdx)
+  const name = body.slice(dotIdx + 1)
+  if (scope === 'session' || scope === 'project') {
+    return { scope, name, target }
+  }
+  return { scope: 'global', name: body, target }
+}
+
+function parseHash(): {
+  projectSlug: string | null
+  sessionId: string | null
+  view: string | null
+} {
   const hash = window.location.hash.slice(1)
-  if (!hash || hash === '/') return { projectSlug: null, sessionId: null }
-  const parts = hash.split('/').filter(Boolean)
+  if (!hash || hash === '/') return { projectSlug: null, sessionId: null, view: null }
+
+  // Strip the trailing :view suffix (only one `:` per URL by convention).
+  let view: string | null = null
+  let path = hash
+  const colonIdx = hash.indexOf(':')
+  if (colonIdx !== -1) {
+    view = hash.slice(colonIdx + 1) || null
+    path = hash.slice(0, colonIdx)
+  }
+
+  if (!path || path === '/') return { projectSlug: null, sessionId: null, view }
+  const parts = path.split('/').filter(Boolean)
   if (parts.length === 1) {
-    // Distinguish between session ID (UUID) and project slug
-    if (UUID_RE.test(parts[0])) {
-      return { projectSlug: null, sessionId: parts[0] }
-    }
-    return { projectSlug: parts[0], sessionId: null }
+    if (UUID_RE.test(parts[0])) return { projectSlug: null, sessionId: parts[0], view }
+    return { projectSlug: parts[0], sessionId: null, view }
   }
-  if (parts.length >= 2) {
-    return { projectSlug: parts[0], sessionId: parts[1] }
-  }
-  return { projectSlug: null, sessionId: null }
+  if (parts.length >= 2) return { projectSlug: parts[0], sessionId: parts[1], view }
+  return { projectSlug: null, sessionId: null, view }
 }
 
 // When true, skip pushState (the URL is already correct from browser navigation)
 let suppressHashPush = false
 
-function updateHash(projectSlug: string | null, sessionId: string | null) {
+function updateHash(projectSlug: string | null, sessionId: string | null, view: string | null) {
   if (suppressHashPush) return
   let hash = '/'
   if (projectSlug && sessionId) {
@@ -37,7 +79,12 @@ function updateHash(projectSlug: string | null, sessionId: string | null) {
   } else if (sessionId) {
     hash = `/${sessionId}`
   }
-  window.history.pushState(null, '', `#${hash}`)
+  if (view) hash += `:${view}`
+  const fullHash = `#${hash}`
+  // No-op guard: opening the same modal twice (or re-pushing the same URL
+  // during a redundant set) would otherwise pollute the history stack.
+  if (window.location.hash === fullHash) return
+  window.history.pushState(null, '', fullHash)
 }
 
 interface SessionFilterState {
@@ -110,6 +157,13 @@ interface UIState {
   editingSessionId: string | null
   editingSessionTab: 'details' | 'stats' | 'labels'
   setEditingSessionId: (id: string | null, tab?: 'details' | 'stats' | 'labels') => void
+
+  // Deep-link view string (the `:foo` / `:session.stats@id` suffix). Single
+  // source of truth for which modal is open at the URL level. Modal opens
+  // computed by syncing modal state → currentView in the actions below;
+  // use-route-sync drives the reverse: URL view → modal state on load.
+  currentView: string | null
+  setCurrentView: (view: string | null) => void
 
   // Labels — user-defined bookmarks across sessions (localStorage only)
   labels: Label[]
@@ -267,7 +321,34 @@ function genLabelId(): string {
   return `label-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-const { projectSlug: initialProjectSlug, sessionId: initialSessionId } = parseHash()
+const {
+  projectSlug: initialProjectSlug,
+  sessionId: initialSessionId,
+  view: initialView,
+} = parseHash()
+
+/**
+ * Computes the deep-link view string from current modal/selection state.
+ * Returns null when no modal is open. When the modal targets the same
+ * session that's already selected in the URL, the `@<id>` suffix is
+ * omitted; when it targets a different session, the override is added.
+ *
+ * As more modals become deep-linkable (project edit, global settings,
+ * etc.), extend this helper rather than adding ad-hoc view writes.
+ */
+function computeViewFromState(state: {
+  editingSessionId: string | null
+  editingSessionTab: 'details' | 'stats' | 'labels'
+  selectedSessionId: string | null
+}): string | null {
+  if (state.editingSessionId !== null) {
+    const tab = state.editingSessionTab
+    return state.editingSessionId === state.selectedSessionId
+      ? `session.${tab}`
+      : `session.${tab}@${state.editingSessionId}`
+  }
+  return null
+}
 
 export const useUIStore = create<UIState>((set, get) => ({
   sidebarCollapsed: false,
@@ -307,7 +388,9 @@ export const useUIStore = create<UIState>((set, get) => ({
       activeSecondaryFilters: DEFAULT_FILTER_STATE.activeSecondaryFilters,
       searchQuery: DEFAULT_FILTER_STATE.searchQuery,
     })
-    updateHash(newSlug, null)
+    const view = computeViewFromState(get())
+    if (get().currentView !== view) set({ currentView: view })
+    updateHash(newSlug, null, view)
   },
   setSelectedSessionId: (id) => {
     const state = get()
@@ -345,12 +428,16 @@ export const useUIStore = create<UIState>((set, get) => ({
         autoFollow: state.autoFollowBeforeRewind,
       }),
     })
-    updateHash(state.selectedProjectSlug, id)
+    const view = computeViewFromState(get())
+    if (get().currentView !== view) set({ currentView: view })
+    updateHash(state.selectedProjectSlug, id, view)
   },
   updateProjectSlug: (slug) => {
     set({ selectedProjectSlug: slug })
     const state = get()
-    updateHash(slug, state.selectedSessionId)
+    const view = computeViewFromState(state)
+    if (state.currentView !== view) set({ currentView: view })
+    updateHash(slug, state.selectedSessionId, view)
   },
   setSelectedAgentIds: (ids) => set({ selectedAgentIds: ids }),
   toggleAgentId: (id) =>
@@ -423,8 +510,20 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   editingSessionId: null,
   editingSessionTab: 'details',
-  setEditingSessionId: (id, tab) =>
-    set({ editingSessionId: id, editingSessionTab: tab ?? 'details' }),
+  setEditingSessionId: (id, tab) => {
+    set({ editingSessionId: id, editingSessionTab: tab ?? 'details' })
+    const state = get()
+    const view = computeViewFromState(state)
+    if (state.currentView !== view) set({ currentView: view })
+    updateHash(state.selectedProjectSlug, state.selectedSessionId, view)
+  },
+
+  currentView: initialView,
+  setCurrentView: (view) => {
+    set({ currentView: view })
+    const state = get()
+    updateHash(state.selectedProjectSlug, state.selectedSessionId, view)
+  },
 
   sidebarTab:
     (localStorage.getItem('agents-observe-sidebar-tab') as 'projects' | 'labels') || 'projects',
@@ -608,16 +707,22 @@ if (typeof window !== 'undefined') {
   // Seed history for direct URL loads so the back button has somewhere to go.
   // If loading #/project/session, push #/project first (project view),
   // then replace with the full URL. Back then goes to project view.
+  // The :view suffix is appended only to the final URL — back navigation
+  // drops into the modal-less view first, then the project view.
+  const viewSuffix = initialView ? `:${initialView}` : ''
   if (initialProjectSlug && initialSessionId) {
     window.history.replaceState(null, '', `#/${initialProjectSlug}`)
-    window.history.pushState(null, '', `#/${initialProjectSlug}/${initialSessionId}`)
+    window.history.pushState(null, '', `#/${initialProjectSlug}/${initialSessionId}${viewSuffix}`)
   } else if (initialProjectSlug) {
     window.history.replaceState(null, '', `#/`)
-    window.history.pushState(null, '', `#/${initialProjectSlug}`)
+    window.history.pushState(null, '', `#/${initialProjectSlug}${viewSuffix}`)
+  } else if (initialSessionId && initialView) {
+    // UUID-only shortcut with a view — make sure the suffix lands on the URL.
+    window.history.replaceState(null, '', `#/${initialSessionId}${viewSuffix}`)
   }
 
   window.addEventListener('hashchange', () => {
-    const { projectSlug, sessionId } = parseHash()
+    const { projectSlug, sessionId, view } = parseHash()
     const state = useUIStore.getState()
     // Suppress pushState during browser-initiated navigation (back/forward)
     // — the URL is already correct, pushing would wipe the forward stack
@@ -628,6 +733,9 @@ if (typeof window !== 'undefined') {
       }
       if (sessionId !== state.selectedSessionId) {
         state.setSelectedSessionId(sessionId)
+      }
+      if (view !== state.currentView) {
+        useUIStore.setState({ currentView: view })
       }
     } finally {
       suppressHashPush = false

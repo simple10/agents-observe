@@ -1,7 +1,7 @@
 ---
 name: observe
 description: Agents Observe dashboard and server management
-argument-hint: [status|start|stop|restart|logs|debug]
+argument-hint: [view|stats|status|start|stop|restart|logs|debug]
 user_invocable: true
 ---
 
@@ -11,6 +11,8 @@ Agents Observe dashboard and server management.
 
 ## Usage
 
+- `/observe view` — Open the current session in the dashboard
+- `/observe stats` — Open the current session's stats modal in the dashboard
 - `/observe` — Open the dashboard URL
 - `/observe status` — Show server health and config details
 - `/observe start` — Start the server
@@ -22,6 +24,32 @@ Agents Observe dashboard and server management.
 ## Instructions
 
 The subcommand is in `$ARGUMENTS`. If empty, default to showing the dashboard URL.
+
+### /observe view
+
+Opens the current session in the dashboard.
+
+1. Run health to get the dashboard origin:
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/observe_cli.mjs health
+   ```
+2. From the output, take the `Dashboard:` URL (e.g. `http://localhost:4981`). If exit code 1, the server isn't running — tell the user to run `/observe start` and stop here.
+3. Construct the session URL: `<dashboard>/#/${CLAUDE_SESSION_ID}` (the dashboard auto-redirects this to the project + session view).
+4. Open it in the user's default browser using the platform-appropriate command — `open <url>` on macOS, `xdg-open <url>` on Linux, `start <url>` on Windows. Pick based on the `Platform:` line in your environment context.
+5. Also print the URL in your response so the user can re-open it if needed.
+
+### /observe stats
+
+Opens the current session's stats modal in the dashboard, using a deep-link URL.
+
+1. Run health to get the dashboard origin:
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/observe_cli.mjs health
+   ```
+2. From the output, take the `Dashboard:` URL (e.g. `http://localhost:4981`). If exit code 1, the server isn't running — tell the user to run `/observe start` and stop here.
+3. Construct the deep link: `<dashboard>/#/${CLAUDE_SESSION_ID}:session.stats`
+4. Open it in the user's default browser using the platform-appropriate command — `open <url>` on macOS, `xdg-open <url>` on Linux, `start <url>` on Windows. Pick based on the `Platform:` line in your environment context.
+5. Also print the URL in your response so the user can re-open it if needed.
 
 ### /observe (no args)
 

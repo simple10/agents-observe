@@ -40,6 +40,13 @@ export const config = {
   logLevel,
   verbose: logLevel === 'debug' || logLevel === 'trace',
   dbPath: resolve(process.env.AGENTS_OBSERVE_DB_PATH || '../../data/observe.db'),
+  // Directory for persistent server state outside the SQLite DB —
+  // currently just the models.dev pricing cache. Defaults to the same
+  // directory as the DB so docker volume mounts cover both.
+  dataDir: resolve(
+    process.env.AGENTS_OBSERVE_DATA_DIR ||
+      dirname(resolve(process.env.AGENTS_OBSERVE_DB_PATH || '../../data/observe.db')),
+  ),
   storageAdapter: process.env.AGENTS_OBSERVE_STORAGE_ADAPTER || 'sqlite',
   clientDistPath: process.env.AGENTS_OBSERVE_CLIENT_DIST_PATH || '',
   devClientPort: parseInt(process.env.AGENTS_OBSERVE_DEV_CLIENT_PORT || '5174', 10),
@@ -57,4 +64,33 @@ export const config = {
   consumerTtlMs: 30_000,
   sweepIntervalMs: 10_000,
   startupGraceMs: 60_000,
+
+  transcriptStats: {
+    enabled: process.env.AGENTS_OBSERVE_TRANSCRIPT_STATS !== '0',
+    // Per-agent-class bind-mount bases. The runtime tries each pair when
+    // resolving a session's transcript_path; one pair per supported
+    // agent class so users can override locations independently
+    // (claude can live elsewhere, codex can live elsewhere). Trailing
+    // slashes stripped defensively.
+    bases: [
+      {
+        agentClass: 'claude-code' as const,
+        host: (process.env.AGENTS_OBSERVE_TRANSCRIPT_CLAUDE_HOST_BASE || '').replace(/\/$/, ''),
+        container: (process.env.AGENTS_OBSERVE_TRANSCRIPT_CLAUDE_CONTAINER_BASE || '').replace(
+          /\/$/,
+          '',
+        ),
+      },
+      {
+        agentClass: 'codex' as const,
+        host: (process.env.AGENTS_OBSERVE_TRANSCRIPT_CODEX_HOST_BASE || '').replace(/\/$/, ''),
+        container: (process.env.AGENTS_OBSERVE_TRANSCRIPT_CODEX_CONTAINER_BASE || '').replace(
+          /\/$/,
+          '',
+        ),
+      },
+    ],
+    // 100 MB safety cap — defensive, not an expected operating point.
+    maxFileBytes: 100 * 1024 * 1024,
+  },
 }

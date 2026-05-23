@@ -49,6 +49,26 @@ server directly.
 
 ---
 
+## Transcript stats
+
+Parses the source-of-truth jsonl transcripts on demand to surface
+per-prompt / per-agent token usage, model info, and cost estimates in
+the Session Stats tab. Pricing is fetched from `models.dev` and cached
+on disk at `<data dir>/models-dev.json` (24h TTL). Enabled by default;
+set the flag below to `0` to disable.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AGENTS_OBSERVE_TRANSCRIPT_STATS` | `1` | Enables the `/api/sessions/:id/transcript-stats` route and (in docker mode) bind-mounts each agent class's session dir read-only. Set to `0` to disable. Surfaced on `/api/health` as `transcriptStatsEnabled` so the client can skip the round-trip when off. |
+| `AGENTS_OBSERVE_TRANSCRIPT_CLAUDE_HOST_BASE` | `~/.claude/projects` | Host path to Claude Code's session jsonls. Override when Claude is installed in a non-standard location. |
+| `AGENTS_OBSERVE_TRANSCRIPT_CLAUDE_CONTAINER_BASE` | `/host/.claude/projects` | Fixed container-side mount point for the Claude bind mount. Rarely needs overriding — the server's path resolver looks for exactly this prefix. |
+| `AGENTS_OBSERVE_TRANSCRIPT_CODEX_HOST_BASE` | `~/.codex/sessions` | Host path to Codex's rollout jsonls. Override when Codex is installed in a non-standard location. |
+| `AGENTS_OBSERVE_TRANSCRIPT_CODEX_CONTAINER_BASE` | `/host/.codex/sessions` | Fixed container-side mount point for the Codex bind mount. |
+
+In `docker` runtime the CLI populates these from the resolved host paths and mounts each directory read-only. In `local` / `dev` runtime the server reads transcripts directly from the host paths, so the `_CONTAINER_BASE` pair is left empty. Missing host directories are silently skipped — a user without Codex installed doesn't need to clear the codex env vars.
+
+---
+
 ## Docker / runtime selection
 
 Controls where and how the server runs.

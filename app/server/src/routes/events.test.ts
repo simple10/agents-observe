@@ -341,3 +341,102 @@ describe('POST /api/events — callbacks (`requests` array)', () => {
     expect(body2.requests).toBeUndefined()
   })
 })
+
+describe('POST /api/events — dedup', () => {
+  const baseEnv = {
+    agentClass: 'claude-code',
+    sessionId: 'sess-dedup',
+    agentId: 'sess-dedup',
+    hookName: 'PreToolUse',
+    timestamp: 2_000_000,
+    payload: { tool_name: 'Bash', command: 'ls' },
+    cwd: '/repo',
+    _meta: { project: { slug: 'x' } },
+  }
+
+  test('same envelope twice returns same id + deduplicated:true', async () => {
+    const a = await postEvent(baseEnv)
+    expect(a.status).toBe(201)
+    const aBody = (await a.json()) as { id: number; deduplicated?: boolean }
+    expect(aBody.deduplicated).toBeUndefined()
+
+    const b = await postEvent({ ...baseEnv, timestamp: baseEnv.timestamp + 50 })
+    expect(b.status).toBe(201)
+    const bBody = (await b.json()) as { id: number; deduplicated?: boolean }
+    expect(bBody.deduplicated).toBe(true)
+    expect(bBody.id).toBe(aBody.id)
+
+    const events = await store.getEventsForSession('sess-dedup')
+    expect(events).toHaveLength(1)
+  })
+
+  test('payload key reordering still dedupes', async () => {
+    const a = await postEvent(baseEnv)
+    const aBody = (await a.json()) as { id: number }
+    const b = await postEvent({
+      ...baseEnv,
+      timestamp: baseEnv.timestamp + 50,
+      payload: { command: 'ls', tool_name: 'Bash' },
+    })
+    const bBody = (await b.json()) as { id: number; deduplicated?: boolean }
+    expect(bBody.deduplicated).toBe(true)
+    expect(bBody.id).toBe(aBody.id)
+  })
+
+  test('identical content >5s apart inserts both', async () => {
+    const a = await postEvent(baseEnv)
+    const aBody = (await a.json()) as { id: number }
+    const b = await postEvent({ ...baseEnv, timestamp: baseEnv.timestamp + 6000 })
+    expect(b.status).toBe(201)
+    const bBody = (await b.json()) as { id: number; deduplicated?: boolean }
+    expect(bBody.deduplicated).toBeUndefined()
+    expect(bBody.id).not.toBe(aBody.id)
+    const events = await store.getEventsForSession('sess-dedup')
+    expect(events).toHaveLength(2)
+  })
+
+  test('dedup hit does NOT re-broadcast', async () => {
+    await postEvent(baseEnv)
+    sessionBroadcasts.length = 0
+    activityPings.length = 0
+    allBroadcasts.length = 0
+    await postEvent({ ...baseEnv, timestamp: baseEnv.timestamp + 50 })
+    expect(sessionBroadcasts).toHaveLength(0)
+    expect(activityPings).toHaveLength(0)
+    expect(allBroadcasts).toHaveLength(0)
+  })
+
+  test('dedup hit does NOT re-apply stopsSession flag', async () => {
+    const env = { ...baseEnv, flags: { stopsSession: true } }
+    await postEvent(env)
+    const sessionAfterFirst = await store.getSessionById('sess-dedup')
+    expect(sessionAfterFirst.stopped_at).not.toBeNull()
+
+    // Clear stopped_at so we can detect whether the dup call re-applies it.
+    ;(
+      store as unknown as { db: { prepare: (sql: string) => { run: (...a: unknown[]) => void } } }
+    ).db
+      .prepare('UPDATE sessions SET stopped_at = NULL WHERE id = ?')
+      .run('sess-dedup')
+
+    await postEvent({ ...env, timestamp: env.timestamp + 50 })
+    const sessionAfterDup = await store.getSessionById('sess-dedup')
+    expect(sessionAfterDup.stopped_at).toBeNull()
+  })
+
+  test('concurrent identical posts: exactly one row, both return same id', async () => {
+    const [a, b] = await Promise.all([
+      postEvent(baseEnv),
+      postEvent({ ...baseEnv, timestamp: baseEnv.timestamp + 1 }),
+    ])
+    const aBody = (await a.json()) as { id: number; deduplicated?: boolean }
+    const bBody = (await b.json()) as { id: number; deduplicated?: boolean }
+    expect(a.status).toBe(201)
+    expect(b.status).toBe(201)
+    expect(aBody.id).toBe(bBody.id)
+    // Exactly one of the two should be marked deduplicated.
+    expect(Boolean(aBody.deduplicated) !== Boolean(bBody.deduplicated)).toBe(true)
+    const events = await store.getEventsForSession('sess-dedup')
+    expect(events).toHaveLength(1)
+  })
+})

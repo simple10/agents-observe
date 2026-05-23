@@ -9,6 +9,10 @@ export interface ServerHealth {
   dbPath?: string
   activeConsumers?: number
   activeClients?: number
+  /** Whether AGENTS_OBSERVE_TRANSCRIPT_STATS is set on the server. Drives
+   *  whether the Token Usage section fires the per-session
+   *  transcript-stats fetch. */
+  transcriptStatsEnabled?: boolean
 }
 
 /**

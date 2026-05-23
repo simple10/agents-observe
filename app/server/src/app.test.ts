@@ -21,6 +21,7 @@ describe('dev mode redirect', () => {
         clientDistPath: '',
         isDev: true,
         devClientPort: 5174,
+        transcriptStats: { enabled: false },
       },
     }))
 
@@ -38,6 +39,7 @@ describe('dev mode redirect', () => {
         clientDistPath: '',
         isDev: true,
         devClientPort: 5174,
+        transcriptStats: { enabled: false },
       },
     }))
 
@@ -55,6 +57,7 @@ describe('dev mode redirect', () => {
         clientDistPath: '',
         isDev: true,
         devClientPort: 5174,
+        transcriptStats: { enabled: false },
       },
     }))
 
@@ -71,6 +74,7 @@ describe('dev mode redirect', () => {
         clientDistPath: '',
         isDev: false,
         devClientPort: 5174,
+        transcriptStats: { enabled: false },
       },
     }))
 
@@ -87,6 +91,7 @@ describe('dev mode redirect', () => {
         clientDistPath: '',
         isDev: true,
         devClientPort: 9999,
+        transcriptStats: { enabled: false },
       },
     }))
 

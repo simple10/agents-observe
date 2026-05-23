@@ -1,7 +1,9 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { unlinkSync } from 'node:fs'
+import Database from 'better-sqlite3'
 import { SqliteAdapter } from './sqlite-adapter'
+import { DuplicateEventSignatureError } from './types'
 
 let store: SqliteAdapter
 
@@ -233,6 +235,25 @@ describe('SqliteAdapter — sessions', () => {
   test('getSessionById returns null for non-existent session', async () => {
     const session = await store.getSessionById('no-such-session')
     expect(session).toBeNull()
+  })
+
+  test('getSessionTranscriptPath returns the transcript_path column or null', async () => {
+    const projId = await store.createProject('proj-tp', 'P')
+    await store.upsertSession(
+      'sess-with-tp',
+      projId,
+      null,
+      null,
+      1000,
+      '/Users/test/.claude/projects/proj/sess-with-tp.jsonl',
+    )
+    await store.upsertSession('sess-no-tp', projId, null, null, 1000, null)
+
+    expect(await store.getSessionTranscriptPath('sess-with-tp')).toBe(
+      '/Users/test/.claude/projects/proj/sess-with-tp.jsonl',
+    )
+    expect(await store.getSessionTranscriptPath('sess-no-tp')).toBeNull()
+    expect(await store.getSessionTranscriptPath('nonexistent')).toBeNull()
   })
 
   test('updateSessionStatus("stopped") sets stopped_at', async () => {
@@ -1585,5 +1606,115 @@ describe('filters', () => {
     const after = await adapter.getFilterById(before.id)
     expect(after?.name).not.toBe('mutated') // seed name restored
     expect(after?.enabled).toBe(false) // enabled preserved
+  })
+})
+
+describe('signature_hash migration + dedup', () => {
+  test('adds column and unique index to an existing events table without one', () => {
+    const path = `${tmpdir()}/dedup-mig-${Date.now()}-${Math.random()}.db`
+    const raw = new Database(path)
+    raw.exec(`
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id TEXT NOT NULL, session_id TEXT NOT NULL, hook_name TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, created_at INTEGER NOT NULL,
+        cwd TEXT, _meta TEXT, payload TEXT NOT NULL
+      );
+      INSERT INTO events (agent_id, session_id, hook_name, timestamp, created_at, payload)
+        VALUES ('a1', 's1', 'PreToolUse', 1000, 1001, '{}');
+    `)
+    raw.close()
+
+    const adapter = new SqliteAdapter(path)
+    const db = (adapter as unknown as { db: Database.Database }).db
+
+    const cols = db.prepare("PRAGMA table_info('events')").all() as { name: string }[]
+    expect(cols.some((c) => c.name === 'signature_hash')).toBe(true)
+
+    const indexes = db.prepare("PRAGMA index_list('events')").all() as {
+      name: string
+      unique: number
+    }[]
+    expect(indexes.some((i) => i.name === 'idx_events_signature_hash' && i.unique === 1)).toBe(true)
+
+    const row = db.prepare('SELECT signature_hash FROM events WHERE id = 1').get() as {
+      signature_hash: string | null
+    }
+    expect(row.signature_hash).toBeNull()
+
+    unlinkSync(path)
+  })
+
+  test('insertEvent stores signature_hash when provided', async () => {
+    await seedBasic()
+    const { eventId } = await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 1000,
+      payload: {},
+      signatureHash: 'abc123',
+    })
+    const row = (store as unknown as { db: Database.Database }).db
+      .prepare('SELECT signature_hash FROM events WHERE id = ?')
+      .get(eventId) as { signature_hash: string }
+    expect(row.signature_hash).toBe('abc123')
+  })
+
+  test('insertEvent throws DuplicateEventSignatureError on UNIQUE conflict', async () => {
+    await seedBasic()
+    await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 1000,
+      payload: {},
+      signatureHash: 'dup-hash',
+    })
+    await expect(
+      store.insertEvent({
+        agentId: 'a1',
+        sessionId: 'sess1',
+        hookName: 'PreToolUse',
+        timestamp: 1001,
+        payload: {},
+        signatureHash: 'dup-hash',
+      }),
+    ).rejects.toBeInstanceOf(DuplicateEventSignatureError)
+  })
+
+  test('NULL signature_hash rows do not collide under UNIQUE', async () => {
+    await seedBasic()
+    await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 1000,
+      payload: {},
+    })
+    // Second insert with no hash must also succeed — UNIQUE treats NULLs as distinct.
+    await expect(
+      store.insertEvent({
+        agentId: 'a1',
+        sessionId: 'sess1',
+        hookName: 'PreToolUse',
+        timestamp: 1001,
+        payload: {},
+      }),
+    ).resolves.toHaveProperty('eventId')
+  })
+
+  test('findEventBySignatureHash returns existing event id or null', async () => {
+    await seedBasic()
+    const { eventId } = await store.insertEvent({
+      agentId: 'a1',
+      sessionId: 'sess1',
+      hookName: 'PreToolUse',
+      timestamp: 1000,
+      payload: {},
+      signatureHash: 'lookup-me',
+    })
+    expect(await store.findEventBySignatureHash('lookup-me')).toEqual({ id: eventId })
+    expect(await store.findEventBySignatureHash('not-here')).toBeNull()
   })
 })

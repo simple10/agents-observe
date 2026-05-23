@@ -1,12 +1,12 @@
 # Agents Observe
 
-Real-time observability dashboard for Claude Code agents.
+Real-time observability dashboard for Claude Code and Codex agents.
 
-Includes powerful filtering, searching, and visualization of multi-agent sessions.
+Includes powerful filtering, searching, and visualization of multi-agent sessions with full replay and token usage stats.
 
 <p align="center">
   <a href="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/dashboard.gif">
-    <img src="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/dashboard.gif" alt="Claude Observe Dashboard Demo" />
+    <img src="https://raw.githubusercontent.com/simple10/agents-observe/videos/docs/assets/dashboard.gif" alt="Agents Observe Dashboard Demo" />
   </a>
 </p>
 
@@ -15,7 +15,13 @@ Includes powerful filtering, searching, and visualization of multi-agent session
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/simple10/agents-observe/main/docs/assets/dashboard2.png" alt="Claude Observe Dashboard Screenshot - Expanded Row" />
+  <img src="https://raw.githubusercontent.com/simple10/agents-observe/main/docs/assets/dashboard2.png" alt="Agents Observe Dashboard Screenshot - Expanded Row" />
+</p>
+
+> Version 0.9.7 adds token usage and cost breakdowns in session stats.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/simple10/agents-observe/main/docs/assets/session-token-usage1.png" alt="Agents Observe Session Token Usage" />
 </p>
 
 ## Quick Start
@@ -47,10 +53,11 @@ Default dashboard URL: <http://localhost:4981>
 
 ### Prerequisites
 
-- [Docker](https://www.docker.com/) (required — the server runs as a container)
-- [Node.js](https://nodejs.org/) (required — hook scripts run via `node`)
+- [Docker](https://www.docker.com/) — the server runs as a container
+- [Node.js](https://nodejs.org/) — hook scripts run via `node`
+- Bash - hooks are configured to use `hooks.sh` for fast fire and forget event logging
 
-If docker or node are not installed on your host, the plugin will fail to properly load.
+If docker, node, or bash are not installed on your host, the plugin will fail to properly load.
 
 Use the `/observe debug` claude command to help troubleshoot and fix installation issues.
 
@@ -62,7 +69,7 @@ Use the `/observe debug` claude command to help troubleshoot and fix installatio
 | `/observe status` | Show server health, version, runtime, and config details |
 | `/observe start` | Start the server |
 | `/observe stop` | Stop the server |
-| `/observe restart` | Restart the server |
+| `/observe restart` | Restart the MCP server |
 | `/observe logs` | Show recent Docker container logs |
 | `/observe debug` | Diagnose server issues (health, docker logs, mcp.log, cli.log) |
 
@@ -70,12 +77,12 @@ Use the `/observe debug` claude command to help troubleshoot and fix installatio
 
 When Claude Code runs autonomously — spawning subagents, calling tools, reading files, executing commands — you have no visibility into what's actually happening. The terminal shows a fraction of the activity. Subagents are invisible. Tool calls blur together. And when something goes wrong three agents deep in a parallel execution, you're left reading through logs after the fact.
 
-Claude Observe captures every hook event as it happens and streams it to a live dashboard. You see exactly what each agent is doing, which tools it's calling, what files it's touching, and how subagents relate to their parents. In real time.
+Agents Observe captures every hook event as it happens and streams it to a live dashboard. You see exactly what each agent is doing, which tools it's calling, what files it's touching, and how subagents relate to their parents. In real time.
 
 This matters because:
 
 - **Multi-agent work is opaque.** A coordinator spawns a code reviewer, a test runner, and a documentation agent in parallel. Without observability, you only see the final result. With it, you watch each agent work and catch problems as they happen.
-- **Tool calls are the ground truth.** The assistant's text output is a summary. The actual tool calls — the Bash commands, file reads, edits, grep patterns — tell you what Claude is really doing. Claude Observe shows you both.
+- **Tool calls are the ground truth.** The assistant's text output is a summary. The actual tool calls — the Bash commands, file reads, edits, grep patterns — tell you what Claude is really doing. Agents Observe shows you both.
 - **Debugging is time travel.** When a subagent makes a bad edit or runs a destructive command, you need to trace back through the exact sequence of events. The event stream gives you that timeline with full payloads.
 - **Sessions are ephemeral, but patterns aren't.** By capturing events across sessions, you can see how agents behave over time, which tools they favor, and where they get stuck.
 

@@ -17,9 +17,11 @@
 
 import { Hono } from 'hono'
 import type { EventStore } from '../storage/types'
+import { DuplicateEventSignatureError } from '../storage/types'
 import type { EventEnvelope, ParsedEvent } from '../types'
 import { validateEnvelope, EnvelopeValidationError } from '../parser'
 import { resolveProject } from '../services/project-resolver'
+import { computeEventSignature } from '../utils/event-signature'
 import { config } from '../config'
 import { apiError } from '../errors'
 
@@ -67,6 +69,19 @@ router.post('/events', async (c) => {
     console.log(
       `[HOOK:${envelope.hookName}] agentClass=${envelope.agentClass} session=${envelope.sessionId} ${trimmed}`,
     )
+  }
+
+  // ---- Step 1.5: dedup pre-check -----------------------------------------
+  // Hash (session_id, agent_id, hook_name, cwd, payload, _meta, flags) plus a
+  // 5-second timestamp bucket. Misconfigured plugin setups that fire the same
+  // hook twice land in the same bucket; identical content >5s apart does not.
+  const signatureHash = computeEventSignature(envelope, timestamp)
+  const existing = await c.get('store').findEventBySignatureHash(signatureHash)
+  if (existing) {
+    console.log(
+      `[dedup] hook=${envelope.hookName} session=${envelope.sessionId} orig_event_id=${existing.id}`,
+    )
+    return c.json({ id: existing.id, deduplicated: true }, 201)
   }
 
   try {
@@ -118,15 +133,36 @@ router.post('/events', async (c) => {
     const eventStoreMeta: Record<string, unknown> | null = envelope._meta
       ? (envelope._meta as Record<string, unknown>)
       : null
-    const { eventId } = await store.insertEvent({
-      agentId: envelope.agentId,
-      sessionId: envelope.sessionId,
-      hookName: envelope.hookName,
-      timestamp,
-      payload: envelope.payload,
-      cwd: envelope.cwd ?? null,
-      _meta: eventStoreMeta,
-    })
+    let eventId: number
+    try {
+      const inserted = await store.insertEvent({
+        agentId: envelope.agentId,
+        sessionId: envelope.sessionId,
+        hookName: envelope.hookName,
+        timestamp,
+        payload: envelope.payload,
+        cwd: envelope.cwd ?? null,
+        _meta: eventStoreMeta,
+        signatureHash,
+      })
+      eventId = inserted.eventId
+    } catch (err) {
+      // Race: another concurrent identical POST inserted the row between
+      // the pre-check and our INSERT. UNIQUE constraint surfaces here as
+      // DuplicateEventSignatureError — return the winner's id, same as
+      // the hit path. Skip the rest of the pipeline; the original event
+      // already broadcast / applied flags / etc.
+      if (err instanceof DuplicateEventSignatureError) {
+        const winner = await store.findEventBySignatureHash(signatureHash)
+        if (winner) {
+          console.log(
+            `[dedup:race] hook=${envelope.hookName} session=${envelope.sessionId} orig_event_id=${winner.id}`,
+          )
+          return c.json({ id: winner.id, deduplicated: true }, 201)
+        }
+      }
+      throw err
+    }
 
     // ---- Step 6: apply flags in spec order (clear → start → stop) --------
     const flags = envelope.flags ?? {}

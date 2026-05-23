@@ -33,10 +33,9 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { MoveSessionModal } from './project-modal'
-import { AgentLabel } from '@/components/shared/agent-label'
-import { buildAgentColorMap, getAgentColorById } from '@/lib/agent-utils'
+import { CollapsibleSection } from './sections/collapsible-section'
+import { TokenUsageSection } from './sections/token-usage-section'
 import { useAgents } from '@/hooks/use-agents'
-import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Project, ParsedEvent } from '@/types'
 
 function formatRelativeTime(ts: number): string {
@@ -200,7 +199,7 @@ export function SessionEditModal() {
       >
         <DialogContent
           aria-describedby={undefined}
-          className="w-[560px] max-w-[90vw] max-h-[80vh] flex flex-col p-0"
+          className="w-[1100px] max-w-[95vw] max-h-[85vh] flex flex-col p-0"
         >
           {/* Header: session name + actions */}
           <div className="flex items-center gap-3 px-5 pt-5 pb-1">
@@ -470,24 +469,35 @@ export function SessionEditModal() {
   )
 }
 
-interface AgentTokenUsage {
+/**
+ * Per-subagent stats derived from `PostToolUse:Agent` events. Used as
+ * the always-available baseline for the Agents table — augmented (but
+ * not replaced) by transcript-stats data when that's available.
+ *
+ * `inputTokens` here is the **bundled** total (fresh + cache_read +
+ * cache_create) to match the convention the transcript-parser uses.
+ * Events do not split cache_create into 5m vs 1h — that distinction
+ * only exists in the jsonl transcript.
+ */
+export interface AgentTokenUsage {
   agentId: string
+  agentType: string | null
   description: string
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
-  totalTokens: number
   totalDurationMs: number
   toolUseCount: number
-  toolStats: {
-    readCount: number
-    editFileCount: number
-    bashCount: number
-    searchCount: number
-    linesAdded: number
-    linesRemoved: number
-  } | null
+}
+
+export interface ToolStat {
+  name: string
+  count: number
+  /** Duration stats from paired PreToolUse → PostToolUse events. null when no completion was captured. */
+  minMs: number | null
+  medianMs: number | null
+  maxMs: number | null
 }
 
 interface SessionStatsData {
@@ -500,15 +510,25 @@ interface SessionStatsData {
   permissionRequests: number
   permissionDenials: number
   toolSuccessRate: string
-  topTools: { name: string; count: number }[]
-  longestToolCall: { tool: string; durationMs: number } | null
+  /** All tools sorted by count desc, with duration stats per tool. */
+  tools: ToolStat[]
+  longestToolCall: { tool: string; durationMs: number; eventId: number } | null
   filesTouched: number
+  filesRead: number
+  filesEdited: number
   turns: number
   agentUsage: AgentTokenUsage[]
   totalTokens: { input: number; output: number; cacheRead: number; cacheCreation: number }
+  /** Raw session duration in milliseconds (lastTs - firstTs). Used by
+   *  the Agents table as the main agent's duration when transcript
+   *  parsing isn't available. */
+  sessionDurationMs: number
+  /** Count of PreToolUse events emitted by the main session agent.
+   *  Used as the main agent's tool count in the Agents table. */
+  mainAgentToolCount: number
 }
 
-function computeStats(events: ParsedEvent[]): SessionStatsData {
+function computeStats(events: ParsedEvent[], sessionId: string): SessionStatsData {
   let toolCalls = 0
   let subagentsSpawned = 0
   let userPrompts = 0
@@ -518,11 +538,15 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
   let postToolUseCount = 0
   let postToolUseFailureCount = 0
   let turns = 0
+  let mainAgentToolCount = 0
 
   const toolCounts = new Map<string, number>()
-  const preToolTimestamps = new Map<string, { tool: string; timestamp: number }>()
-  let longestToolCall: { tool: string; durationMs: number } | null = null
+  const toolDurations = new Map<string, number[]>()
+  const preToolTimestamps = new Map<string, { tool: string; timestamp: number; eventId: number }>()
+  let longestToolCall: { tool: string; durationMs: number; eventId: number } | null = null
   const filesSet = new Set<string>()
+  const filesReadSet = new Set<string>()
+  const filesEditedSet = new Set<string>()
 
   const firstTs = events.length > 0 ? events[0].timestamp : 0
   const lastTs = events.length > 0 ? events[events.length - 1].timestamp : 0
@@ -538,19 +562,27 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
       toolCalls++
       const tool = eToolName || 'unknown'
       toolCounts.set(tool, (toolCounts.get(tool) || 0) + 1)
+      // Track the main agent's own tool usage separately. Subagents
+      // have their own agentId; the session root id == the main agent.
+      if (e.agentId === sessionId) mainAgentToolCount++
 
       // tool_use_id lives in payload (Claude-Code-specific key) — used
       // to pair Pre/PostToolUse for duration computation.
       const input = e.payload as any
       const toolUseId = typeof input?.tool_use_id === 'string' ? input.tool_use_id : null
       if (toolUseId) {
-        preToolTimestamps.set(toolUseId, { tool, timestamp: e.timestamp })
+        preToolTimestamps.set(toolUseId, { tool, timestamp: e.timestamp, eventId: e.id })
       }
 
-      // Track files from tool inputs
+      // Track files from tool inputs. Read tool → filesRead; Edit/Write → filesEdited.
+      // The generic filesSet keeps backward compat for any callers that still read it.
       if (input?.tool_input) {
         const ti = input.tool_input
-        if (typeof ti.file_path === 'string') filesSet.add(ti.file_path)
+        if (typeof ti.file_path === 'string') {
+          filesSet.add(ti.file_path)
+          if (tool === 'Read') filesReadSet.add(ti.file_path)
+          if (tool === 'Edit' || tool === 'Write') filesEditedSet.add(ti.file_path)
+        }
         if (typeof ti.path === 'string') filesSet.add(ti.path)
         if (typeof ti.pattern === 'string' && ti.path) filesSet.add(ti.path)
       }
@@ -566,8 +598,12 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
         if (pre) {
           const duration = e.timestamp - pre.timestamp
           if (!longestToolCall || duration > longestToolCall.durationMs) {
-            longestToolCall = { tool: pre.tool, durationMs: duration }
+            longestToolCall = { tool: pre.tool, durationMs: duration, eventId: pre.eventId }
           }
+          // Track every duration per tool so we can compute min/median/max.
+          const arr = toolDurations.get(pre.tool) ?? []
+          arr.push(duration)
+          toolDurations.set(pre.tool, arr)
         }
       }
     }
@@ -620,42 +656,42 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
       totalTokens.cacheCreation += cacheCreation
 
       const toolInput = (e.payload as any)?.tool_input
+      // Bundled input matches the transcript-parser convention so the
+      // events-and-transcripts merge in TokenUsageSection compares like
+      // for like.
+      const bundledInput = input + cacheRead + cacheCreation
       agentUsage.push({
         agentId: resp.agentId || 'unknown',
+        agentType: typeof resp.agentType === 'string' ? resp.agentType : null,
         description: toolInput?.description || resp.agentType || 'Agent',
-        inputTokens: input,
+        inputTokens: bundledInput,
         outputTokens: output,
         cacheReadTokens: cacheRead,
         cacheCreationTokens: cacheCreation,
-        totalTokens: resp.totalTokens ?? input + output,
         totalDurationMs: resp.totalDurationMs ?? 0,
         toolUseCount: resp.totalToolUseCount ?? 0,
-        toolStats: resp.toolStats
-          ? {
-              readCount: resp.toolStats.readCount ?? 0,
-              editFileCount: resp.toolStats.editFileCount ?? 0,
-              bashCount: resp.toolStats.bashCount ?? 0,
-              searchCount: resp.toolStats.searchCount ?? 0,
-              linesAdded: resp.toolStats.linesAdded ?? 0,
-              linesRemoved: resp.toolStats.linesRemoved ?? 0,
-            }
-          : null,
       })
     }
   }
 
-  // Sort agents by total tokens descending
-  agentUsage.sort((a, b) => b.totalTokens - a.totalTokens)
+  // Sort by duration desc — matches the events-only default sort in
+  // the Agents table. Transcripts mode re-sorts by Est Cost on render.
+  agentUsage.sort((a, b) => b.totalDurationMs - a.totalDurationMs)
 
   // Duration
   const durationMs = lastTs - firstTs
   let duration: string
   if (durationMs < 60_000) duration = `${Math.round(durationMs / 1000)}s`
   else if (durationMs < 3_600_000) duration = `${Math.round(durationMs / 60_000)}m`
-  else {
+  else if (durationMs < 86_400_000) {
     const h = Math.floor(durationMs / 3_600_000)
     const m = Math.round((durationMs % 3_600_000) / 60_000)
     duration = `${h}h ${m}m`
+  } else {
+    const d = Math.floor(durationMs / 86_400_000)
+    const h = Math.floor((durationMs % 86_400_000) / 3_600_000)
+    const m = Math.round((durationMs % 3_600_000) / 60_000)
+    duration = `${d}d ${h}h ${m}m`
   }
 
   // Tool success rate
@@ -663,11 +699,25 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
   const toolSuccessRate =
     totalCompleted > 0 ? `${Math.round((postToolUseCount / totalCompleted) * 100)}%` : '—'
 
-  // Top tools sorted by count
-  const topTools = [...toolCounts.entries()]
+  // All tools sorted by count desc, with min/median/max durations
+  // computed from paired Pre/Post events. Tools with no completion
+  // captured have null duration fields.
+  function median(sorted: number[]): number {
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid]
+  }
+  const tools: ToolStat[] = [...toolCounts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, count]) => {
+      const durs = (toolDurations.get(name) ?? []).slice().sort((a, b) => a - b)
+      return {
+        name,
+        count,
+        minMs: durs.length > 0 ? durs[0] : null,
+        medianMs: durs.length > 0 ? median(durs) : null,
+        maxMs: durs.length > 0 ? durs[durs.length - 1] : null,
+      }
+    })
 
   return {
     duration,
@@ -679,25 +729,39 @@ function computeStats(events: ParsedEvent[]): SessionStatsData {
     permissionRequests,
     permissionDenials,
     toolSuccessRate,
-    topTools,
+    tools,
     longestToolCall,
     filesTouched: filesSet.size,
+    filesRead: filesReadSet.size,
+    filesEdited: filesEditedSet.size,
     turns,
     agentUsage,
     totalTokens,
+    sessionDurationMs: durationMs,
+    mainAgentToolCount,
   }
 }
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.round(ms / 60_000)}m`
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return String(n)
+  if (ms < 3_600_000) {
+    const m = Math.floor(ms / 60_000)
+    const s = Math.round((ms % 60_000) / 1000)
+    return s === 0 ? `${m}m` : `${m}m ${s}s`
+  }
+  if (ms < 86_400_000) {
+    const h = Math.floor(ms / 3_600_000)
+    const m = Math.round((ms % 3_600_000) / 60_000)
+    return m === 0 ? `${h}h` : `${h}h ${m}m`
+  }
+  // Anything >= 24h: round to the nearest hour and drop minutes for a
+  // more compact column display. Carry handles the case where
+  // rounding bumps 23h up to a full day.
+  const totalHours = Math.round(ms / 3_600_000)
+  const d = Math.floor(totalHours / 24)
+  const h = totalHours % 24
+  return h === 0 ? `${d}d` : `${d}d ${h}h`
 }
 
 function SessionStats({ sessionId }: { sessionId: string }) {
@@ -718,18 +782,35 @@ function SessionStats({ sessionId }: { sessionId: string }) {
   })
 
   const agents = useAgents(sessionId, events)
-  const agentColorMap = useMemo(() => buildAgentColorMap(agents), [agents])
 
-  const stats = useMemo(() => (events ? computeStats(events) : null), [events])
+  const stats = useMemo(
+    () => (events ? computeStats(events, sessionId) : null),
+    [events, sessionId],
+  )
 
-  // Find first event for an agent (for scroll-to on click)
+  // Click handlers for agent / prompt rows — close the modal and scroll
+  // the event stream to the relevant event.
   const scrollToAgent = (agentId: string) => {
     if (!events) return
     const first = events.find((e) => e.agentId === agentId)
-    if (first) {
-      setScrollToEventId(first.id)
-      setEditingSessionId(null) // close modal
-    }
+    if (!first) return
+    setScrollToEventId(first.id)
+    setEditingSessionId(null)
+  }
+  const scrollToPrompt = (promptText: string, promptTimestamp: number) => {
+    if (!events) return
+    // Match by prompt text + closest timestamp. Falls back to text-only.
+    const ups = events.filter(
+      (e) => e.hookName === 'UserPromptSubmit' && (e.payload as any)?.prompt === promptText,
+    )
+    if (ups.length === 0) return
+    const closest = ups.reduce((best, e) =>
+      Math.abs(e.timestamp - promptTimestamp) < Math.abs(best.timestamp - promptTimestamp)
+        ? e
+        : best,
+    )
+    setScrollToEventId(closest.id)
+    setEditingSessionId(null)
   }
 
   if (isLoading || !stats) {
@@ -740,22 +821,25 @@ function SessionStats({ sessionId }: { sessionId: string }) {
     )
   }
 
-  return (
-    <div className="px-5 py-4 space-y-4 text-xs overflow-y-auto max-h-[50vh]">
-      {/* Overview grid */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Duration" value={stats.duration} />
-        <StatCard label="Events" value={stats.totalEvents.toLocaleString()} />
-        <StatCard label="Tool Calls" value={stats.toolCalls.toLocaleString()} />
-        <StatCard label="User Prompts" value={stats.userPrompts.toLocaleString()} />
+  // Overview preview: 6 cards. Expanded adds the rest + Permissions.
+  const overviewPreview = (
+    <div className="grid grid-cols-6 gap-2">
+      <StatCard label="Duration" value={stats.duration} />
+      <StatCard label="Events" value={stats.totalEvents.toLocaleString()} />
+      <StatCard label="Tool Calls" value={stats.toolCalls.toLocaleString()} />
+      <StatCard label="Prompts" value={stats.userPrompts.toLocaleString()} />
+      <StatCard label="Subagents" value={stats.subagentsSpawned.toLocaleString()} />
+      <StatCard label="Success" value={stats.toolSuccessRate} />
+    </div>
+  )
+  const overviewDetails = (
+    <div className="space-y-3">
+      <div className="grid grid-cols-4 gap-3">
         <StatCard label="Turns" value={stats.turns.toLocaleString()} />
-        <StatCard label="Subagents" value={stats.subagentsSpawned.toLocaleString()} />
         <StatCard label="Git Commits" value={stats.gitCommits.toLocaleString()} />
-        <StatCard label="Files Touched" value={stats.filesTouched.toLocaleString()} />
-        <StatCard label="Success Rate" value={stats.toolSuccessRate} />
+        <StatCard label="Files Read" value={stats.filesRead.toLocaleString()} />
+        <StatCard label="Files Edited" value={stats.filesEdited.toLocaleString()} />
       </div>
-
-      {/* Permissions */}
       {(stats.permissionRequests > 0 || stats.permissionDenials > 0) && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
@@ -767,150 +851,141 @@ function SessionStats({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       )}
+    </div>
+  )
 
-      {/* Top tools */}
-      {stats.topTools.length > 0 && (
+  // Tool Usage preview: top 6 tools as bar chart + longest tool call.
+  const toolUsagePreview = (
+    <div className="space-y-2">
+      {stats.tools.length > 0 && (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
             Top Tools
           </div>
           <div className="space-y-1">
-            {stats.topTools.map(({ name, count }) => {
+            {stats.tools.slice(0, 6).map(({ name, count }) => {
               const pct = stats.toolCalls > 0 ? (count / stats.toolCalls) * 100 : 0
               return (
                 <div key={name} className="flex items-center gap-2">
-                  <span className="w-20 truncate text-muted-foreground">{name}</span>
+                  <span className="w-24 truncate text-muted-foreground">{name}</span>
                   <div className="flex-1 h-3 rounded-full bg-muted/50 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-primary/40"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-8 text-right text-muted-foreground/70">{count}</span>
+                  <span className="w-12 text-right text-muted-foreground/70 font-mono">
+                    {count}
+                  </span>
                 </div>
               )
             })}
           </div>
         </div>
       )}
-
-      {/* Longest tool call */}
       {stats.longestToolCall && (
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
-            Longest Tool Call
-          </div>
-          <div className="text-sm">
-            {stats.longestToolCall.tool}{' '}
-            <span className="text-muted-foreground">
-              ({formatDuration(stats.longestToolCall.durationMs)})
-            </span>
-          </div>
+        <div className="text-sm">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mr-2">
+            Longest tool call:
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setScrollToEventId(stats.longestToolCall!.eventId)
+              setEditingSessionId(null)
+            }}
+            className="cursor-pointer hover:underline"
+          >
+            {stats.longestToolCall.tool}
+          </button>{' '}
+          <span className="text-muted-foreground">
+            ({formatDuration(stats.longestToolCall.durationMs)})
+          </span>
         </div>
       )}
+    </div>
+  )
+  // Expanded: full table with Graph | Count | Min | Median | Max for
+  // every tool used in the session.
+  const toolUsageDetails = (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
+        All Tools
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-muted-foreground border-b border-border">
+            <th className="text-left font-normal py-1.5 px-2 whitespace-nowrap">Tool</th>
+            <th className="text-left font-normal py-1.5 px-2 w-2/5 whitespace-nowrap">Graph</th>
+            <th className="text-right font-normal py-1.5 px-2 whitespace-nowrap">Count</th>
+            <th
+              className="text-right font-normal py-1.5 px-2 border-l border-border/30 whitespace-nowrap"
+              colSpan={3}
+            >
+              <span className="text-[9px] uppercase tracking-wide">Duration</span>
+            </th>
+          </tr>
+          <tr className="text-muted-foreground/70 border-b border-border">
+            <th></th>
+            <th></th>
+            <th></th>
+            <th className="text-right font-normal text-[10px] py-1 px-2 border-l border-border/30">
+              Min
+            </th>
+            <th className="text-right font-normal text-[10px] py-1 px-2">Median</th>
+            <th className="text-right font-normal text-[10px] py-1 px-2">Max</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          {stats.tools.map((t) => {
+            const pct = stats.toolCalls > 0 ? (t.count / stats.toolCalls) * 100 : 0
+            return (
+              <tr key={t.name} className="border-b border-border/40">
+                <td className="py-1 px-2 text-foreground truncate max-w-[140px]">{t.name}</td>
+                <td className="py-1 px-2">
+                  <div className="h-2.5 rounded-full bg-muted/50 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary/40"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </td>
+                <td className="py-1 px-2 text-right text-muted-foreground">{t.count}</td>
+                <td className="py-1 px-2 text-right text-muted-foreground border-l border-border/30 whitespace-nowrap">
+                  {t.minMs == null ? '—' : formatDuration(t.minMs)}
+                </td>
+                <td className="py-1 px-2 text-right text-muted-foreground whitespace-nowrap">
+                  {t.medianMs == null ? '—' : formatDuration(t.medianMs)}
+                </td>
+                <td className="py-1 px-2 text-right text-muted-foreground whitespace-nowrap">
+                  {t.maxMs == null ? '—' : formatDuration(t.maxMs)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 
-      {/* Token usage */}
-      {(stats.totalTokens.input > 0 || stats.totalTokens.output > 0) && (
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1.5">
-            Token Usage (Subagents)
-          </div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <StatCard
-              label="Total Input"
-              value={formatTokens(
-                stats.totalTokens.input +
-                  stats.totalTokens.cacheRead +
-                  stats.totalTokens.cacheCreation,
-              )}
-            />
-            <StatCard label="Total Output" value={formatTokens(stats.totalTokens.output)} />
-            <StatCard
-              label="Cache Hit Rate"
-              value={
-                stats.totalTokens.input +
-                  stats.totalTokens.cacheRead +
-                  stats.totalTokens.cacheCreation >
-                0
-                  ? `${Math.round(
-                      (stats.totalTokens.cacheRead /
-                        (stats.totalTokens.input +
-                          stats.totalTokens.cacheRead +
-                          stats.totalTokens.cacheCreation)) *
-                        100,
-                    )}%`
-                  : '—'
-              }
-            />
-          </div>
-          {stats.agentUsage.length > 0 && (
-            <TooltipProvider>
-              <div className="rounded-md border border-border/50 overflow-hidden">
-                <table className="w-full text-[10px]">
-                  <thead>
-                    <tr className="bg-muted/30 text-muted-foreground">
-                      <th className="text-left px-2 py-1.5 font-medium">Agent</th>
-                      <th className="text-right px-2 py-1.5 font-medium">Input</th>
-                      <th className="text-right px-2 py-1.5 font-medium">Output</th>
-                      <th className="text-right px-2 py-1.5 font-medium">Cache Hit</th>
-                      <th className="text-right px-2 py-1.5 font-medium">Tools</th>
-                      <th className="text-right px-2 py-1.5 font-medium">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.agentUsage.map((agent) => {
-                      const totalInput =
-                        agent.inputTokens + agent.cacheReadTokens + agent.cacheCreationTokens
-                      const cacheHitPct =
-                        totalInput > 0
-                          ? `${Math.round((agent.cacheReadTokens / totalInput) * 100)}%`
-                          : '—'
-                      const agentObj = agents.find((a) => a.id === agent.agentId)
-                      const parentAgent = agentObj?.parentAgentId
-                        ? agents.find((a) => a.id === agentObj.parentAgentId)
-                        : null
-                      const color = getAgentColorById(agent.agentId, agentColorMap)
-                      return (
-                        <tr key={agent.agentId} className="border-t border-border/30">
-                          <td className="px-2 py-1.5 truncate max-w-[200px]">
-                            {agentObj ? (
-                              <button
-                                className={`truncate cursor-pointer hover:underline ${color.textOnly}`}
-                                onClick={() => scrollToAgent(agent.agentId)}
-                              >
-                                <AgentLabel agent={agentObj} parentAgent={parentAgent} />
-                              </button>
-                            ) : (
-                              <span className="truncate" title={agent.description}>
-                                {agent.description}
-                              </span>
-                            )}
-                          </td>
-                          <td className="text-right px-2 py-1.5 text-muted-foreground">
-                            {formatTokens(totalInput)}
-                          </td>
-                          <td className="text-right px-2 py-1.5 text-muted-foreground">
-                            {formatTokens(agent.outputTokens)}
-                          </td>
-                          <td className="text-right px-2 py-1.5 text-muted-foreground">
-                            {cacheHitPct}
-                          </td>
-                          <td className="text-right px-2 py-1.5 text-muted-foreground">
-                            {agent.toolUseCount}
-                          </td>
-                          <td className="text-right px-2 py-1.5 text-muted-foreground">
-                            {formatDuration(agent.totalDurationMs)}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </TooltipProvider>
-          )}
-        </div>
-      )}
+  return (
+    <div className="px-5 py-4 text-xs overflow-y-auto max-h-[60vh]">
+      <CollapsibleSection title="Overview" preview={overviewPreview} details={overviewDetails} />
+      <CollapsibleSection
+        title="Tool Usage"
+        preview={toolUsagePreview}
+        details={toolUsageDetails}
+      />
+      <TokenUsageSection
+        sessionId={sessionId}
+        mainAgentId={sessionId}
+        agents={agents}
+        eventSubagents={stats.agentUsage}
+        sessionDurationMs={stats.sessionDurationMs}
+        mainAgentToolCount={stats.mainAgentToolCount}
+        onAgentClick={scrollToAgent}
+        onPromptClick={scrollToPrompt}
+      />
     </div>
   )
 }

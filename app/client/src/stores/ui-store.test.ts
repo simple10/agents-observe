@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useUIStore } from './ui-store'
+import { useUIStore, parseView } from './ui-store'
 import type { EnrichedEvent } from '@/agents/types'
 
 function makeEvent(id: number): EnrichedEvent {
@@ -50,6 +50,7 @@ beforeEach(() => {
     selectedEventId: null,
     editingSessionId: null,
     editingSessionTab: 'details',
+    currentView: null,
     autoFollow: true,
     rewindMode: false,
     frozenEvents: null,
@@ -95,6 +96,86 @@ describe('ui-store', () => {
       useUIStore.getState().setSelectedProject(2, 'proj-b')
       expect(useUIStore.getState().selectedSessionId).toBeNull()
       expect(window.location.hash).toBe('#/proj-b')
+    })
+  })
+
+  // ── Deep-link view (`:foo` / `:scope.name@id` suffix) ──────────
+
+  describe('parseView helper', () => {
+    it('parses global view (no scope)', () => {
+      expect(parseView('settings')).toEqual({ scope: 'global', name: 'settings', target: null })
+    })
+    it('parses scope-bound view', () => {
+      expect(parseView('session.stats')).toEqual({
+        scope: 'session',
+        name: 'stats',
+        target: null,
+      })
+      expect(parseView('project.edit')).toEqual({ scope: 'project', name: 'edit', target: null })
+    })
+    it('parses view with @target override', () => {
+      expect(parseView('session.stats@sess-99')).toEqual({
+        scope: 'session',
+        name: 'stats',
+        target: 'sess-99',
+      })
+      expect(parseView('project.edit@other-slug')).toEqual({
+        scope: 'project',
+        name: 'edit',
+        target: 'other-slug',
+      })
+    })
+    it('treats unknown scopes as global view names', () => {
+      expect(parseView('agent.detail')).toEqual({
+        scope: 'global',
+        name: 'agent.detail',
+        target: null,
+      })
+    })
+    it('keeps multi-part view names intact (only first `.` is the scope separator)', () => {
+      expect(parseView('session.stats-v2')).toEqual({
+        scope: 'session',
+        name: 'stats-v2',
+        target: null,
+      })
+    })
+  })
+
+  describe('deep-link URL round-trip', () => {
+    it('preserves :view suffix when project/session change', () => {
+      useUIStore.getState().setSelectedProject(1, 'proj-a')
+      useUIStore.getState().setSelectedSessionId('sess-1')
+      useUIStore.getState().setEditingSessionId('sess-1', 'stats')
+      expect(window.location.hash).toBe('#/proj-a/sess-1:session.stats')
+
+      // Switching the selected session re-renders the URL with the new id —
+      // since the modal still targets sess-1, the view should now carry @sess-1.
+      useUIStore.getState().setSelectedSessionId('sess-2')
+      expect(window.location.hash).toBe('#/proj-a/sess-2:session.stats@sess-1')
+    })
+
+    it('strips :view suffix when modal closes', () => {
+      useUIStore.getState().setSelectedProject(1, 'proj-a')
+      useUIStore.getState().setSelectedSessionId('sess-1')
+      useUIStore.getState().setEditingSessionId('sess-1', 'stats')
+      useUIStore.getState().setEditingSessionId(null)
+      expect(window.location.hash).toBe('#/proj-a/sess-1')
+      expect(useUIStore.getState().currentView).toBeNull()
+    })
+
+    it('setCurrentView updates the URL directly', () => {
+      useUIStore.getState().setSelectedProject(1, 'proj-a')
+      useUIStore.getState().setCurrentView('settings')
+      expect(window.location.hash).toBe('#/proj-a:settings')
+      useUIStore.getState().setCurrentView(null)
+      expect(window.location.hash).toBe('#/proj-a')
+    })
+
+    it('omits @target when modal session matches selected session', () => {
+      useUIStore.getState().setSelectedProject(1, 'proj-a')
+      useUIStore.getState().setSelectedSessionId('sess-1')
+      useUIStore.getState().setEditingSessionId('sess-1', 'labels')
+      expect(window.location.hash).toBe('#/proj-a/sess-1:session.labels')
     })
   })
 

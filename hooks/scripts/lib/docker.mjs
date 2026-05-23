@@ -2,6 +2,7 @@
 // Docker container management for Agents Observe. Node.js built-ins only.
 
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { getJson } from './http.mjs'
 import { initLocalDataDirs, getServerEnv } from './config.mjs'
 import { saveServerPortFile, removeServerPortFile } from './fs.mjs'
@@ -176,6 +177,22 @@ export async function startServer(config, log = console) {
   const labelValue = config.expectedVersion || 'unknown'
 
   function dockerRunArgs(portMapping) {
+    // One mount per supported agent class. Each can resolve to a
+    // different host path (user override) but the container side is
+    // fixed so the server's resolveTranscriptPath knows where things
+    // land. Missing host paths are silently skipped so e.g. a user
+    // without codex installed doesn't error out.
+    const transcriptMounts = config.transcriptStatsEnabled
+      ? [
+          ['-v', `${config.transcriptClaudeHost}:/host/.claude/projects:ro`],
+          ['-v', `${config.transcriptCodexHost}:/host/.codex/sessions:ro`],
+        ]
+          .filter(([, mount]) => {
+            const [src] = mount.split(':')
+            return src && existsSync(src)
+          })
+          .flat()
+      : []
     return [
       'run',
       '-d',
@@ -188,6 +205,7 @@ export async function startServer(config, log = console) {
       ...envArgs,
       '-v',
       `${config.dataDir}:/data`,
+      ...transcriptMounts,
       config.dockerImage,
     ]
   }

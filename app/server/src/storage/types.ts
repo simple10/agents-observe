@@ -2,6 +2,13 @@
 
 import type { Filter } from '../types'
 
+export class DuplicateEventSignatureError extends Error {
+  constructor(public readonly signatureHash: string) {
+    super(`Duplicate event signature: ${signatureHash}`)
+    this.name = 'DuplicateEventSignatureError'
+  }
+}
+
 export interface InsertEventParams {
   agentId: string
   sessionId: string
@@ -13,6 +20,8 @@ export interface InsertEventParams {
   cwd?: string | null
   /** Envelope creation hints persisted for traceability. Optional. */
   _meta?: Record<string, unknown> | null
+  /** Stable signature for dedup. When set, a UNIQUE constraint is enforced. */
+  signatureHash?: string | null
 }
 
 export interface InsertEventResult {
@@ -108,9 +117,11 @@ export interface EventStore {
   /** Update `sessions.last_activity` to MAX(current, timestamp). */
   touchSessionActivity(sessionId: string, timestamp: number): Promise<void>
   insertEvent(params: InsertEventParams): Promise<InsertEventResult>
+  findEventBySignatureHash(hash: string): Promise<{ id: number } | null>
   getProjects(): Promise<any[]>
   getSessionsForProject(projectId: number): Promise<any[]>
   getSessionById(sessionId: string): Promise<any | null>
+  getSessionTranscriptPath(sessionId: string): Promise<string | null>
   getAgentById(agentId: string): Promise<any | null>
   getSessionsWithPendingNotifications(sinceTs: number): Promise<any[]>
   getAgentsForSession(sessionId: string): Promise<any[]>
