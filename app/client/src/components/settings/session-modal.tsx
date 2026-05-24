@@ -743,8 +743,9 @@ function computeStats(events: ParsedEvent[], sessionId: string): SessionStatsDat
  */
 function mergeStatsWithTranscript(
   base: SessionStatsData,
-  summary: TranscriptStatsData['summary'],
+  transcript: TranscriptStatsData,
 ): SessionStatsData {
+  const summary = transcript.summary
   const tools: ToolStat[] = summary.toolStats.length > 0 ? summary.toolStats : base.tools
   return {
     ...base,
@@ -754,6 +755,9 @@ function mergeStatsWithTranscript(
     filesRead: summary.filesRead || base.filesRead,
     filesEdited: summary.filesEdited || base.filesEdited,
     gitCommits: summary.gitCommits || base.gitCommits,
+    // JSONL-derived count (deduped by uuid, internal injects filtered).
+    // Captures pre-plugin prompts on resumed sessions that events miss.
+    userPrompts: summary.userPrompts || base.userPrompts,
     tools,
   }
 }
@@ -844,7 +848,7 @@ function SessionStats({ sessionId }: { sessionId: string }) {
     // sessions). Per-tool stats also come from the transcript; the
     // longest-tool card stays events-derived since it needs eventId
     // for navigation.
-    return mergeStatsWithTranscript(base, transcript.summary)
+    return mergeStatsWithTranscript(base, transcript)
   }, [events, sessionId, transcript])
 
   // Click handlers for agent / prompt rows — close the modal and scroll

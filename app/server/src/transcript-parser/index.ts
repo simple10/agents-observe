@@ -67,6 +67,7 @@ export async function parseSessionTranscripts(
         filesEdited: 0,
         gitCommits: 0,
         toolStats: [],
+        userPrompts: 0,
       },
       byModel: [],
       prompts: [],
@@ -362,6 +363,7 @@ function aggregateSummary(
     filesEdited: result.filesEdited,
     gitCommits: result.gitCommits,
     toolStats: result.toolStats,
+    userPrompts: result.userPrompts,
   }
 }
 

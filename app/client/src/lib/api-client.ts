@@ -335,6 +335,7 @@ export interface TranscriptStatsData {
     filesEdited: number
     gitCommits: number
     toolStats: TranscriptStatsToolStat[]
+    userPrompts: number
   }
   byModel: TranscriptStatsByModel[]
   prompts: TranscriptStatsPrompt[]

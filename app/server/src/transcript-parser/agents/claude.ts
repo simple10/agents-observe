@@ -64,7 +64,21 @@ interface JsonlParseResult {
   /** Timestamps of tool_result blocks keyed by tool_use_id, used for
    *  per-tool duration stats. */
   toolResults: Map<string, number>
+  /** Set of uuids whose user line looks like a real user-typed prompt
+   *  (has text content, isn't an internal inject like <command-name>,
+   *  <local-command-stdout>, or `[Request interrupted by user]`).
+   *  Dedup by uuid because session resume rewrites the JSONL, re-emitting
+   *  the same prompt line multiple times with the same uuid but new
+   *  promptIds — promptId-based counting would over-count those replays.
+   */
+  userPromptUuids: Set<string>
 }
+
+/** Matches the leading tag of Claude Code's internal user-line injects
+ *  (slash commands, command caveats, captured bash output). These have
+ *  a promptId but don't represent a user prompt. */
+const INJECT_PREFIX_RE = /^<(?:command-|local-command-|bash-stdout|bash-stderr|bash-input)/
+const INTERRUPT_PREFIX = '[Request interrupted'
 
 /**
  * Stream-parse a single jsonl file. Returns deduped calls (by
@@ -78,6 +92,7 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
   const firstUuidByMessageId = new Map<string, string>()
   const toolUses = new Map<string, ToolUseRecord>()
   const toolResults = new Map<string, number>()
+  const userPromptUuids = new Set<string>()
 
   let firstTimestamp = Infinity
   let lastTimestamp = 0
@@ -173,6 +188,17 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
         if (text !== null && !(line.promptId in prompts)) {
           prompts[line.promptId] = { text, timestamp: ts }
         }
+        // Track real user-typed prompts (deduped by uuid so resume
+        // replays of the same line don't inflate the count). Filter out
+        // internal injects and [Request interrupted by user] auto-msgs.
+        if (
+          text !== null &&
+          uuid &&
+          !INJECT_PREFIX_RE.test(text) &&
+          !text.startsWith(INTERRUPT_PREFIX)
+        ) {
+          userPromptUuids.add(uuid)
+        }
       }
       // Tool results: capture the timestamp keyed by tool_use_id so
       // parseClaudeSession can pair each tool_use with its result and
@@ -246,6 +272,7 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
     lastTimestampByPromptId,
     toolUses,
     toolResults,
+    userPromptUuids,
   }
 }
 
@@ -361,6 +388,10 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
     filesEdited: toolAggregate.filesEdited,
     gitCommits: toolAggregate.gitCommits,
     toolStats: toolAggregate.toolStats,
+    // Real user prompts come from the main JSONL only — subagent
+    // JSONLs synthesize "user" lines for the parent's Agent tool
+    // invocation, not user keystrokes.
+    userPrompts: main.userPromptUuids.size,
   }
 }
 

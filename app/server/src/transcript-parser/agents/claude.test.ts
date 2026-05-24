@@ -367,6 +367,88 @@ describe('parseClaudeSession — tool stats', () => {
     expect(result.durationMs).toBe(4_000)
   })
 
+  test('userPrompts dedups resume-replays by uuid and filters internal injects', async () => {
+    // Simulate a session that was resumed twice: the same user-prompt
+    // line appears three times in the JSONL (same uuid, same parent,
+    // same text, same timestamp) but with three different promptIds —
+    // one per replay. The real count is one.
+    //
+    // Plus: a second prompt that's a real user typed message, a
+    // <command-name> slash command, a <local-command-stdout> capture,
+    // and a [Request interrupted by user] auto-message. The first two
+    // count; the last three are filtered.
+    const lines = [
+      // Replay 1 of "hello"
+      {
+        type: 'user',
+        uuid: 'u-prompt1',
+        parentUuid: null,
+        promptId: 'pid-1a',
+        timestamp: '2026-07-01T00:00:00.000Z',
+        message: { content: 'hello' },
+      },
+      // Replay 2 of "hello" — same uuid, different promptId
+      {
+        type: 'user',
+        uuid: 'u-prompt1',
+        parentUuid: null,
+        promptId: 'pid-1b',
+        timestamp: '2026-07-01T00:00:00.000Z',
+        message: { content: 'hello' },
+      },
+      // Replay 3 of "hello" — same uuid, different promptId
+      {
+        type: 'user',
+        uuid: 'u-prompt1',
+        parentUuid: null,
+        promptId: 'pid-1c',
+        timestamp: '2026-07-01T00:00:00.000Z',
+        message: { content: 'hello' },
+      },
+      // A distinct real prompt
+      {
+        type: 'user',
+        uuid: 'u-prompt2',
+        parentUuid: null,
+        promptId: 'pid-2',
+        timestamp: '2026-07-01T00:01:00.000Z',
+        message: { content: 'do the thing' },
+      },
+      // Slash command — filtered
+      {
+        type: 'user',
+        uuid: 'u-slash',
+        parentUuid: null,
+        promptId: 'pid-slash',
+        timestamp: '2026-07-01T00:02:00.000Z',
+        message: { content: '<command-name>/clear</command-name>' },
+      },
+      // Captured bash output — filtered
+      {
+        type: 'user',
+        uuid: 'u-stdout',
+        parentUuid: null,
+        promptId: 'pid-stdout',
+        timestamp: '2026-07-01T00:03:00.000Z',
+        message: { content: '<local-command-stdout>build output...</local-command-stdout>' },
+      },
+      // Interrupt — filtered
+      {
+        type: 'user',
+        uuid: 'u-interrupt',
+        parentUuid: null,
+        promptId: 'pid-interrupt',
+        timestamp: '2026-07-01T00:04:00.000Z',
+        message: { content: '[Request interrupted by user]' },
+      },
+    ]
+    const path = join(TMP_DIR, 'user-prompts.jsonl')
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    const result = await parseClaudeSession(path)
+    expect(result.userPrompts).toBe(2)
+  })
+
   test('tool stats merge across main + subagent jsonls', async () => {
     const path = join(TMP_DIR, 'merge.jsonl')
     writeFileSync(path, TOOL_FIXTURE_LINES.map((l) => JSON.stringify(l)).join('\n') + '\n')

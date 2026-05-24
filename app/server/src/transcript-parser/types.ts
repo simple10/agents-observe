@@ -70,6 +70,12 @@ export interface AgentParseResult {
   filesEdited: number
   gitCommits: number
   toolStats: TranscriptToolStat[]
+  /** Count of real user-typed prompts in the main JSONL, deduped by
+   *  uuid so session-resume replays don't inflate the count, with
+   *  internal injects (slash commands, command caveats, bash output
+   *  captures) and `[Request interrupted by user]` auto-messages
+   *  filtered out. */
+  userPrompts: number
 }
 
 export interface TranscriptToolStat {
@@ -132,6 +138,9 @@ export interface TranscriptSummaryV2 {
   filesEdited: number
   gitCommits: number
   toolStats: TranscriptToolStat[]
+  /** JSONL-derived count of user-typed prompts (main JSONL only,
+   *  deduped by uuid, internal injects filtered). */
+  userPrompts: number
 }
 
 export interface TranscriptStatsV2 {

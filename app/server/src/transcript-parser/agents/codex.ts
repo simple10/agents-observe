@@ -197,5 +197,8 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
     filesEdited: 0,
     gitCommits: 0,
     toolStats: [],
+    // Codex's `prompts` is one entry per turn_id (event_msg user_message)
+    // — no resume-replay duplication or internal injects to filter.
+    userPrompts: Object.keys(prompts).length,
   }
 }
