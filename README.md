@@ -71,10 +71,10 @@ Before upgrading the plugin:
 ```bash
 # Example moving the db to a permanent location
 
-mkdir -p ~/.claude/plugins/data/agents-observe/data
+mkdir -p ~/.claude/plugins/data/agents-observe
 
 # Note: change the version (0.9.6) to whatever version you've installed
-mv ~/.claude/plugins/cache/agents-observe/agents-observe/0.9.6/data/data ~/.claude/plugins/data/agents-observe
+mv ~/.claude/plugins/cache/agents-observe/agents-observe/0.9.6/data/data ~/.claude/plugins/data/agents-observe/data
 
 # Open claude settings.json in an editor
 edit ~/.claude/settings.json
@@ -85,7 +85,7 @@ Set AGENTS_OBSERVE_LOCAL_DATA_ROOT env var in `~/.claude/settings.json`
 ```jsonc
   // ~/.claude/settings.json
   "env": {
-    "AGENTS_OBSERVE_LOCAL_DATA_ROOT": "~/.claude/plugins/data/agents-observe/data"
+    "AGENTS_OBSERVE_LOCAL_DATA_ROOT": "~/.claude/plugins/data/agents-observe"
   },
 ```
 
