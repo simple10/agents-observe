@@ -3,3 +3,4 @@
 import './default/index'
 import './claude-code'
 import './codex/index'
+import './hermes'
