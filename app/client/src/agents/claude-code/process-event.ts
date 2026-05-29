@@ -238,8 +238,14 @@ export function processEvent(
   let statusOverride: ClaudeCodeEnrichedEvent['status'] | null = null
 
   if (dedup) {
-    // Task grouping
-    const taskId = (p.task_id ?? p.tool_input?.taskId ?? p.tool_response?.taskId) as
+    // Task grouping. The tool_input/tool_response taskId only counts for
+    // Task-lifecycle tools — other tools (e.g. Workflow, which returns a
+    // background `taskId` in its response) must NOT be hijacked into a
+    // task group, or their Pre/Post pair never reunites under the shared
+    // tool_use_id below. `task_id` is only emitted by Task* hooks.
+    const isTaskTool = toolName === 'TaskCreate' || toolName === 'TaskUpdate'
+    const taskId = (p.task_id ??
+      (isTaskTool ? (p.tool_input?.taskId ?? p.tool_response?.taskId) : undefined)) as
       | string
       | undefined
     if (taskId) {
