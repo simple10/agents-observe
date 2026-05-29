@@ -82,9 +82,9 @@ describe('MainPanel routing', () => {
   })
 
   // Regression guard: direct session navigation (skills `/observe view` &
-  // `/observe stats`, and any unassigned session) uses `#/<sessionId>` with no
-  // project slug, so `selectedProjectId` is null. The session view MUST still
-  // render — it must never blank out or fall back to HomePage.
+  // `/observe stats`, and any unassigned session) uses `#/_/<sessionId>` with
+  // the project placeholder, so `selectedProjectId` is null. The session view
+  // MUST still render — it must never blank out or fall back to HomePage.
   it('renders the session view for a session-only route with no project (skills + unassigned)', () => {
     useUIStore.setState({
       selectedProjectId: null,

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type TranscriptStatsData } from '@/lib/api-client'
 import { getServerHealth } from '@/lib/server-health'
-import { useUIStore } from '@/stores/ui-store'
+import { useUIStore, buildHash } from '@/stores/ui-store'
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
@@ -247,7 +247,7 @@ export function SessionEditModal() {
                     closes both modals and selects the session in-app. */}
                 {session && (
                   <a
-                    href={`#/${session.projectSlug ?? ''}/${session.id}`}
+                    href={buildHash(session.projectSlug ?? null, session.id, null)}
                     onClick={(e) => {
                       const isModified =
                         e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0

@@ -38,7 +38,7 @@ Opens the current session in the dashboard.
    scripts/cli.sh health
    ```
 2. From the output, take the `Dashboard:` URL (e.g. `http://localhost:4981`). If exit code 1, the server isn't running — tell the user to run `/observe start` and stop here.
-3. Construct the session URL: `<dashboard>/#/${CLAUDE_SESSION_ID}` (the dashboard auto-redirects this to the project + session view).
+3. Construct the session URL: `<dashboard>/#/_/${CLAUDE_SESSION_ID}` (the `_` is the project placeholder; the dashboard resolves the real project from the session id).
 4. Open it in the user's default browser using the platform-appropriate command — `open <url>` on macOS, `xdg-open <url>` on Linux, `start <url>` on Windows. Pick based on the `Platform:` line in your environment context.
 5. Also print the URL in your response so the user can re-open it if needed.
 
@@ -51,7 +51,7 @@ Opens the current session's stats modal in the dashboard, using a deep-link URL.
    scripts/cli.sh health
    ```
 2. From the output, take the `Dashboard:` URL (e.g. `http://localhost:4981`). If exit code 1, the server isn't running — tell the user to run `/observe start` and stop here.
-3. Construct the deep link: `<dashboard>/#/${CLAUDE_SESSION_ID}:session.stats`
+3. Construct the deep link: `<dashboard>/#/_/${CLAUDE_SESSION_ID}:session.stats`
 4. Open it in the user's default browser using the platform-appropriate command — `open <url>` on macOS, `xdg-open <url>` on Linux, `start <url>` on Windows. Pick based on the `Platform:` line in your environment context.
 5. Also print the URL in your response so the user can re-open it if needed.
 

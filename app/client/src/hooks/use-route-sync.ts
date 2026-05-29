@@ -1,22 +1,37 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useUIStore, parseView } from '@/stores/ui-store'
+import { useUIStore, parseView, buildHash, PROJECT_PLACEHOLDER } from '@/stores/ui-store'
 import { useProjects } from '@/hooks/use-projects'
 import { api } from '@/lib/api-client'
 import type { Session } from '@/types'
 
 const SESSION_VIEW_TABS = new Set(['details', 'stats', 'labels'])
 
+// Upper bound on the legacy-link dedup set so it can't grow without limit over
+// a long-lived page. Cleared (not LRU-evicted) on overflow — re-resolving a
+// previously-seen dead slug after a clear costs one extra fetch, which is fine.
+const MAX_FALLBACK_ATTEMPTS = 50
+
+// Rewrite the CURRENT history entry's hash without adding a stack entry. Used
+// to canonicalize the (advisory) project segment from the resolved session —
+// replaceState, never pushState, so back/forward isn't polluted.
+function canonicalizeHash(
+  projectSlug: string | null,
+  sessionId: string | null,
+  view: string | null,
+) {
+  const target = buildHash(projectSlug, sessionId, view)
+  if (window.location.hash !== target) window.history.replaceState(null, '', target)
+}
+
 /**
- * Syncs the URL hash with the UI state on load and when project slugs change.
+ * Keeps the URL, the resolved project, and the selected session in sync.
  *
- * On mount with a sessionId in the URL:
- *   - Fetches the session to get its projectId
- *   - Looks up the project slug from loaded projects
- *   - Sets selectedProjectId and corrects the URL slug if needed
- *
- * On project data change:
- *   - If the URL slug doesn't match the selected project's actual slug, updates the URL
+ * The project segment is advisory: the session id (unique) is the source of
+ * truth, so the project shown in the URL is always DERIVED from the resolved
+ * session — never trusted from the URL or carried over from a previous
+ * selection. This is what fixes navigating between sessions in different
+ * projects (or to an unassigned session) leaving a stale project segment.
  */
 export function useRouteSync() {
   const queryClient = useQueryClient()
@@ -26,60 +41,122 @@ export function useRouteSync() {
   const selectedProjectSlug = useUIStore((s) => s.selectedProjectSlug)
   const currentView = useUIStore((s) => s.currentView)
 
-  // On mount: resolve session → project if we have a sessionId but no projectId.
-  // Use queryClient.fetchQuery so the result lands in the canonical
-  // `['session', sessionId]` cache — SessionBreadcrumb + the permission-mode
-  // backfill consumer both read from that key and skip their own fetches.
-  // Without this, three separate paths each fetched /api/sessions/:id.
-  useEffect(() => {
-    if (!selectedSessionId || selectedProjectId) return
+  // Resolve a session through the canonical ['session', id] cache so
+  // SessionBreadcrumb + the permission-mode backfill reuse it instead of
+  // each firing their own /api/sessions/:id. The staleTime matters: this
+  // reconciler re-runs whenever `projects` changes (frequent on a live
+  // dashboard), so without it every projects update would refetch the
+  // session. 30s mirrors SessionBreadcrumb's query so they share fresh cache.
+  const fetchSession = (id: string) =>
+    queryClient.fetchQuery<Session>({
+      queryKey: ['session', id],
+      queryFn: () => api.getSession(id),
+      staleTime: 30_000,
+    })
 
-    queryClient
-      .fetchQuery<Session>({
-        queryKey: ['session', selectedSessionId],
-        queryFn: () => api.getSession(selectedSessionId),
-      })
+  // ── Session → project reconciler ────────────────────────────────
+  // Runs on every session change (NO selectedProjectId gate — that gate is the
+  // old bug). Resolves the session's real project and rewrites the project
+  // segment to match. The loop-breaker is that our own setState only touches
+  // project id/slug, which are NOT in this effect's dependency array.
+  useEffect(() => {
+    if (!selectedSessionId) return
+    let cancelled = false
+
+    fetchSession(selectedSessionId)
       .then((session) => {
-        if (!session) return
-        const projectId = session.projectId
-        // Find the project slug from loaded projects, or fetch it
-        const project = projects?.find((p) => p.id === projectId)
-        if (project) {
-          useUIStore.getState().setSelectedProject(projectId, project.slug)
-          // Re-set the session since setSelectedProject clears it
-          useUIStore.getState().setSelectedSessionId(selectedSessionId)
-        } else {
-          // Projects not loaded yet — just set the ID, slug will be corrected later
-          useUIStore.setState({ selectedProjectId: projectId })
+        if (cancelled) return
+        if (!session) {
+          useUIStore.getState().setRouteError(selectedSessionId)
+          return
         }
+        const resolvedId = session.projectId ?? null
+        const project = resolvedId != null ? projects?.find((p) => p.id === resolvedId) : undefined
+
+        // Project id known but its slug isn't resolvable yet (projects still
+        // loading) — set the id and wait; this effect re-runs when `projects`
+        // arrives. Avoids briefly canonicalizing a real project down to `_`.
+        if (resolvedId != null && !project) {
+          if (useUIStore.getState().selectedProjectId !== resolvedId) {
+            useUIStore.setState({ selectedProjectId: resolvedId })
+          }
+          return
+        }
+
+        // Fully resolved: a real project, or genuinely unassigned (null/null).
+        const resolvedSlug = project?.slug ?? null
+        const st = useUIStore.getState()
+        st.clearRouteError()
+        if (st.selectedProjectId !== resolvedId || st.selectedProjectSlug !== resolvedSlug) {
+          useUIStore.setState({ selectedProjectId: resolvedId, selectedProjectSlug: resolvedSlug })
+        }
+        canonicalizeHash(resolvedSlug, selectedSessionId, useUIStore.getState().currentView)
       })
       .catch(() => {
-        // Session not found — clear the URL
-        useUIStore.getState().setSelectedProject(null)
+        if (!cancelled) useUIStore.getState().setRouteError(selectedSessionId)
       })
-  }, [selectedSessionId, selectedProjectId, projects])
 
-  // When projects load: resolve slug → project ID, or correct a stale slug
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSessionId, projects])
+
+  // ── Bare project slug resolver + legacy single-segment fallback ──
+  // For project-only URLs (`#/<slug>`), resolve slug → id and correct stale
+  // slugs. If the slug matches no project, it may be a legacy `#/<sessionId>`
+  // deep link from before the project segment was required — resolve it AS a
+  // session (a data lookup against real rows, not a format heuristic) and
+  // switch to the canonical `#/_/<id>`.
+  const attemptedSessionFallback = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!projects) return
+    if (selectedSessionId) return // the session reconciler owns project resolution
+    if (!selectedProjectSlug || selectedProjectSlug === PROJECT_PLACEHOLDER) return
 
-    // Have a slug from the URL but no project ID yet — resolve it
-    if (!selectedProjectId && selectedProjectSlug) {
-      const project = projects.find((p) => p.slug === selectedProjectSlug)
-      if (project) {
-        useUIStore.getState().setSelectedProject(project.id, project.slug)
-      }
-      return
-    }
-
-    // Have a project ID — make sure the URL slug matches
+    // Already have the id — just keep the slug fresh.
     if (selectedProjectId) {
       const project = projects.find((p) => p.id === selectedProjectId)
       if (project && project.slug !== selectedProjectSlug) {
         useUIStore.getState().updateProjectSlug(project.slug)
       }
+      return
     }
-  }, [projects, selectedProjectId, selectedProjectSlug])
+
+    const project = projects.find((p) => p.slug === selectedProjectSlug)
+    if (project) {
+      useUIStore.setState({ selectedProjectId: project.id })
+      return
+    }
+
+    // Not a known project — try it as a session id (once per candidate).
+    const candidate = selectedProjectSlug
+    if (attemptedSessionFallback.current.has(candidate)) {
+      useUIStore.getState().setRouteError(candidate)
+      return
+    }
+    // Bound the dedup set — it only grows on slugs that match no project
+    // (legacy links / typos), but it lives for the page's lifetime, so cap it.
+    if (attemptedSessionFallback.current.size >= MAX_FALLBACK_ATTEMPTS) {
+      attemptedSessionFallback.current.clear()
+    }
+    attemptedSessionFallback.current.add(candidate)
+    fetchSession(candidate)
+      .then((session) => {
+        if (!session) {
+          useUIStore.getState().setRouteError(candidate)
+          return
+        }
+        useUIStore.getState().clearRouteError()
+        // Hand off to the session reconciler, which fills in the real project.
+        useUIStore.setState({
+          selectedSessionId: candidate,
+          selectedProjectSlug: null,
+          selectedProjectId: null,
+        })
+        canonicalizeHash(null, candidate, useUIStore.getState().currentView)
+      })
+      .catch(() => useUIStore.getState().setRouteError(candidate))
+  }, [projects, selectedProjectSlug, selectedProjectId, selectedSessionId])
 
   // URL deep-link view → modal state. Runs whenever currentView changes
   // (e.g. direct URL load, browser back/forward) and waits for the

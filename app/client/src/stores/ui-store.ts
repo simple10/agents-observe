@@ -4,8 +4,67 @@ import type { EnrichedEvent } from '@/agents/types'
 import type { TimeRange } from '@/config/time-ranges'
 import { getServerHealth } from '@/lib/server-health'
 
-// Session IDs are UUIDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// URL hash grammar (positional, never pattern-based):
+//   #/                      → home
+//   #/<proj>                → project view
+//   #/<proj>/<sess>         → session in a project
+//   #/_/<sess>              → session whose project is unknown/unassigned
+//   …with an optional `:<view>` deep-link suffix.
+// Segment 0 is always the project, segment 1 (if present) the session — no
+// UUID/shape sniffing, so any agent's id format works. Every segment is
+// percent-encoded on write and decoded on read, so slugs/ids may contain any
+// character except a raw '/' (the structural separators '/', ':', '@' only
+// ever appear encoded inside a segment). `_` is the reserved placeholder for
+// "project unknown"; it's safe because the session id is the source of truth
+// (sessions.id is unique) and useRouteSync rewrites the segment from the
+// resolved project. NB: encodeURIComponent('_') === '_', so a project whose
+// slug were literally '_' could not be distinguished — server slugs never are.
+export const PROJECT_PLACEHOLDER = '_'
+
+// decodeURIComponent throws on malformed input (a stray '%'); fall back to the
+// raw segment so a hand-mangled URL degrades instead of crashing the router.
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
+// The view sub-grammar is `scope.name[@target]`; '.' and '@' are structural and
+// the scope/name are a controlled vocabulary, so only the @target id (a session
+// id) can carry arbitrary characters — encode/decode just that part.
+function encodeViewTarget(view: string): string {
+  const at = view.indexOf('@')
+  return at === -1 ? view : view.slice(0, at + 1) + encodeURIComponent(view.slice(at + 1))
+}
+function decodeViewTarget(view: string): string {
+  const at = view.indexOf('@')
+  return at === -1 ? view : view.slice(0, at + 1) + safeDecode(view.slice(at + 1))
+}
+
+/**
+ * Build the canonical `#/…` hash for a (project, session, view) triple.
+ * Single source of truth for hash construction — used by updateHash, the
+ * history seeding on load, useRouteSync's canonicalization, and the
+ * session-link anchors. A null project with a session yields the `_`
+ * placeholder.
+ */
+export function buildHash(
+  projectSlug: string | null,
+  sessionId: string | null,
+  view: string | null,
+): string {
+  let path = '/'
+  if (sessionId) {
+    const proj = projectSlug ? encodeURIComponent(projectSlug) : PROJECT_PLACEHOLDER
+    path = `/${proj}/${encodeURIComponent(sessionId)}`
+  } else if (projectSlug) {
+    path = `/${encodeURIComponent(projectSlug)}`
+  }
+  const suffix = view ? `:${encodeViewTarget(view)}` : ''
+  return `#${path}${suffix}`
+}
 
 /**
  * Parses the deep-link view string (the part after `:` in the hash).
@@ -50,20 +109,27 @@ function parseHash(): {
   // Strip the trailing :view suffix (only one `:` per URL by convention).
   let view: string | null = null
   let path = hash
+  // The only raw ':' in the hash is the view delimiter — any ':' inside a slug
+  // (e.g. `branch:prefix:agent`) is percent-encoded as %3A, so this is safe.
   const colonIdx = hash.indexOf(':')
   if (colonIdx !== -1) {
-    view = hash.slice(colonIdx + 1) || null
+    const rawView = hash.slice(colonIdx + 1)
+    view = rawView ? decodeViewTarget(rawView) : null
     path = hash.slice(0, colonIdx)
   }
 
   if (!path || path === '/') return { projectSlug: null, sessionId: null, view }
-  const parts = path.split('/').filter(Boolean)
+  const parts = path.split('/').filter(Boolean).map(safeDecode)
   if (parts.length === 1) {
-    if (UUID_RE.test(parts[0])) return { projectSlug: null, sessionId: parts[0], view }
+    // A bare placeholder (`#/_`) is meaningless — only the project slot of a
+    // session URL uses it — so treat it as home.
+    if (parts[0] === PROJECT_PLACEHOLDER) return { projectSlug: null, sessionId: null, view }
     return { projectSlug: parts[0], sessionId: null, view }
   }
-  if (parts.length >= 2) return { projectSlug: parts[0], sessionId: parts[1], view }
-  return { projectSlug: null, sessionId: null, view }
+  // 2+ segments: [project-or-placeholder, session]. The placeholder resolves
+  // to a null project that useRouteSync fills in from the session.
+  const projectSlug = parts[0] === PROJECT_PLACEHOLDER ? null : parts[0]
+  return { projectSlug, sessionId: parts[1], view }
 }
 
 // When true, skip pushState (the URL is already correct from browser navigation)
@@ -71,20 +137,13 @@ let suppressHashPush = false
 
 function updateHash(projectSlug: string | null, sessionId: string | null, view: string | null) {
   if (suppressHashPush) return
-  let hash = '/'
-  if (projectSlug && sessionId) {
-    hash = `/${projectSlug}/${sessionId}`
-  } else if (projectSlug) {
-    hash = `/${projectSlug}`
-  } else if (sessionId) {
-    hash = `/${sessionId}`
-  }
-  if (view) hash += `:${view}`
-  const fullHash = `#${hash}`
   // No-op guard: opening the same modal twice (or re-pushing the same URL
-  // during a redundant set) would otherwise pollute the history stack.
-  if (window.location.hash === fullHash) return
-  window.history.pushState(null, '', fullHash)
+  // during a redundant set) would otherwise pollute the history stack. Compare
+  // the parsed logical triple rather than raw strings — segments are encoded,
+  // and the browser may normalize the stored hash differently than buildHash.
+  const cur = parseHash()
+  if (cur.projectSlug === projectSlug && cur.sessionId === sessionId && cur.view === view) return
+  window.history.pushState(null, '', buildHash(projectSlug, sessionId, view))
 }
 
 interface SessionFilterState {
@@ -183,6 +242,14 @@ interface UIState {
   // use-route-sync drives the reverse: URL view → modal state on load.
   currentView: string | null
   setCurrentView: (view: string | null) => void
+
+  // The session id or project slug from the URL that failed to resolve to a
+  // real row. Held (not just logged) so MainPanel can render a "not found"
+  // state instead of a blank panel. Compared against the current target, so a
+  // stale error self-clears when the user navigates elsewhere.
+  routeError: string | null
+  setRouteError: (idOrSlug: string | null) => void
+  clearRouteError: () => void
 
   // Labels — user-defined bookmarks across sessions (localStorage only)
   labels: Label[]
@@ -592,6 +659,14 @@ export const useUIStore = create<UIState>((set, get) => ({
     updateHash(state.selectedProjectSlug, state.selectedSessionId, view)
   },
 
+  routeError: null,
+  setRouteError: (idOrSlug) => {
+    if (get().routeError !== idOrSlug) set({ routeError: idOrSlug })
+  },
+  clearRouteError: () => {
+    if (get().routeError !== null) set({ routeError: null })
+  },
+
   sidebarTab:
     (localStorage.getItem('agents-observe-sidebar-tab') as 'projects' | 'labels') || 'projects',
   setSidebarTab: (tab) => {
@@ -790,20 +865,20 @@ export const useUIStore = create<UIState>((set, get) => ({
 
 if (typeof window !== 'undefined') {
   // Seed history for direct URL loads so the back button has somewhere to go.
-  // If loading #/project/session, push #/project first (project view),
-  // then replace with the full URL. Back then goes to project view.
-  // The :view suffix is appended only to the final URL — back navigation
-  // drops into the modal-less view first, then the project view.
-  const viewSuffix = initialView ? `:${initialView}` : ''
-  if (initialProjectSlug && initialSessionId) {
-    window.history.replaceState(null, '', `#/${initialProjectSlug}`)
-    window.history.pushState(null, '', `#/${initialProjectSlug}/${initialSessionId}${viewSuffix}`)
+  // For #/project/session, replace with the project view first, then push the
+  // full URL — Back then drops to the project page. The :view suffix rides only
+  // on the final URL, so Back peels off the modal before the session.
+  if (initialSessionId && initialProjectSlug) {
+    window.history.replaceState(null, '', buildHash(initialProjectSlug, null, null))
+    window.history.pushState(null, '', buildHash(initialProjectSlug, initialSessionId, initialView))
+  } else if (initialSessionId) {
+    // Unknown/unassigned project (`#/_/session`): there is no meaningful
+    // intermediate Back target, so canonicalize in place. useRouteSync resolves
+    // the real project from the session id and rewrites the segment.
+    window.history.replaceState(null, '', buildHash(null, initialSessionId, initialView))
   } else if (initialProjectSlug) {
     window.history.replaceState(null, '', `#/`)
-    window.history.pushState(null, '', `#/${initialProjectSlug}${viewSuffix}`)
-  } else if (initialSessionId && initialView) {
-    // UUID-only shortcut with a view — make sure the suffix lands on the URL.
-    window.history.replaceState(null, '', `#/${initialSessionId}${viewSuffix}`)
+    window.history.pushState(null, '', buildHash(initialProjectSlug, null, initialView))
   }
 
   window.addEventListener('hashchange', () => {

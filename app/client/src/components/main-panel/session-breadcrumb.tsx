@@ -18,14 +18,18 @@ export function SessionBreadcrumb() {
 
   const { data: events } = useEvents(selectedSessionId)
 
-  if (!selectedProjectId || !selectedSessionId || !session) return null
+  // Render as soon as we have the session — an unassigned session (no project)
+  // is a first-class route (`#/_/<id>`) and still needs its breadcrumb + name.
+  if (!selectedSessionId || !session) return null
 
   // Extract cwd from the first SessionStart event. Per the new wire
   // shape we filter by `hookName` (subtype is derived client-side).
   const sessionStartEvent = events?.find((e) => e.hookName === 'SessionStart')
   const cwd = (sessionStartEvent?.payload as Record<string, any>)?.cwd as string | undefined
 
-  const projectName = session.projectSlug || session.projectName || 'Project'
+  // No project → the crumb returns to the dashboard rather than a project page.
+  const hasProject = selectedProjectId != null
+  const projectName = session.projectSlug || session.projectName || 'Unassigned'
   const sessionName = session.slug || selectedSessionId.slice(0, 8)
   const transcriptPath = session.transcriptPath || null
 
@@ -34,7 +38,7 @@ export function SessionBreadcrumb() {
       <button
         className="hover:text-foreground transition-colors cursor-pointer truncate max-w-[150px]"
         onClick={() => setSelectedSessionId(null)}
-        title={`Back to ${projectName}`}
+        title={hasProject ? `Back to ${projectName}` : 'Back to dashboard'}
       >
         {projectName}
       </button>

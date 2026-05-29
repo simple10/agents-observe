@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest'
-import { validateEnvelope, EnvelopeValidationError, clampTimestamp } from './parser'
+import {
+  validateEnvelope,
+  EnvelopeValidationError,
+  clampTimestamp,
+  normalizeTimestamp,
+} from './parser'
 
 describe('validateEnvelope — new shape', () => {
   test('accepts a minimally valid envelope', () => {
@@ -46,6 +51,20 @@ describe('validateEnvelope — new shape', () => {
       timestamp: 1700000000000,
     })
     expect(result.timestamp).toBe(1700000000000)
+  })
+
+  test('normalizes epoch-seconds timestamps to milliseconds', () => {
+    // 1780084122.37901 is epoch seconds (Python time.time()); read as ms it
+    // would land in Jan 1970. Should be scaled to ms and preserved.
+    const result = validateEnvelope({
+      agentClass: 'x',
+      sessionId: 's',
+      agentId: 'a',
+      hookName: 'h',
+      payload: {},
+      timestamp: 1780084122.37901,
+    })
+    expect(result.timestamp).toBe(1780084122379)
   })
 
   test('clamps absurd future timestamps to now', () => {
@@ -123,6 +142,33 @@ describe('validateEnvelope — rejection', () => {
       caught = err
     }
     expect((caught as EnvelopeValidationError).missingFields).toEqual(['payload'])
+  })
+})
+
+describe('normalizeTimestamp', () => {
+  test('scales fractional epoch-seconds to integer milliseconds', () => {
+    expect(normalizeTimestamp(1780084122.37901)).toBe(1780084122379)
+  })
+
+  test('leaves millisecond timestamps unchanged', () => {
+    const ms = 1780084122379
+    expect(normalizeTimestamp(ms)).toBe(ms)
+  })
+
+  test('passes through 0, negative, and out-of-range values for clamp to handle', () => {
+    expect(normalizeTimestamp(0)).toBe(0)
+    expect(normalizeTimestamp(-5)).toBe(-5)
+    expect(normalizeTimestamp(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  test('leaves sub-1e9 values untouched (test fixtures / sentinels, not epoch seconds)', () => {
+    expect(normalizeTimestamp(1000)).toBe(1000)
+    expect(normalizeTimestamp(2_000_000)).toBe(2_000_000)
+  })
+
+  test('boundary: 1e9 normalizes, just under does not', () => {
+    expect(normalizeTimestamp(1e9)).toBe(1e9 * 1000)
+    expect(normalizeTimestamp(1e9 - 1)).toBe(1e9 - 1)
   })
 })
 

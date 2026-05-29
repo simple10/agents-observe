@@ -51,7 +51,9 @@ export function validateEnvelope(raw: unknown): ValidatedEnvelope {
   }
 
   const timestamp =
-    typeof candidate.timestamp === 'number' ? clampTimestamp(candidate.timestamp) : Date.now()
+    typeof candidate.timestamp === 'number'
+      ? clampTimestamp(normalizeTimestamp(candidate.timestamp))
+      : Date.now()
 
   return { envelope: candidate as EventEnvelope, timestamp }
 }
@@ -67,6 +69,24 @@ export function validateEnvelope(raw: unknown): ValidatedEnvelope {
 // up to 24h in the future to tolerate clock skew / timezone drift, then
 // clamp anything further to the ingest time.
 const FUTURE_TS_CAP_MS = 24 * 60 * 60 * 1000
+
+// The envelope contract is epoch milliseconds, but some agents (e.g. Python
+// clients using `time.time()`) send epoch *seconds* — possibly fractional.
+// Read as ms, a seconds value lands in Jan 1970, which mangles timestamps and
+// drops the session out of every recent-time window. Disambiguate by
+// magnitude: a plausible recent timestamp expressed in seconds lands in
+// [1e9, 1e12) (≈ 2001 onward), while the same instant in milliseconds is
+// >= 1e12. Only values in that seconds band are scaled up. Anything below 1e9
+// is neither a realistic seconds nor ms timestamp for an agent session (it's a
+// test fixture or sentinel), so it's left untouched rather than mangled;
+// clampTimestamp still guards the upper extreme.
+const SECONDS_MIN = 1e9
+const MS_THRESHOLD = 1e12
+
+export function normalizeTimestamp(ts: number): number {
+  if (ts >= SECONDS_MIN && ts < MS_THRESHOLD) return Math.round(ts * 1000)
+  return ts
+}
 
 export function clampTimestamp(ts: number): number {
   const now = Date.now()
