@@ -7,6 +7,11 @@ import type { Session } from '@/types'
 
 const SESSION_VIEW_TABS = new Set(['details', 'stats', 'labels'])
 
+// Upper bound on the legacy-link dedup set so it can't grow without limit over
+// a long-lived page. Cleared (not LRU-evicted) on overflow — re-resolving a
+// previously-seen dead slug after a clear costs one extra fetch, which is fine.
+const MAX_FALLBACK_ATTEMPTS = 50
+
 // Rewrite the CURRENT history entry's hash without adding a stack entry. Used
 // to canonicalize the (advisory) project segment from the resolved session —
 // replaceState, never pushState, so back/forward isn't polluted.
@@ -38,11 +43,15 @@ export function useRouteSync() {
 
   // Resolve a session through the canonical ['session', id] cache so
   // SessionBreadcrumb + the permission-mode backfill reuse it instead of
-  // each firing their own /api/sessions/:id.
+  // each firing their own /api/sessions/:id. The staleTime matters: this
+  // reconciler re-runs whenever `projects` changes (frequent on a live
+  // dashboard), so without it every projects update would refetch the
+  // session. 30s mirrors SessionBreadcrumb's query so they share fresh cache.
   const fetchSession = (id: string) =>
     queryClient.fetchQuery<Session>({
       queryKey: ['session', id],
       queryFn: () => api.getSession(id),
+      staleTime: 30_000,
     })
 
   // ── Session → project reconciler ────────────────────────────────
@@ -124,6 +133,11 @@ export function useRouteSync() {
     if (attemptedSessionFallback.current.has(candidate)) {
       useUIStore.getState().setRouteError(candidate)
       return
+    }
+    // Bound the dedup set — it only grows on slugs that match no project
+    // (legacy links / typos), but it lives for the page's lifetime, so cap it.
+    if (attemptedSessionFallback.current.size >= MAX_FALLBACK_ATTEMPTS) {
+      attemptedSessionFallback.current.clear()
     }
     attemptedSessionFallback.current.add(candidate)
     fetchSession(candidate)
