@@ -823,14 +823,16 @@ function SessionStats({ sessionId }: { sessionId: string }) {
 
   const agents = useAgents(sessionId, events)
 
-  // Set of prompt texts the plugin captured a UserPromptSubmit event
-  // for. Lets the prompts table render rows without a matching event
-  // (pre-plugin prompts on resumed sessions) as muted/non-clickable.
+  // Set of prompt texts the plugin captured a prompt event for. Lets the
+  // prompts table render rows without a matching event (pre-plugin prompts
+  // on resumed sessions) as muted/non-clickable. UserPromptExpansion
+  // covers slash commands (`/cmd args`), whose transcript prompt is the
+  // reconstructed command — both event types carry that same text.
   const eventPromptTexts = useMemo(() => {
     const s = new Set<string>()
     if (!events) return s
     for (const e of events) {
-      if (e.hookName !== 'UserPromptSubmit') continue
+      if (e.hookName !== 'UserPromptSubmit' && e.hookName !== 'UserPromptExpansion') continue
       const p = (e.payload as any)?.prompt
       if (typeof p === 'string') s.add(p)
     }
@@ -887,8 +889,12 @@ function SessionStats({ sessionId }: { sessionId: string }) {
     (promptText: string, promptTimestamp: number) => {
       if (!events) return
       // Match by prompt text + closest timestamp. Falls back to text-only.
+      // Slash commands fire UserPromptExpansion (and usually a sibling
+      // UserPromptSubmit); accept either so `/cmd args` rows can scroll.
       const ups = events.filter(
-        (e) => e.hookName === 'UserPromptSubmit' && (e.payload as any)?.prompt === promptText,
+        (e) =>
+          (e.hookName === 'UserPromptSubmit' || e.hookName === 'UserPromptExpansion') &&
+          (e.payload as any)?.prompt === promptText,
       )
       if (ups.length === 0) return
       const closest = ups.reduce((best, e) =>

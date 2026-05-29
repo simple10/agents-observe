@@ -1,4 +1,4 @@
-import { promises as fsp, createReadStream } from 'node:fs'
+import { promises as fsp, createReadStream, type Dirent } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type {
   TranscriptCall,
@@ -56,7 +56,11 @@ function extractUsage(u: any): TranscriptUsage {
 
 interface JsonlParseResult {
   calls: TranscriptCall[]
-  prompts: Record<string, { text: string; timestamp: number }>
+  /** Registered user prompts keyed by canonical uuid. `command` is the
+   *  reconstructed `/name args` when the prompt is a slash-command
+   *  expansion (its body line shares a promptId with a `<command-name>`
+   *  inject); null for ordinary typed prompts. */
+  prompts: Record<string, { text: string; timestamp: number; command: string | null }>
   firstTimestamp: number
   lastTimestamp: number
   toolCount: number
@@ -81,6 +85,19 @@ interface JsonlParseResult {
    *  promptIds — promptId-based counting would over-count those replays.
    */
   userPromptUuids: Set<string>
+  /** Maps each raw `promptId` seen on a registered prompt line to that
+   *  prompt's canonical uuid. Subagent JSONLs carry the originating
+   *  prompt's raw promptId (not its uuid), so this lets parseClaudeSession
+   *  resolve a subagent back to the main-session prompt that spawned it —
+   *  the linkage for rolling subagent cost into the prompt row. Multiple
+   *  promptIds can map to one uuid (resume re-mints promptIds for the same
+   *  prompt line). */
+  promptIdToUuid: Record<string, string>
+  /** First non-null raw `promptId` in this jsonl. For a subagent file
+   *  this is the originating prompt's promptId (every line in a subagent
+   *  transcript shares the prompt that spawned it). Unused for the main
+   *  transcript. */
+  originPromptId: string | null
 }
 
 /** Matches the leading tag of Claude Code's internal user-line injects
@@ -88,6 +105,24 @@ interface JsonlParseResult {
  *  a promptId but don't represent a user prompt. */
 const INJECT_PREFIX_RE = /^<(?:command-|local-command-|bash-stdout|bash-stderr|bash-input)/
 const INTERRUPT_PREFIX = '[Request interrupted'
+
+const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/
+const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/
+
+/**
+ * Reconstruct the typed slash command (`/name args`) from a
+ * `<command-name>…</command-name>` inject line. Returns null if the text
+ * isn't a slash-command inject. The reconstruction is byte-identical to
+ * the UserPromptSubmit/UserPromptExpansion hook payloads' `prompt`, so the
+ * UI can match the prompt row to its event for click-to-scroll. */
+function parseSlashCommand(text: string): string | null {
+  const nameMatch = COMMAND_NAME_RE.exec(text)
+  if (!nameMatch) return null
+  const name = nameMatch[1].trim()
+  if (!name) return null
+  const args = (COMMAND_ARGS_RE.exec(text)?.[1] ?? '').trim()
+  return args ? `${name} ${args}` : name
+}
 
 /**
  * Stream-parse a single jsonl file. Returns deduped calls (by
@@ -97,15 +132,21 @@ const INTERRUPT_PREFIX = '[Request interrupted'
 async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
   const callMap = new Map<string, TranscriptCall>()
   const lineIndex = new Map<string, IndexedLine>()
-  const prompts: Record<string, { text: string; timestamp: number }> = {}
+  const prompts: Record<string, { text: string; timestamp: number; command: string | null }> = {}
   const firstUuidByMessageId = new Map<string, string>()
+  // Reconstructed `/name args` keyed by raw promptId, captured from the
+  // `<command-name>` inject line and attached to the sibling expansion
+  // prompt (same promptId) after the stream completes.
+  const commandByPromptId = new Map<string, string>()
   const toolUses = new Map<string, ToolUseRecord>()
   const toolResults = new Map<string, number>()
   const userPromptUuids = new Set<string>()
+  const promptIdToUuid: Record<string, string> = {}
 
   let firstTimestamp = Infinity
   let lastTimestamp = 0
   let toolCount = 0
+  let originPromptId: string | null = null
 
   const stream = createReadStream(filePath, { encoding: 'utf8' })
   const rl = createInterface({ input: stream, crlfDelay: Infinity })
@@ -133,6 +174,7 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
       isPromptLine: false, // set below when we identify the user-prompt line
     }
     if (uuid) lineIndex.set(uuid, indexed)
+    if (originPromptId === null && indexed.promptId) originPromptId = indexed.promptId
 
     if (line.type === 'assistant' && line.message && typeof line.message.id === 'string') {
       const msg = line.message
@@ -197,6 +239,14 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
         ) {
           text = content[0].text
         }
+        // A `<command-name>` inject line records the typed slash command
+        // for its promptId. It's filtered from prompts below (it's an
+        // inject), but the reconstructed command attaches to the sibling
+        // expansion prompt that shares this promptId.
+        if (text !== null) {
+          const command = parseSlashCommand(text)
+          if (command) commandByPromptId.set(line.promptId, command)
+        }
         // Real user-typed prompt: register it under its uuid (canonical
         // across resume-replays — same uuid + same text gets a fresh
         // promptId on each resume, but the uuid is stable). Also mark
@@ -210,8 +260,13 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
         ) {
           userPromptUuids.add(uuid)
           if (!(uuid in prompts)) {
-            prompts[uuid] = { text, timestamp: ts }
+            prompts[uuid] = { text, timestamp: ts, command: null }
           }
+          // Map this line's raw promptId → its canonical uuid. Set
+          // unconditionally so resume replays (same uuid, fresh promptId)
+          // all resolve to the one uuid — lets subagent JSONLs, which only
+          // carry the raw promptId, link back to this prompt.
+          promptIdToUuid[line.promptId] = uuid
           // lineIndex was set with isPromptLine:false above — flip it.
           // (lineIndex.set already ran so the existing entry is mutable.)
           const entry = lineIndex.get(uuid)
@@ -234,6 +289,15 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
         }
       }
     }
+  }
+
+  // Attach reconstructed slash commands to their expansion prompts. The
+  // `<command-name>` inject and the expansion body share a promptId; map
+  // it to the body's canonical uuid via promptIdToUuid. Order-independent
+  // (works whether the inject streamed before or after the body).
+  for (const [rawPromptId, command] of commandByPromptId) {
+    const uuid = promptIdToUuid[rawPromptId]
+    if (uuid && prompts[uuid]) prompts[uuid].command = command
   }
 
   // Resolve each call's canonical prompt by walking parentUuid back
@@ -295,16 +359,74 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
     toolUses,
     toolResults,
     userPromptUuids,
+    promptIdToUuid,
+    originPromptId,
   }
 }
 
 // ── Public entrypoint ─────────────────────────────────────────────
 
+interface SubagentFile {
+  agentId: string
+  jsonlPath: string
+  /** Sibling meta path in the same directory as the jsonl. */
+  metaPath: string
+}
+
+/**
+ * Recursively collect every `agent-<id>.jsonl` under `dir`, at any depth.
+ * Classic subagents sit directly in `subagents/`; workflow subagents nest
+ * under `subagents/workflows/wf_<id>/`. The matching `agent-<id>.meta.json`
+ * is always a sibling of the jsonl, so metaPath is derived per-directory.
+ *
+ * ENOENT on the root (no subagents at all) is silent; any other readdir
+ * failure is recorded once and that subtree is skipped.
+ */
+async function collectSubagentFiles(
+  dir: string,
+  errors: TranscriptParseError[],
+): Promise<SubagentFile[]> {
+  let entries: Dirent[]
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true })
+  } catch (err: any) {
+    if (err?.code !== 'ENOENT') {
+      errors.push({
+        scope: 'main',
+        code: 'unreadable',
+        message: `Subagents directory unreadable: ${err?.message ?? String(err)}`,
+      })
+    }
+    return []
+  }
+
+  const found: SubagentFile[] = []
+  for (const entry of entries) {
+    const full = `${dir}/${entry.name}`
+    if (entry.isDirectory()) {
+      found.push(...(await collectSubagentFiles(full, errors)))
+    } else if (entry.isFile() && entry.name.startsWith('agent-') && entry.name.endsWith('.jsonl')) {
+      const agentId = entry.name.slice('agent-'.length, -'.jsonl'.length)
+      found.push({
+        agentId,
+        jsonlPath: full,
+        metaPath: `${dir}/agent-${agentId}.meta.json`,
+      })
+    }
+  }
+  return found
+}
+
 /**
  * Parse the main Claude Code session jsonl plus every subagent jsonl
- * discovered in `<dirname(mainJsonl)>/<basename(mainJsonl) without .jsonl>/subagents/`.
+ * discovered under `<dirname(mainJsonl)>/<basename(mainJsonl) without .jsonl>/subagents/`.
  * Each subagent has `agent-<agentId>.jsonl` + a sibling `agent-<agentId>.meta.json`
  * with `{agentType, description, toolUseId}`.
+ *
+ * Discovery recurses into nested directories: classic subagents live
+ * directly in `subagents/`, while workflow subagents live in
+ * `subagents/workflows/wf_<id>/`. Walking recursively catches both (and
+ * any future nesting) without hard-coding the layout.
  *
  * Discovery is filesystem-driven (not DB-driven) so resumed sessions
  * that ran subagents before the plugin was capturing still get counted.
@@ -321,27 +443,9 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
   const subagents: TranscriptSubagent[] = []
   const subagentParses: JsonlParseResult[] = []
 
-  let dirEntries: string[] = []
-  try {
-    dirEntries = await fsp.readdir(subagentsDir)
-  } catch (err: any) {
-    if (err?.code !== 'ENOENT') {
-      errors.push({
-        scope: 'main',
-        code: 'unreadable',
-        message: `Subagents directory unreadable: ${err?.message ?? String(err)}`,
-      })
-    }
-  }
+  const subagentFiles = await collectSubagentFiles(subagentsDir, errors)
 
-  const agentIds = dirEntries
-    .filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl'))
-    .map((f) => f.slice('agent-'.length, -'.jsonl'.length))
-
-  for (const agentId of agentIds) {
-    const jsonlPath = `${subagentsDir}/agent-${agentId}.jsonl`
-    const metaPath = `${subagentsDir}/agent-${agentId}.meta.json`
-
+  for (const { agentId, jsonlPath, metaPath } of subagentFiles) {
     // Read meta first — independent of jsonl existence. Some subagents
     // have a .meta.json without a .jsonl (older agents whose transcripts
     // were pruned, etc.).
@@ -398,6 +502,7 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
     calls: main.calls,
     prompts: main.prompts,
     lastTimestampByPromptId: main.lastTimestampByPromptId,
+    promptIdToUuid: main.promptIdToUuid,
     subagents,
     errors,
     startedAt: main.firstTimestamp > 0 ? main.firstTimestamp : null,
@@ -553,6 +658,7 @@ function buildSubagentRow(
     agentType: meta.agentType,
     description: meta.description,
     toolUseId: meta.toolUseId,
+    originPromptId: parsed?.originPromptId ?? null,
     model,
     requests: calls.length,
     inputTokens,

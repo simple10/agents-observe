@@ -848,6 +848,43 @@ function ToolDetail({
         </div>
       )
     }
+    case 'Workflow': {
+      // tool_input: { name?, args?, script?, scriptPath? }. The response
+      // (PostToolUse) carries the launched run's identity. Args is the
+      // research question / params; script is large so it lands in a
+      // scrollable code block.
+      const wfPost = (pairedEvent?.payload || payload) as Record<string, any>
+      const wfResp = (wfPost.tool_response as Record<string, any> | undefined) ?? undefined
+      const argsText =
+        ti.args == null
+          ? ''
+          : typeof ti.args === 'string'
+            ? ti.args
+            : JSON.stringify(ti.args, null, 2)
+      return (
+        <div className="space-y-1.5">
+          {ti.name && <DetailRow label="Workflow" value={String(ti.name)} />}
+          {wfResp?.status && <DetailRow label="Status" value={String(wfResp.status)} />}
+          {wfResp?.runId && <DetailRow label="Run ID" value={String(wfResp.runId)} />}
+          {wfResp?.taskId && <DetailRow label="Task ID" value={String(wfResp.taskId)} />}
+          {wfResp?.summary && <DetailRow label="Summary" value={String(wfResp.summary)} />}
+          {argsText && <DetailCode label="Args" value={argsText} />}
+          {wfResp?.transcriptDir && (
+            <DetailRow label="Transcript" value={relativePath(wfResp.transcriptDir, cwd)} />
+          )}
+          {(wfResp?.scriptPath || ti.scriptPath) && (
+            <DetailRow
+              label="Script"
+              value={relativePath(String(wfResp?.scriptPath ?? ti.scriptPath), cwd)}
+            />
+          )}
+          {typeof ti.script === 'string' && ti.script && (
+            <DetailCode label="Source" value={ti.script} />
+          )}
+          {result && <DetailCode label="Result" value={formatResult(result)} />}
+        </div>
+      )
+    }
     case 'AskUserQuestion': {
       // Questions live on tool_input (both Pre and Post). Answers
       // live on the PostToolUse side — the Pre event's own payload

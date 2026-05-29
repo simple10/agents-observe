@@ -265,6 +265,10 @@ export interface TranscriptStatsByModel {
 export interface TranscriptStatsPrompt {
   promptId: string
   text: string
+  /** Reconstructed `/name args` for slash-command prompts (rendered as the
+   *  primary clickable line, with `text` as the expanded detail beneath);
+   *  null for ordinary typed prompts. */
+  command: string | null
   timestamp: number
   durationMs: number | null
   toolCount: number

@@ -86,6 +86,7 @@ export async function parseSessionTranscripts(
     result.calls,
     result.prompts,
     result.lastTimestampByPromptId,
+    result.promptIdToUuid,
     subagents,
     pricingMap,
   )
@@ -194,8 +195,9 @@ function aggregateByModel(
 
 function aggregatePrompts(
   mainCalls: TranscriptCall[],
-  promptsIndex: Record<string, { text: string; timestamp: number }>,
+  promptsIndex: Record<string, { text: string; timestamp: number; command: string | null }>,
   lastTimestampByPromptId: Record<string, number>,
+  promptIdToUuid: Record<string, string>,
   subagents: TranscriptSubagent[],
   pricingMap: Record<string, ModelPricing>,
 ): TranscriptPrompt[] {
@@ -205,6 +207,23 @@ function aggregatePrompts(
     const arr = buckets.get(c.promptId) ?? []
     arr.push(c)
     buckets.set(c.promptId, arr)
+  }
+
+  // Resolve each subagent to the prompt uuid that spawned it, once.
+  // Preferred path: the raw promptId carried in the subagent's JSONL
+  // (covers both classic Task subagents and workflow subagents, whose
+  // meta has no toolUseId). Fallback: the Agent tool_use_id from meta,
+  // matched against the main call that issued it. Subagents that resolve
+  // to neither stay unattributed (counted only in session totals).
+  const subagentPromptUuid = new Map<TranscriptSubagent, string | null>()
+  for (const s of subagents) {
+    let uuid: string | null = null
+    if (s.originPromptId && promptIdToUuid[s.originPromptId]) {
+      uuid = promptIdToUuid[s.originPromptId]
+    } else if (s.toolUseId) {
+      uuid = mainCalls.find((c) => c.toolUseIds.includes(s.toolUseId!))?.promptId ?? null
+    }
+    subagentPromptUuid.set(s, uuid)
   }
   const sortedPromptIds = Object.keys(promptsIndex).sort(
     (a, b) => promptsIndex[a].timestamp - promptsIndex[b].timestamp,
@@ -241,11 +260,10 @@ function aggregatePrompts(
         costCents += computeCallCostCents(c.usage, pricing)
       }
     }
-    // Attribute subagents to this prompt via toolUseId match in mainCalls.
+    // Fold each subagent spawned by this prompt into its totals (combined
+    // input/output/cache/cost). Attribution resolved above.
     for (const s of subagents) {
-      if (!s.toolUseId) continue
-      const owner = mainCalls.find((c) => c.toolUseIds.includes(s.toolUseId!))
-      if (!owner || owner.promptId !== promptId) continue
+      if (subagentPromptUuid.get(s) !== promptId) continue
       inputTokens += s.inputTokens
       outputTokens += s.outputTokens
       cacheReadTokens += s.cacheReadTokens
@@ -277,6 +295,7 @@ function aggregatePrompts(
     out.push({
       promptId,
       text: promptMeta.text,
+      command: promptMeta.command,
       timestamp: promptMeta.timestamp,
       durationMs,
       toolCount,

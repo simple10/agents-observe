@@ -70,7 +70,7 @@ function usageFromCodex(last: any): TranscriptUsage {
  */
 export async function parseCodexSession(mainJsonlPath: string): Promise<AgentParseResult> {
   const calls: TranscriptCall[] = []
-  const prompts: Record<string, { text: string; timestamp: number }> = {}
+  const prompts: Record<string, { text: string; timestamp: number; command: string | null }> = {}
   const lastTimestampByPromptId: Record<string, number> = {}
   const errors: TranscriptParseError[] = []
 
@@ -133,7 +133,8 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
     if (lineType === 'event_msg' && payload.type === 'user_message') {
       const text = typeof payload.message === 'string' ? payload.message : ''
       if (activeTurnId && text && !(activeTurnId in prompts)) {
-        prompts[activeTurnId] = { text, timestamp: ts }
+        // Codex has no slash-command expansion concept — command is null.
+        prompts[activeTurnId] = { text, timestamp: ts, command: null }
       }
     }
 
@@ -185,6 +186,8 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
     calls,
     prompts,
     lastTimestampByPromptId,
+    // Codex sessions never have subagents, so no prompt→subagent linkage.
+    promptIdToUuid: {},
     subagents: [],
     errors,
     startedAt,

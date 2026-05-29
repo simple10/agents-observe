@@ -198,6 +198,12 @@ function getToolSummary(
       return toolInput.description || toolInput.prompt || ''
     case 'Skill':
       return toolInput.skill || ''
+    case 'Workflow': {
+      const name = typeof toolInput.name === 'string' ? toolInput.name : ''
+      const wfArgs = typeof toolInput.args === 'string' ? toolInput.args : ''
+      if (name && wfArgs) return `${name}: ${oneLine(wfArgs)}`
+      return name || oneLine(wfArgs)
+    }
     case 'WebSearch':
     case 'WebFetch':
       return toolInput.query || toolInput.url || ''

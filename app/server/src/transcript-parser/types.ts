@@ -34,6 +34,10 @@ export interface TranscriptSubagent {
   agentType: string | null
   description: string | null
   toolUseId: string | null
+  /** Raw promptId carried in this subagent's JSONL lines — the
+   *  originating main-session prompt. Resolved to the prompt's canonical
+   *  uuid via AgentParseResult.promptIdToUuid for cost attribution. */
+  originPromptId: string | null
   model: string
   requests: number
   inputTokens: number
@@ -55,11 +59,15 @@ export interface TranscriptParseError {
 
 export interface AgentParseResult {
   calls: TranscriptCall[]
-  prompts: Record<string, { text: string; timestamp: number }>
+  prompts: Record<string, { text: string; timestamp: number; command: string | null }>
   /** For each promptId, the timestamp of the latest jsonl line whose
    *  parentUuid chain resolves back to that prompt. Used to compute
    *  per-prompt duration. */
   lastTimestampByPromptId: Record<string, number>
+  /** Maps raw promptId → canonical prompt uuid (main transcript). Lets
+   *  the aggregator link subagents (which carry the raw promptId) to the
+   *  prompt row keyed by uuid. Empty for agent classes without subagents. */
+  promptIdToUuid: Record<string, string>
   subagents: TranscriptSubagent[]
   errors: TranscriptParseError[]
   /** Session-wide aggregates derived from main + subagent JSONLs. */
@@ -96,6 +104,11 @@ export interface TranscriptToolStat {
 export interface TranscriptPrompt {
   promptId: string
   text: string
+  /** Reconstructed `/name args` when this prompt is a slash-command
+   *  expansion; null for ordinary typed prompts. The UI renders it as the
+   *  primary (clickable) line with `text` (the expanded body) beneath, and
+   *  matches it against UserPromptSubmit/UserPromptExpansion events. */
+  command: string | null
   timestamp: number
   durationMs: number | null
   toolCount: number

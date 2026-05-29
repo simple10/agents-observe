@@ -116,8 +116,91 @@ describe('parseClaudeSession — main only', () => {
     })
     // prompts index is now keyed by the user-prompt line's uuid.
     expect(result.prompts.u1.text).toBe('hello world')
+    // Ordinary typed prompt — no slash command.
+    expect(result.prompts.u1.command).toBeNull()
     expect(result.subagents).toHaveLength(0)
     expect(result.errors).toHaveLength(0)
+  })
+
+  test('slash-command expansion gets a reconstructed `command` from the <command-name> inject', async () => {
+    // A slash command lands as two user lines sharing one promptId: the
+    // <command-name> inject (filtered from prompts) and the expanded skill
+    // body (the registered prompt). The reconstructed `/name args` must
+    // attach to the body prompt and match the hook event payload exactly.
+    const lines = [
+      {
+        type: 'user',
+        uuid: 'cmd-uuid',
+        parentUuid: null,
+        promptId: 'pc',
+        timestamp: '2026-05-22T00:00:00.000Z',
+        message: {
+          content:
+            "<command-message>deep-research</command-message>\n<command-name>/deep-research</command-name>\n<command-args>what's new</command-args>",
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'body-uuid',
+        parentUuid: 'cmd-uuid',
+        promptId: 'pc',
+        timestamp: '2026-05-22T00:00:00.100Z',
+        message: { content: 'Run the "deep-research" workflow. Deep research harness…' },
+      },
+      {
+        type: 'assistant',
+        uuid: 'as-cmd',
+        parentUuid: 'body-uuid',
+        timestamp: '2026-05-22T00:00:01.000Z',
+        isSidechain: false,
+        message: {
+          id: 'mc',
+          model: 'claude-opus-4-7',
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: 'text', text: 'ok' }],
+        },
+      },
+    ]
+    const path = join(TMP_DIR, 'slash.jsonl')
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    const result = await parseClaudeSession(path)
+    // Only the expansion body is a registered prompt; the inject is filtered.
+    expect(result.prompts['cmd-uuid']).toBeUndefined()
+    const body = result.prompts['body-uuid']
+    expect(body.text).toBe('Run the "deep-research" workflow. Deep research harness…')
+    // Byte-identical to a UserPromptSubmit/Expansion `prompt` payload.
+    expect(body.command).toBe("/deep-research what's new")
+  })
+
+  test('argless slash command reconstructs to just the command name', async () => {
+    const lines = [
+      {
+        type: 'user',
+        uuid: 'c2',
+        parentUuid: null,
+        promptId: 'p2',
+        timestamp: '2026-05-22T00:00:00.000Z',
+        message: {
+          content:
+            '<command-message>using-superpowers</command-message>\n<command-name>/superpowers:using-superpowers</command-name>',
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'b2',
+        parentUuid: 'c2',
+        promptId: 'p2',
+        timestamp: '2026-05-22T00:00:00.100Z',
+        message: { content: 'You are using superpowers…' },
+      },
+    ]
+    const path = join(TMP_DIR, 'slash-argless.jsonl')
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    const result = await parseClaudeSession(path)
+    expect(result.prompts['b2'].command).toBe('/superpowers:using-superpowers')
   })
 
   test('lastTimestampByPromptId records the latest line attributable to each prompt', async () => {
@@ -691,6 +774,95 @@ describe('parseClaudeSession — subagents', () => {
     expect(sub).toBeDefined()
     expect(sub!.agentType).toBe('general-purpose')
     expect(sub!.toolUseId).toBe('toolu_pre')
+  })
+
+  test('discovers workflow subagents nested under subagents/workflows/wf_*/', async () => {
+    // Claude's workflow feature stores subagent transcripts in a nested
+    // dir (subagents/workflows/wf_<id>/) instead of flat in subagents/.
+    // Discovery must recurse to find them.
+    const path = join(TMP_DIR, 'workflow.jsonl')
+    writeFileSync(path, JSON.stringify(FIXTURE_LINES[0]) + '\n')
+
+    const wfDir = path.replace(/\.jsonl$/, '') + '/subagents/workflows/wf_abc123'
+    mkdirSync(wfDir, { recursive: true })
+    writeFileSync(
+      wfDir + '/agent-wf1.jsonl',
+      [
+        {
+          type: 'assistant',
+          uuid: 'wf-a1',
+          parentUuid: null,
+          timestamp: '2026-05-22T00:00:10.000Z',
+          isSidechain: true,
+          message: {
+            id: 'wf-m1',
+            model: 'claude-haiku-4-5',
+            usage: { input_tokens: 7, output_tokens: 11 },
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu_wf_read',
+                name: 'Read',
+                input: { file_path: '/wf/z.ts' },
+              },
+            ],
+          },
+        },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n',
+    )
+    writeFileSync(
+      wfDir + '/agent-wf1.meta.json',
+      JSON.stringify({ agentType: 'workflow-subagent' }),
+    )
+
+    const result = await parseClaudeSession(path)
+    expect(result.errors).toHaveLength(0)
+    const sub = result.subagents.find((s) => s.agentId === 'wf1')
+    expect(sub).toBeDefined()
+    expect(sub!.agentType).toBe('workflow-subagent')
+    expect(sub!.inputTokens).toBe(7)
+    expect(sub!.outputTokens).toBe(11)
+  })
+
+  test('discovers flat and nested subagents together', async () => {
+    const path = join(TMP_DIR, 'mixed.jsonl')
+    writeFileSync(path, JSON.stringify(FIXTURE_LINES[0]) + '\n')
+
+    // Flat classic subagent.
+    writeSubagent(path, 'flat1', { agentType: 'Explore', description: 'd', toolUseId: 't' }, [
+      {
+        model: 'claude-haiku-4-5',
+        ts: '2026-05-22T00:00:10.000Z',
+        usage: { input_tokens: 1, output_tokens: 2 },
+        content: [{ type: 'text', text: 'ok' }],
+      },
+    ])
+
+    // Nested workflow subagent.
+    const wfDir = path.replace(/\.jsonl$/, '') + '/subagents/workflows/wf_xyz'
+    mkdirSync(wfDir, { recursive: true })
+    writeFileSync(
+      wfDir + '/agent-nested1.jsonl',
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'n-a1',
+        parentUuid: null,
+        timestamp: '2026-05-22T00:00:20.000Z',
+        isSidechain: true,
+        message: {
+          id: 'n-m1',
+          model: 'claude-haiku-4-5',
+          usage: { input_tokens: 3, output_tokens: 4 },
+          content: [{ type: 'text', text: 'ok' }],
+        },
+      }) + '\n',
+    )
+
+    const result = await parseClaudeSession(path)
+    expect(result.errors).toHaveLength(0)
+    expect(result.subagents.map((s) => s.agentId).sort()).toEqual(['flat1', 'nested1'])
   })
 
   test('subagent without .meta.json still parses with null meta fields', async () => {
