@@ -106,6 +106,68 @@ describe('parseSessionTranscripts', () => {
     expect(stats.models['claude-opus-4-7'].pricing).toMatchObject({ inputPerM: 15 })
   })
 
+  test('workflow subagent cost rolls into the originating prompt via promptId', async () => {
+    // Workflow subagents nest under subagents/workflows/wf_<id>/ and their
+    // meta carries no toolUseId — only the originating promptId lives in
+    // the subagent JSONL lines. Attribution must fall back to that
+    // promptId so the spawning prompt reflects the full (combined) cost.
+    const dir = mkdtempSync(join(tmpdir(), 'transcript-stats-wf-'))
+    const path = join(dir, 'session.jsonl')
+    writeFileSync(path, MAIN_FIXTURE_LINES.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    // Nested workflow subagent whose lines carry the main prompt's
+    // promptId 'p1' (which maps to canonical uuid 'u1').
+    const wfDir = join(dir, 'session', 'subagents', 'workflows', 'wf_test')
+    require('node:fs').mkdirSync(wfDir, { recursive: true })
+    writeFileSync(
+      join(wfDir, 'agent-wf1.jsonl'),
+      [
+        {
+          type: 'user',
+          uuid: 'wf-u1',
+          parentUuid: null,
+          promptId: 'p1',
+          isSidechain: true,
+          timestamp: '2026-05-22T00:00:02.000Z',
+          message: { content: 'workflow task' },
+        },
+        {
+          type: 'assistant',
+          uuid: 'wf-a1',
+          parentUuid: 'wf-u1',
+          promptId: 'p1',
+          isSidechain: true,
+          timestamp: '2026-05-22T00:00:03.000Z',
+          message: {
+            id: 'wf-m1',
+            model: 'claude-opus-4-7',
+            usage: { input_tokens: 2000, output_tokens: 1000 },
+            content: [{ type: 'text', text: 'done' }],
+          },
+        },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n',
+    )
+    // meta has no toolUseId — the only link is the promptId above.
+    writeFileSync(
+      join(wfDir, 'agent-wf1.meta.json'),
+      JSON.stringify({ agentType: 'workflow-subagent' }),
+    )
+
+    const store = makeStore({ agents: [{ id: 'sess1', agent_class: 'claude-code' }] })
+    const stats = await parseSessionTranscripts('sess1', store, path)
+
+    const prompt = stats.prompts.find((p) => p.promptId === 'u1')!
+    // Combined total: main call (1000 in / 500 out) + subagent (2000 / 1000).
+    expect(prompt.inputTokens).toBe(3000)
+    expect(prompt.outputTokens).toBe(1500)
+    // Cost folds in too: (3000 in * $15/M) + (1500 out * $75/M) = 4.5c + 11.25c → 16c.
+    expect(prompt.costCents).toBe(16)
+    // The subagent is still listed in its own table.
+    expect(stats.subagents.find((s) => s.agentId === 'wf1')?.originPromptId).toBe('p1')
+  })
+
   test('costCents is null when pricing is missing', async () => {
     vi.stubGlobal(
       'fetch',

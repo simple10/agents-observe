@@ -468,32 +468,48 @@ export function TokenUsageSection({
               count: transcript.prompts.length,
               sortType: 'string',
               render: (r) => {
-                // Only prompts with a matching UserPromptSubmit event can
-                // scroll. Pre-plugin prompts on resumed sessions render
-                // muted + non-clickable.
-                const hasEvent = eventPromptTexts.has(r.text)
+                // Slash-command prompts render the reconstructed
+                // `/command args` as the primary line (it matches the
+                // UserPromptSubmit/Expansion event) with the expanded skill
+                // body as a muted detail line beneath. Ordinary prompts
+                // just show their text. Match/scroll on the primary line.
+                const label = r.command ?? r.text
+                const detail = r.command ? r.text : null
+                // Only prompts with a matching event can scroll. Pre-plugin
+                // prompts on resumed sessions render muted + non-clickable.
+                const hasEvent = eventPromptTexts.has(label)
+                const body = (
+                  <>
+                    <span className="block truncate max-w-[400px]">{label}</span>
+                    {detail && (
+                      <span className="block truncate max-w-[400px] text-xs text-muted-foreground/50">
+                        {detail}
+                      </span>
+                    )}
+                  </>
+                )
                 if (!hasEvent) {
                   return (
                     <span
-                      className="block truncate max-w-[400px] text-muted-foreground/50"
-                      title={`${r.text}\n\n(no matching event — pre-plugin prompt)`}
+                      className="block text-muted-foreground/50"
+                      title={`${label}\n\n(no matching event — pre-plugin prompt)`}
                     >
-                      {r.text}
+                      {body}
                     </span>
                   )
                 }
                 return (
                   <button
                     type="button"
-                    onClick={() => onPromptClick(r.text, r.timestamp)}
-                    className="block truncate max-w-[400px] text-left cursor-pointer hover:underline"
-                    title={r.text}
+                    onClick={() => onPromptClick(label, r.timestamp)}
+                    className="block text-left cursor-pointer hover:underline"
+                    title={detail ? `${label}\n\n${detail}` : label}
                   >
-                    {r.text}
+                    {body}
                   </button>
                 )
               },
-              sortValue: (r) => r.text,
+              sortValue: (r) => r.command ?? r.text,
             },
             {
               key: 'date',
