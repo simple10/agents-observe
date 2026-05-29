@@ -16,6 +16,9 @@ import type { Session } from '@/types'
 interface SessionItemProps {
   session: Session
   isSelected: boolean
+  /** Soft highlight + scroll-into-view for a previewed (drill-in) session,
+   *  without the solid "selected" treatment. */
+  isPreview?: boolean
   isPinned: boolean
   onSelect: () => void
   onTogglePin: () => void
@@ -46,6 +49,7 @@ function formatRelativeTime(ts: number): string {
 export function SessionItem({
   session,
   isSelected,
+  isPreview = false,
   isPinned,
   onSelect,
   onTogglePin,
@@ -59,6 +63,7 @@ export function SessionItem({
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -66,6 +71,11 @@ export function SessionItem({
       inputRef.current.select()
     }
   }, [isEditing])
+
+  // Bring a previewed session into view (drill-in focus on the home view).
+  useEffect(() => {
+    if (isPreview) rowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [isPreview])
 
   const label = session.slug || session.id.slice(0, 8)
 
@@ -118,6 +128,7 @@ export function SessionItem({
     <Tooltip>
       <TooltipTrigger asChild>
         <div
+          ref={rowRef}
           role="button"
           tabIndex={isEditing ? -1 : 0}
           aria-current={isSelected ? 'true' : undefined}
@@ -126,7 +137,9 @@ export function SessionItem({
             'group rounded-md px-2 py-1 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
             isSelected
               ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+              : isPreview
+                ? 'bg-accent/40 text-foreground ring-1 ring-ring/50'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
           )}
           onClick={() => !isEditing && onSelect()}
           onKeyDown={(e) => {

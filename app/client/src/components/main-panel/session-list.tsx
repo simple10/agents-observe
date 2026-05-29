@@ -35,13 +35,12 @@ export function SessionList({
   showProject = false,
   sortBy = 'activity',
 }: SessionListProps) {
-  const { setSelectedProject, setSelectedSessionId } = useUIStore()
+  const openSession = useUIStore((s) => s.openSession)
 
   const handleSessionClick = (projectId: number | null, projectSlug: string, sessionId: string) => {
-    // Sessions in the Unassigned bucket have no project; clicking one
-    // just selects the session and clears any project selection.
-    setSelectedProject(projectId, projectId ? projectSlug : null)
-    setTimeout(() => setSelectedSessionId(sessionId), 0)
+    // Open as a single history entry so browser Back returns to wherever the
+    // user came from (e.g. Home) rather than an intermediate project page.
+    openSession(projectId, projectId ? projectSlug : null, sessionId)
   }
 
   if (sessions.length === 0) {

@@ -111,6 +111,25 @@ interface UIState {
   selectedAgentIds: string[]
   setSelectedProject: (id: number | null, slug?: string | null) => void
   setSelectedSessionId: (id: string | null) => void
+  /**
+   * Navigate straight to a session from a non-project context (home /
+   * constellation / pinned) as a SINGLE history entry. Setting the project
+   * and session separately pushes two entries (`#/slug` then `#/slug/id`),
+   * which strands the browser Back button on an intermediate project page;
+   * this sets both at once with one `updateHash`.
+   */
+  openSession: (projectId: number | null, slug: string | null, sessionId: string) => void
+
+  // Preview selection — highlights a session (and expands its project) in
+  // the sidebar WITHOUT navigating the main panel or touching the URL hash.
+  // Used by the Constellation drill-in so the sidebar tracks the focused
+  // session while the home view stays mounted. Distinct from the real
+  // selection above.
+  previewProjectId: number | null
+  previewSessionId: string | null
+  setPreviewSession: (sessionId: string | null, projectId: number | null) => void
+  clearPreviewSession: () => void
+
   updateProjectSlug: (slug: string) => void
   setSelectedAgentIds: (ids: string[]) => void
   toggleAgentId: (id: string) => void
@@ -222,6 +241,12 @@ interface UIState {
   sessionSortOrder: 'activity' | 'created'
   setSessionSortOrder: (order: 'activity' | 'created') => void
 
+  // Which home-page dashboard theme is active (persisted to localStorage).
+  // See app/client/src/dashboard/ — the registry resolves unknown ids to
+  // the default theme, so this is a free-form string, not a union.
+  dashboardThemeId: string
+  setDashboardThemeId: (id: string) => void
+
   // Pinned sessions (persisted to localStorage)
   pinnedSessionIds: Set<string>
   togglePinnedSession: (id: string) => void
@@ -242,6 +267,11 @@ interface UIState {
    *  list (every activity ping carries projectId; we update both in
    *  one shot). */
   projectPulses: Record<number, number>
+  /** Wall-clock ms of the last activity ping per session. Stamped in
+   *  `pulseSession`. The Constellation dashboard reads this imperatively
+   *  in its animation loop to compute recency "heat" (no React
+   *  subscription, no per-ping re-render). */
+  sessionActivityAt: Record<string, number>
   pulseSession: (sessionId: string, projectId?: number | null) => void
 
   // Version tracking
@@ -432,6 +462,43 @@ export const useUIStore = create<UIState>((set, get) => ({
     if (get().currentView !== view) set({ currentView: view })
     updateHash(state.selectedProjectSlug, id, view)
   },
+  openSession: (projectId, slug, sessionId) => {
+    const state = get()
+    const nextFilterStates = new Map(state.sessionFilterStates)
+    // Save the outgoing session's filter state, restore the incoming one.
+    if (state.selectedSessionId) {
+      nextFilterStates.set(state.selectedSessionId, {
+        activePrimaryFilters: state.activePrimaryFilters,
+        activeSecondaryFilters: state.activeSecondaryFilters,
+        searchQuery: state.searchQuery,
+      })
+    }
+    const restored = nextFilterStates.get(sessionId) ?? DEFAULT_FILTER_STATE
+    const newSlug = slug ?? null
+    const exitingRewind = state.rewindMode && state.selectedSessionId !== sessionId
+    set({
+      selectedProjectId: projectId,
+      selectedProjectSlug: newSlug,
+      selectedSessionId: sessionId,
+      selectedAgentIds: [],
+      expandedEventIds: new Set(),
+      lastExpandedEventId: null,
+      selectedEventId: null,
+      scrollToEventId: null,
+      sessionFilterStates: nextFilterStates,
+      activePrimaryFilters: restored.activePrimaryFilters,
+      activeSecondaryFilters: restored.activeSecondaryFilters,
+      searchQuery: restored.searchQuery,
+      ...(exitingRewind && {
+        rewindMode: false,
+        frozenEvents: null,
+        autoFollow: state.autoFollowBeforeRewind,
+      }),
+    })
+    const view = computeViewFromState(get())
+    if (get().currentView !== view) set({ currentView: view })
+    updateHash(newSlug, sessionId, view) // single history entry
+  },
   updateProjectSlug: (slug) => {
     set({ selectedProjectSlug: slug })
     const state = get()
@@ -599,6 +666,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   sessionSortOrder: 'activity',
   setSessionSortOrder: (order) => set({ sessionSortOrder: order }),
 
+  dashboardThemeId: localStorage.getItem('agents-observe-dashboard-theme') || 'sessions-list',
+  setDashboardThemeId: (id) => {
+    localStorage.setItem('agents-observe-dashboard-theme', id)
+    set({ dashboardThemeId: id })
+  },
+
+  previewProjectId: null,
+  previewSessionId: null,
+  setPreviewSession: (sessionId, projectId) =>
+    set({ previewSessionId: sessionId, previewProjectId: projectId }),
+  clearPreviewSession: () => set({ previewSessionId: null, previewProjectId: null }),
+
   pinnedSessionIds: loadPinnedSessions(),
   togglePinnedSession: (id) =>
     set((s) => {
@@ -676,25 +755,31 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   sessionPulses: {},
   projectPulses: {},
+  sessionActivityAt: {},
   pulseSession: (sessionId, projectId) =>
     set((s) => {
       const sessionPulses = {
         ...s.sessionPulses,
         [sessionId]: (s.sessionPulses[sessionId] ?? 0) + 1,
       }
+      // Stamp the activity time so the Constellation dashboard can compute
+      // recency heat. Kept in its own map (read imperatively in a rAF loop)
+      // so it never triggers a React render on its own.
+      const sessionActivityAt = { ...s.sessionActivityAt, [sessionId]: Date.now() }
       // Only rebuild the project map when we got a projectId and there's
       // a real bump to record — avoids reference churn on null-project
       // pings (e.g. sessions still in the Unassigned bucket).
       if (projectId != null) {
         return {
           sessionPulses,
+          sessionActivityAt,
           projectPulses: {
             ...s.projectPulses,
             [projectId]: (s.projectPulses[projectId] ?? 0) + 1,
           },
         }
       }
-      return { sessionPulses }
+      return { sessionPulses, sessionActivityAt }
     }),
 
   serverVersion: null,
@@ -729,7 +814,16 @@ if (typeof window !== 'undefined') {
     suppressHashPush = true
     try {
       if (projectSlug !== state.selectedProjectSlug) {
-        useUIStore.setState({ selectedProjectSlug: projectSlug })
+        // Browser navigation is authoritative. When the URL carries no
+        // project (Home `#/` or a session-only `#/id`), clear the resolved
+        // `selectedProjectId` too — otherwise MainPanel keeps rendering the
+        // old project and useRouteSync re-adds its slug. A session-only URL
+        // re-resolves its project from the sessionId via useRouteSync.
+        useUIStore.setState(
+          projectSlug
+            ? { selectedProjectSlug: projectSlug }
+            : { selectedProjectSlug: null, selectedProjectId: null },
+        )
       }
       if (sessionId !== state.selectedSessionId) {
         state.setSelectedSessionId(sessionId)

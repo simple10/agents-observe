@@ -84,7 +84,7 @@ interface NotificationState {
   unannounceVisibleBell: (sessionId: string) => void
 }
 
-const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set) => ({
   pending: new Map(),
   dismissed: readDismissedIds(),
   lastSeenTs: readLastSeenTs(),

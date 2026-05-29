@@ -34,6 +34,7 @@ vi.mock('@/components/event-stream/event-stream', () => ({
 beforeEach(() => {
   useUIStore.setState({
     selectedProjectId: null,
+    selectedProjectSlug: null,
     selectedSessionId: null,
     selectedAgentIds: [],
     activePrimaryFilters: [],
@@ -78,6 +79,40 @@ describe('MainPanel routing', () => {
     expect(screen.getByTestId('event-stream')).toBeInTheDocument()
     expect(screen.queryByTestId('home-page')).not.toBeInTheDocument()
     expect(screen.queryByTestId('project-page')).not.toBeInTheDocument()
+  })
+
+  // Regression guard: direct session navigation (skills `/observe view` &
+  // `/observe stats`, and any unassigned session) uses `#/<sessionId>` with no
+  // project slug, so `selectedProjectId` is null. The session view MUST still
+  // render — it must never blank out or fall back to HomePage.
+  it('renders the session view for a session-only route with no project (skills + unassigned)', () => {
+    useUIStore.setState({
+      selectedProjectId: null,
+      selectedProjectSlug: null,
+      selectedSessionId: 'befdb994-7a98-42b5-88e2-8cc09c34d0a3',
+    })
+
+    renderWithProviders(<MainPanel />)
+
+    expect(screen.getByTestId('scope-bar')).toBeInTheDocument()
+    expect(screen.getByTestId('event-stream')).toBeInTheDocument()
+    expect(screen.queryByTestId('home-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-page')).not.toBeInTheDocument()
+  })
+
+  it('renders a blank panel (not HomePage) while a bare project slug is still resolving', () => {
+    // slug present, id not yet resolved, no session → don't flash HomePage.
+    useUIStore.setState({
+      selectedProjectId: null,
+      selectedProjectSlug: 'agents-observe',
+      selectedSessionId: null,
+    })
+
+    renderWithProviders(<MainPanel />)
+
+    expect(screen.queryByTestId('home-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('project-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('scope-bar')).not.toBeInTheDocument()
   })
 
   it('should transition from session view back to ProjectPage when session is deselected', () => {

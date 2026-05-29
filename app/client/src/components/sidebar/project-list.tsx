@@ -124,6 +124,7 @@ function groupSessionsByDate(sessions: Session[], sortBy: 'activity' | 'created'
 export function ProjectList({ collapsed }: ProjectListProps) {
   const { data: projects } = useProjects()
   const { selectedProjectId, setSelectedProject } = useUIStore()
+  const previewProjectId = useUIStore((s) => s.previewProjectId)
 
   const [modalProjectId, setModalProjectId] = useState<number | null>(null)
   const modalProject = projects?.find((p) => p.id === modalProjectId) ?? null
@@ -159,6 +160,8 @@ export function ProjectList({ collapsed }: ProjectListProps) {
         )}
         {(projects ?? []).map((project) => {
           const isSelected = selectedProjectId === project.id
+          // Expand for the real selection OR the previewed (drill-in) project.
+          const isExpanded = isSelected || previewProjectId === project.id
           const displayLabel = project.name
 
           if (collapsed) {
@@ -204,7 +207,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
                   }
                 }}
               >
-                {isSelected ? (
+                {isExpanded ? (
                   <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -228,7 +231,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
                   Edit
                 </span>
               </div>
-              {isSelected && <SessionList projectId={project.id} />}
+              {isExpanded && <SessionList projectId={project.id} />}
             </div>
           )
         })}
@@ -255,6 +258,7 @@ export function ProjectList({ collapsed }: ProjectListProps) {
 function UnassignedBucket({ sessions, collapsed }: { sessions: Session[]; collapsed: boolean }) {
   const [expanded, setExpanded] = useState(true)
   const { selectedSessionId, setSelectedSessionId, setEditingSessionId } = useUIStore()
+  const previewSessionId = useUIStore((s) => s.previewSessionId)
 
   if (collapsed) {
     return (
@@ -310,6 +314,7 @@ function UnassignedBucket({ sessions, collapsed }: { sessions: Session[]; collap
               key={session.id}
               session={session}
               isSelected={selectedSessionId === session.id}
+              isPreview={selectedSessionId !== session.id && previewSessionId === session.id}
               isPinned={false}
               onSelect={() => setSelectedSessionId(session.id)}
               onTogglePin={() => {}}
@@ -423,6 +428,7 @@ function SessionList({ projectId }: { projectId: number }) {
     pinnedSessionIds,
     setEditingSessionId,
   } = useUIStore()
+  const previewSessionId = useUIStore((s) => s.previewSessionId)
   const queryClient = useQueryClient()
   const { data: currentEvents } = useEvents(selectedSessionId)
 
@@ -505,6 +511,7 @@ function SessionList({ projectId }: { projectId: number }) {
             </div>
             {visibleSessions.map((session) => {
               const isSelected = selectedSessionId === session.id
+              const isPreview = !isSelected && previewSessionId === session.id
               // Active session: live count from streaming events.
               // Other sessions: server-provided count (refreshes when
               // sessions list refetches). Falls through to undefined
@@ -520,6 +527,7 @@ function SessionList({ projectId }: { projectId: number }) {
                   key={session.id}
                   session={session}
                   isSelected={isSelected}
+                  isPreview={isPreview}
                   isPinned={pinnedSessionIds.has(session.id)}
                   onSelect={() => setSelectedSessionId(session.id)}
                   onTogglePin={() => togglePinnedSession(session.id)}

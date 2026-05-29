@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en" data-theme="native">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agents Observe — Constellation mockup v2</title>
+<style>
+  :root {
+    --bg: oklch(0.145 0 0); --bg-2: oklch(0.18 0.005 250);
+    --fg: oklch(0.985 0 0); --muted: oklch(0.708 0 0);
+    --border: oklch(0.30 0 0); --panel: oklch(0.17 0 0 / 0.88);
+    --cool:#5b6b82; --warm:#facc15; --hot:#f97316;
+    --active-ring:#4ade80; --attn:#fbbf24; --attn-edge:#f59e0b;
+    --edge: oklch(0.45 0 0 / 0.55); --star-bg-dots: oklch(0.35 0 0 / 0.5);
+    --ok:#4ade80; --stopped:#6b7280;
+  }
+  [data-theme="space"] {
+    --bg:#06070f; --bg-2:#0d1230; --cool:#3b4a7a; --warm:#7aa2ff; --hot:#c46bff;
+    --active-ring:#6ee7ff; --attn:#ff5c7a; --attn-edge:#ff2d55;
+    --edge:rgba(120,150,255,0.4); --star-bg-dots:rgba(150,180,255,0.45);
+    --ok:#6ee7ff; --stopped:#4a5578;
+  }
+  [data-theme="biolum"] {
+    --bg:#03110f; --bg-2:#04201c; --cool:#2f5d54; --warm:#34d399; --hot:#a3e635;
+    --active-ring:#5eead4; --attn:#fde047; --attn-edge:#facc15;
+    --edge:rgba(94,234,212,0.35); --star-bg-dots:rgba(94,234,212,0.45);
+    --ok:#5eead4; --stopped:#2f5d54;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body {
+    background: radial-gradient(1200px 800px at 70% 20%, var(--bg-2), var(--bg) 60%);
+    color: var(--fg); overflow:hidden;
+    font:13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  body::before {
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.6;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 80% 60%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 50% 80%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 35% 70%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 65% 15%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 12% 88%, var(--star-bg-dots), transparent),
+      radial-gradient(1px 1px at 90% 35%, var(--star-bg-dots), transparent);
+  }
+
+  header { position:fixed; top:0; left:0; right:0; z-index:5; padding:14px 18px;
+    display:flex; align-items:baseline; gap:12px; pointer-events:none; }
+  header h1 { font-size:15px; font-weight:600; margin:0; }
+  header .sub { color:var(--muted); font-size:12px; }
+
+  svg { position:fixed; inset:0; width:100vw; height:100vh; display:block; cursor:grab; }
+
+  .panel { position:fixed; z-index:6; background:var(--panel); backdrop-filter:blur(8px);
+    border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .controls { top:14px; right:14px; width:236px; }
+  .panel h2 { font-size:11px; text-transform:uppercase; letter-spacing:.8px;
+    color:var(--muted); margin:0 0 8px; }
+  .row { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  button { font:inherit; font-size:12px; cursor:pointer; background:oklch(0.25 0 0);
+    color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:5px 9px;
+    transition:background .15s, border-color .15s; }
+  button:hover { background:oklch(0.32 0 0); }
+  button[aria-pressed="true"] { border-color:var(--warm); color:var(--warm); }
+  input[type=range] { accent-color:var(--warm); height:4px; cursor:pointer; }
+  label[for=tau] { font-size:11px; }
+  .meta { font-size:11px; color:var(--muted); margin-top:4px; }
+  .meta b { color:var(--fg); font-weight:500; }
+
+  .legend { bottom:14px; left:14px; width:252px; font-size:12px; }
+  .legend .item { display:flex; align-items:center; gap:9px; margin:6px 0; }
+  .swatch { width:16px; height:16px; border-radius:50%; flex:none; }
+  .legend .desc { color:var(--muted); }
+  .legend .desc b { color:var(--fg); font-weight:500; }
+
+  .tooltip { position:fixed; z-index:7; pointer-events:none; opacity:0; transition:opacity .12s;
+    background:var(--panel); backdrop-filter:blur(8px); border:1px solid var(--border);
+    border-radius:10px; padding:8px 11px; min-width:184px; font-size:12px; }
+  .tooltip .t-slug { font-weight:600; margin-bottom:3px; }
+  .tooltip .t-row { color:var(--muted); display:flex; justify-content:space-between; gap:14px; }
+  .tooltip .t-row b { color:var(--fg); font-weight:500; }
+  .tooltip .t-attn { color:var(--attn); font-weight:600; margin-top:4px; }
+
+  .backbtn { top:14px; left:14px; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .backbtn.show { opacity:1; pointer-events:auto; }
+
+  /* drill-in event ticker */
+  .ticker { left:280px; right:24px; bottom:14px; height:148px; padding:0; opacity:0;
+    pointer-events:none; transition:opacity .3s; display:flex; flex-direction:column; }
+  .ticker.show { opacity:1; pointer-events:auto; }
+  .ticker .t-head { display:flex; justify-content:space-between; align-items:center;
+    padding:9px 13px 7px; border-bottom:1px solid var(--border); }
+  .ticker .t-head b { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); }
+  .ticker .t-head .live { font-size:10px; color:var(--active-ring); display:flex; align-items:center; gap:5px; }
+  .ticker .t-head .live::before { content:""; width:7px; height:7px; border-radius:50%;
+    background:var(--active-ring); animation:breathe 1.4s ease-in-out infinite; }
+  .ticker .feed { flex:1; overflow:hidden; display:flex; flex-direction:column-reverse;
+    padding:6px 13px 9px; font:11.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+  .ticker .ev { display:grid; grid-template-columns:62px 110px 56px 1fr auto; gap:10px;
+    align-items:baseline; white-space:nowrap; animation:evin .35s ease-out; }
+  @keyframes evin { from{ opacity:0; transform:translateY(6px);} to{opacity:1;transform:none;} }
+  .ticker .ev .ts { color:var(--muted); }
+  .ticker .ev .ag { color:var(--fg); overflow:hidden; text-overflow:ellipsis; }
+  .ticker .ev .tool { font-weight:600; }
+  .ticker .ev .sum { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
+  .ticker .ev .st { font-size:10px; }
+  .tool-bash{color:#f97316} .tool-read{color:#60a5fa} .tool-edit{color:#4ade80}
+  .tool-grep{color:#c084fc} .tool-task{color:var(--attn)} .tool-web{color:#22d3ee}
+
+  /* svg pieces */
+  .well { fill:var(--warm); opacity:.035; }
+  .well-ring { fill:none; stroke:var(--border); stroke-dasharray:3 7; opacity:.5; }
+  .well-label { fill:var(--muted); font-size:12px; font-weight:500; letter-spacing:.5px; }
+  .edge { stroke:var(--edge); stroke-width:1; }
+  .orbit-path { fill:none; stroke:var(--edge); stroke-width:.75; stroke-dasharray:2 5; opacity:.45; }
+  .label { fill:var(--fg); font-size:11px; pointer-events:none; opacity:.85; text-anchor:middle; }
+  .star { cursor:pointer; }
+  .star-core { stroke:rgba(255,255,255,0.55); stroke-width:.75; }
+  .sub-core { stroke:rgba(255,255,255,0.4); stroke-width:.5; }
+
+  @keyframes pulse-out { 0%{r:12px;opacity:.55;stroke-width:2.5} 100%{r:46px;opacity:0;stroke-width:.5} }
+  .pulse.on { animation:pulse-out 5s ease-out infinite; }
+  @keyframes breathe { 0%,100%{opacity:.9} 50%{opacity:.5} }
+  .glow { animation:breathe 3.5s ease-in-out infinite; }
+  @keyframes twinkle { 0%,100%{opacity:1} 50%{opacity:.78} }
+  .twinkle { animation:twinkle 2.4s ease-in-out infinite; }
+  @keyframes flare { 0%{r:15px;opacity:.75;stroke-width:3} 100%{r:50px;opacity:0;stroke-width:.5} }
+  .flare { fill:none; stroke:var(--attn); animation:flare 1.6s ease-out infinite; }
+  .flare.b { animation-delay:.8s; }
+
+  .orbit { transform-box:fill-box; transform-origin:center; }
+  .orbit.spin { animation:spin linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .idle { opacity:.42; } .ended { opacity:.2; }
+  #field.focused .star:not(.is-focused) { opacity:.06 !important; transition:opacity .35s; }
+  #field.focused .star.is-focused .label { opacity:0; } /* tree root shows the name instead */
+  #field.focused .well, #field.focused .well-ring, #field.focused .well-label { opacity:.02 !important; }
+
+  /* drill-in tree */
+  #drill { opacity:0; transition:opacity .3s; pointer-events:none; }
+  #drill.show { opacity:1; }
+  .tree-edge { stroke:var(--edge); stroke-width:1.5; }
+  .tree-node { stroke:rgba(255,255,255,0.5); stroke-width:1; }
+  .tree-label { fill:var(--fg); font-size:9px; text-anchor:middle; }
+  .tree-type { fill:var(--muted); font-size:7.5px; text-anchor:middle; }
+
+  body.reduced .pulse.on, body.reduced .glow, body.reduced .twinkle,
+  body.reduced .flare, body.reduced .orbit.spin { animation:none !important; }
+  body.reduced .glow { opacity:.7; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Agents Observe</h1>
+    <span class="sub">Live Constellation — <span id="active-count">…</span> active ·
+      <span id="attn-count">…</span> need attention · <span id="sess-count">…</span> sessions</span>
+  </header>
+
+  <svg id="stage" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <g id="field"></g>
+    <g id="drill"></g>
+  </svg>
+
+  <button class="panel backbtn" id="back">← Back to constellation</button>
+
+  <div class="panel ticker" id="ticker">
+    <div class="t-head"><b id="ticker-title">events</b><span class="live">live</span></div>
+    <div class="feed" id="ticker-feed"></div>
+  </div>
+
+  <div class="panel controls">
+    <h2>Mockup controls</h2>
+    <div class="row">
+      <button data-theme-btn="native" aria-pressed="true">Native</button>
+      <button data-theme-btn="space">Deep Space</button>
+      <button data-theme-btn="biolum">Bioluminescent</button>
+    </div>
+    <div class="row">
+      <button data-data-btn="demo" aria-pressed="true">Demo · 9</button>
+      <button data-data-btn="stress">Stress · 50</button>
+    </div>
+    <div class="row">
+      <button id="ping">⚡ Revive coldest</button>
+      <button id="motion" aria-pressed="false">Reduce motion</button>
+    </div>
+    <div class="row" style="align-items:center;gap:9px">
+      <label for="tau" style="color:var(--muted)">decay τ</label>
+      <input id="tau" type="range" min="10" max="240" value="45" style="flex:1" />
+      <span id="tau-val" style="min-width:34px;text-align:right">45s</span>
+    </div>
+    <div class="meta">physics: <b id="fps">–</b> · click a star to drill in</div>
+  </div>
+
+  <div class="panel legend">
+    <h2>What you're looking at</h2>
+    <div class="item"><span class="swatch" style="background:var(--hot)"></span>
+      <span class="desc"><b>Star</b> = session · size = events · color = activity temp</span></div>
+    <div class="item"><span class="swatch" style="background:var(--cool)"></span>
+      <span class="desc"><b>Cools by time</b> since last event → sinks to rim</span></div>
+    <div class="item"><span class="swatch" style="background:var(--active-ring)"></span>
+      <span class="desc"><b>Pulse ring</b> = live activity (5s ping)</span></div>
+    <div class="item"><span class="swatch" style="background:var(--attn)"></span>
+      <span class="desc"><b>Amber flare</b> = needs attention (pulled to center)</span></div>
+    <div class="item"><span class="swatch" style="background:var(--edge);border:1px solid var(--border)"></span>
+      <span class="desc">Orbiting dots = <b>subagents</b> · click to expand tree</span></div>
+  </div>
+
+  <div class="tooltip" id="tip"></div>
+
+<script>
+const SVGNS="http://www.w3.org/2000/svg";
+const stage=document.getElementById("stage");
+const field=document.getElementById("field");
+const drill=document.getElementById("drill");
+const tip=document.getElementById("tip");
+const W=1440,H=900,CX=W/2,CY=H/2;
+const clock=()=>performance.now();
+let TAU=45;                                   // recency half-life knob (seconds)
+function heat(s){ return Math.exp(-(clock()-s.lastActivity)/(TAU*1000)); }  // 1=just now → 0=cold
+
+function el(n,a){ const e=document.createElementNS(SVGNS,n); for(const k in a) e.setAttribute(k,a[k]); return e; }
+function cssVar(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function hex(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function tempColor(t){
+  const cool=hex(cssVar("--cool")), warm=hex(cssVar("--warm")), hot=hex(cssVar("--hot"));
+  const lerp=(a,b,f)=>a.map((x,i)=>Math.round(x+(b[i]-x)*f));
+  const c = t<0.5 ? lerp(cool,warm,t/0.5) : lerp(warm,hot,(t-0.5)/0.5);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function statusColor(active){ return cssVar(active?"--ok":"--stopped"); }
+function radius(events){ return 9 + Math.sqrt(events)*0.42; }
+
+// ---- data generation -------------------------------------------------
+const SLUGS_A=["swift","calm","amber","lost","bright","quiet","iron","neon","dusty","brave","gentle","lunar","crimson","silent","golden","rapid","hidden","violet","stormy","azure"];
+const SLUGS_B=["otter","harbor","fox","meadow","comet","delta","summit","pike","trail","falcon","ember","ridge","willow","cipher","grove","quartz","badger","heron","canyon","prism"];
+const ATYPES=["Explore","general-purpose","code-review","Plan","verify","claude","Task"];
+let seed=42; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+const pick=a=>a[Math.floor(rnd()*a.length)];
+
+function makeTree(depth){
+  const n = depth===0 ? 0 : Math.floor(rnd()* (depth>=2?2:3));
+  const kids=[];
+  for(let i=0;i<n;i++) kids.push({ name:pick(SLUGS_A)+"-"+pick(SLUGS_B), type:pick(ATYPES),
+    active: rnd()>0.4, children: makeTree(depth-1) });
+  return kids;
+}
+function buildData(mode){
+  seed=42;
+  const nP = mode==="stress"?5:3;
+  const nS = mode==="stress"?50:9;
+  const projNames=["agents-observe","crowdlift-api","infra-scripts","web-client","ml-pipeline"];
+  const projects=[];
+  for(let i=0;i<nP;i++){ const a=i*2*Math.PI/nP - Math.PI/2;
+    const rx=mode==="stress"?470:360, ry=mode==="stress"?300:230;
+    projects.push({ id:"p"+i, name:projNames[i], cx:CX+Math.cos(a)*rx*0.62, cy:CY+Math.sin(a)*ry*0.62,
+      r: mode==="stress"?150:215 }); }
+  const sessions=[];
+  for(let i=0;i<nS;i++){
+    const p=projects[i%nP];
+    const temp=Math.pow(rnd(),1.3);
+    const state = temp>0.45 ? "active" : (temp>0.12?"idle":(rnd()>0.6?"ended":"idle"));
+    const tree = makeTree(state==="active"&&rnd()>0.4 ? (rnd()>0.6?2:1) : (rnd()>0.7?1:0));
+    sessions.push({
+      slug: SLUGS_A[i%SLUGS_A.length]+"-"+SLUGS_B[(i*3)%SLUGS_B.length],
+      project:p.id, temp, events: Math.floor(40+rnd()*rnd()*2400),
+      agents: tree, subs: tree.length, state,
+      attention: state==="active" && rnd()>0.82,
+      x: p.cx+(rnd()-0.5)*120, y: p.cy+(rnd()-0.5)*120, vx:0, vy:0
+    });
+  }
+  // guarantee at least 2 attention + one deep tree in demo
+  if(mode==="demo"){
+    sessions[2].attention=true; sessions[2].state="active";
+    sessions[7].attention=true; sessions[7].state="active";
+    sessions[0].agents=[{name:"brave-cipher",type:"Explore",active:true,children:[
+      {name:"calm-fox",type:"general-purpose",active:true,children:[{name:"amber-pike",type:"verify",active:false,children:[]}]},
+      {name:"lost-grove",type:"code-review",active:true,children:[]}]},
+      {name:"iron-ridge",type:"Plan",active:false,children:[]},
+      {name:"neon-quartz",type:"Task",active:true,children:[{name:"dusty-heron",type:"claude",active:true,children:[]}]}];
+    sessions[0].subs=sessions[0].agents.length; sessions[0].state="active"; sessions[0].temp=0.95;
+  }
+  // recency-decay state: alive sessions keep pinging (stay hot); others cool from a spread of ages
+  for(const s of sessions){
+    s.alive = s.state==="active";
+    s.pingEvery = 1100 + rnd()*2600;                 // ms between self-pings while alive
+    s.lastActivity = s.alive ? clock() : clock() - rnd()*TAU*2.5*1000;
+  }
+  return {projects,sessions};
+}
+
+let DATA=buildData("demo");
+let nodeEls=new Map(); // slug -> {g, sim node}
+let focused=null;
+
+// ---- build SVG (once per data/theme) ---------------------------------
+function build(){
+  field.innerHTML=""; drill.innerHTML=""; nodeEls.clear();
+  for(const p of DATA.projects){
+    field.appendChild(el("circle",{class:"well",cx:p.cx,cy:p.cy,r:p.r}));
+    field.appendChild(el("circle",{class:"well-ring",cx:p.cx,cy:p.cy,r:p.r}));
+    const t=el("text",{class:"well-label",x:p.cx,y:p.cy-p.r-10,"text-anchor":"middle"}); t.textContent=p.name;
+    field.appendChild(t);
+  }
+  for(const s of DATA.sessions){
+    const baseR=radius(s.events), col=tempColor(heat(s));
+    const g=el("g",{class:"star"}); g.style.transform=`translate(${s.x}px,${s.y}px)`;
+
+    // pulse heartbeat — wrapped so heat can fade it without fighting the keyframes
+    const pwrap=el("g",{class:"pulse-wrap"});
+    pwrap.appendChild(el("circle",{class:"pulse on",cx:0,cy:0,r:12,stroke:cssVar("--active-ring"),"stroke-width":2,fill:"none"}));
+    g.appendChild(pwrap); s._pulseWrap=pwrap;
+    // glow — opacity driven by heat each frame
+    const glow=el("circle",{cx:0,cy:0,r:baseR*1.5,fill:col}); glow.style.filter="blur(6px)"; glow.style.opacity=0;
+    g.appendChild(glow); s._glow=glow;
+
+    const orbitR=baseR+16;
+    if(s.subs>0){
+      g.appendChild(el("circle",{class:"orbit-path",cx:0,cy:0,r:orbitR}));
+      const orbit=el("g",{class:"orbit spin"}); orbit.style.animationDuration=(11+s.subs*3)+"s";
+      for(let i=0;i<s.subs;i++){
+        const a=(i/s.subs)*Math.PI*2, sx=Math.cos(a)*orbitR, sy=Math.sin(a)*orbitR;
+        orbit.appendChild(el("line",{class:"edge",x1:0,y1:0,x2:sx,y2:sy}));
+        orbit.appendChild(el("circle",{class:"sub-core",cx:sx,cy:sy,r:4.5,fill:tempColor(0.6)}));
+      }
+      g.appendChild(orbit); s._orbit=orbit;
+    }
+    const core=el("circle",{class:"star-core",cx:0,cy:0,r:baseR,fill:col}); g.appendChild(core); s._core=core;
+    if(s.attention){
+      g.appendChild(el("circle",{class:"flare",cx:0,cy:0,r:15,fill:"none"}));
+      g.appendChild(el("circle",{class:"flare b",cx:0,cy:0,r:15,fill:"none"}));
+    }
+    const lbl=el("text",{class:"label",x:0,y:baseR+13}); lbl.textContent=s.slug; g.appendChild(lbl); s._label=lbl;
+
+    g.addEventListener("mousemove",e=>{ if(!focused) showTip(e,s); });
+    g.addEventListener("mouseleave",hideTip);
+    g.addEventListener("click",ev=>{ ev.stopPropagation(); focus(s); });
+    s._g=g; nodeEls.set(s.slug,s); field.appendChild(g);
+  }
+  document.getElementById("active-count").textContent=DATA.sessions.filter(s=>s.state==="active").length;
+  document.getElementById("attn-count").textContent=DATA.sessions.filter(s=>s.attention).length;
+  document.getElementById("sess-count").textContent=DATA.sessions.length;
+}
+
+// ---- force simulation ------------------------------------------------
+const CHARGE=950, CHARGE_R=170, DAMP=0.84, MAXV=6;
+function collR(s){ return radius(s.events) + (s.subs>0 ? radius(s.events)+24 : 8); }
+function step(){
+  const S=DATA.sessions, P=Object.fromEntries(DATA.projects.map(p=>[p.id,p]));
+  for(const s of S){
+    const p=P[s.project], h=heat(s);
+    // radial spring: hot → well center, cold → well rim
+    let dx=s.x-p.cx, dy=s.y-p.cy, dist=Math.hypot(dx,dy)||0.01;
+    const inner=26;
+    const desired = s.attention ? inner*0.5 : inner + (p.r-inner)*(1-h);
+    const tx=p.cx+(dx/dist)*desired, ty=p.cy+(dy/dist)*desired;
+    const K=s.attention?0.045:0.02;
+    s.vx+=(tx-s.x)*K; s.vy+=(ty-s.y)*K;
+    if(s.attention){ s.vx+=(CX-s.x)*0.003; s.vy+=(CY-s.y)*0.003; }
+  }
+  for(let i=0;i<S.length;i++) for(let j=i+1;j<S.length;j++){
+    const a=S[i],b=S[j]; let dx=a.x-b.x,dy=a.y-b.y; let d2=dx*dx+dy*dy||0.01;
+    if(d2<CHARGE_R*CHARGE_R){ const d=Math.sqrt(d2),f=CHARGE/d2;
+      const fx=dx/d*f, fy=dy/d*f; a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy; }
+    const minD=collR(a)+collR(b);
+    if(d2<minD*minD){ const d=Math.sqrt(d2)||0.01,push=(minD-d)/d*0.5;
+      a.vx+=dx*push*0.12;a.vy+=dy*push*0.12;b.vx-=dx*push*0.12;b.vy-=dy*push*0.12; }
+  }
+  for(const s of S){
+    s.vx*=DAMP; s.vy*=DAMP;
+    s.vx=Math.max(-MAXV,Math.min(MAXV,s.vx)); s.vy=Math.max(-MAXV,Math.min(MAXV,s.vy));
+    s.x+=s.vx; s.y+=s.vy;
+    s.x=Math.max(60,Math.min(W-60,s.x)); s.y=Math.max(70,Math.min(H-50,s.y));
+    if(s._g) s._g.style.transform=`translate(${s.x}px,${s.y}px)`;
+  }
+}
+
+// ---- recency-decay visuals ------------------------------------------
+function updateDecay(){
+  for(const s of DATA.sessions){
+    if(s.alive && clock()-s.lastActivity > s.pingEvery) s.lastActivity=clock()-rnd()*180; // self-ping
+    const h=heat(s), col=tempColor(h), baseR=radius(s.events);
+    if(s._core){ s._core.setAttribute("r",(baseR*(0.82+0.18*h)).toFixed(2)); s._core.setAttribute("fill",col);
+      s._core.style.filter = h>0.06 ? `drop-shadow(0 0 ${(baseR*0.7*h).toFixed(1)}px ${col})` : "none"; }
+    if(s._glow){ s._glow.setAttribute("fill",col); s._glow.style.opacity=(0.5*h).toFixed(3); }
+    if(s._pulseWrap) s._pulseWrap.style.opacity=Math.max(0,h-0.06).toFixed(3);
+    if(s._label) s._label.style.opacity=(0.28+0.55*h).toFixed(3);
+    if(s._g && !s.attention) s._g.style.opacity=(0.2+0.8*h).toFixed(3);
+  }
+}
+
+// ---- animation loop + fps -------------------------------------------
+let last=performance.now(), frames=0, fpsT=last;
+function loop(now){
+  if(!focused){ step(); updateDecay(); }   // freeze physics while drilled in
+  frames++;
+  if(now-fpsT>500){ document.getElementById("fps").textContent=Math.round(frames/((now-fpsT)/1000))+" fps · "+DATA.sessions.length+" nodes";
+    frames=0; fpsT=now; }
+  requestAnimationFrame(loop);
+}
+
+// ---- drill-in --------------------------------------------------------
+let vbAnim=null;
+function tweenViewBox(tx,ty,tw,th,ms){
+  const cur=stage.getAttribute("viewBox").split(" ").map(Number);
+  const target=[tx,ty,tw,th]; let start=null;
+  if(vbAnim)cancelAnimationFrame(vbAnim);
+  function a(t){ if(start===null) start=t;
+    const k=Math.min(1,(t-start)/ms), e=1-Math.pow(1-k,3);
+    const v=cur.map((c,i)=>c+(target[i]-c)*e);
+    stage.setAttribute("viewBox",v.join(" "));
+    if(k<1) vbAnim=requestAnimationFrame(a);
+  }
+  vbAnim=requestAnimationFrame(a);
+}
+function focus(s){
+  focused=s; field.classList.add("focused");
+  s._g.classList.add("is-focused");
+  if(s._orbit) s._orbit.classList.remove("spin");
+  buildTree(s);
+  drill.classList.add("show");
+  document.getElementById("back").classList.add("show");
+  startTicker(s);
+  hideTip();
+  const zw=560, zh=zw*H/W;
+  tweenViewBox(s.x-zw/2, s.y-zh/2, zw, zh, 600);
+}
+function unfocus(){
+  if(!focused) return;
+  const s=focused; focused=null;
+  field.classList.remove("focused");
+  s._g.classList.remove("is-focused");
+  if(s._orbit && s.state==="active") s._orbit.classList.add("spin");
+  drill.classList.remove("show"); drill.innerHTML="";
+  document.getElementById("back").classList.remove("show");
+  stopTicker();
+  tweenViewBox(0,0,W,H,600);
+}
+function buildTree(s){
+  drill.innerHTML="";
+  const root={name:s.slug,type:"session",active:s.state==="active",children:s.agents,_root:true};
+  // radial layout
+  function place(node,x,y,ang,spread,ring){
+    node._x=x; node._y=y;
+    const kids=node.children||[]; if(!kids.length) return;
+    const rr = ring===0?92:54;
+    kids.forEach((k,i)=>{
+      let a;
+      if(ring===0){ a = -Math.PI/2 + (i+0.5)/kids.length*2*Math.PI; }
+      else { a = kids.length===1?ang : ang - spread/2 + spread*i/(kids.length-1); }
+      place(k, x+Math.cos(a)*rr, y+Math.sin(a)*rr, a, ring===0?1.1:0.8, ring+1);
+    });
+  }
+  place(root,s.x,s.y,0,0,0);
+  // edges first
+  (function edges(n){ for(const k of (n.children||[])){
+    drill.appendChild(el("line",{class:"tree-edge",x1:n._x,y1:n._y,x2:k._x,y2:k._y})); edges(k); } })(root);
+  // nodes
+  (function nodes(n,depth){
+    const r = n._root?radius(s.events)*0.9:(depth===1?7:5.5);
+    const fill = n._root?tempColor(s.temp):statusColor(n.active);
+    const c=el("circle",{class:"tree-node",cx:n._x,cy:n._y,r:r,fill:fill});
+    if(n.active) c.style.filter=`drop-shadow(0 0 6px ${fill})`;
+    drill.appendChild(c);
+    const nm=el("text",{class:"tree-label",x:n._x,y:n._y-r-4}); nm.textContent=n.name; drill.appendChild(nm);
+    if(!n._root){ const ty=el("text",{class:"tree-type",x:n._x,y:n._y+r+9}); ty.textContent=n.type; drill.appendChild(ty); }
+    for(const k of (n.children||[])) nodes(k,depth+1);
+  })(root,0);
+}
+
+// ---- drill-in event ticker ------------------------------------------
+const TICKER_FEED=document.getElementById("ticker-feed");
+const TICKER=document.getElementById("ticker");
+const TOOLS=[
+  {tool:"Bash", cls:"tool-bash", st:"$", sums:["npm test","git status","just check","ls -la app/","tsc --noEmit"]},
+  {tool:"Read", cls:"tool-read", st:"◇", sums:["src/home-page.tsx","hooks/lib/config.mjs","types/index.ts","use-websocket.ts","README.md"]},
+  {tool:"Edit", cls:"tool-edit", st:"✎", sums:["session-list.tsx","websocket.ts","+12 −4","sqlite-adapter.ts","routes/events.ts"]},
+  {tool:"Grep", cls:"tool-grep", st:"⌕", sums:["'useAgents'","'broadcastToSession'","'parentAgentId'","'activity'"]},
+  {tool:"Task", cls:"tool-task", st:"⊕", sums:["spawned Explore","spawned code-review","subagent → verify","spawned Plan"]},
+  {tool:"Web",  cls:"tool-web",  st:"⇲", sums:["fetch docs.anthropic.com","search d3-force","fetch github.com"]},
+];
+function flatten(arr,out=[]){ for(const a of arr){ out.push(a); if(a.children) flatten(a.children,out); } return out; }
+function pad2(n){ return n<10?"0"+n:""+n; }
+let tickerTimer=null, tickerAgents=[];
+function addRow(){
+  const ag = tickerAgents.length ? pick(tickerAgents) : {name:focused.slug};
+  const T = pick(TOOLS);
+  const now=new Date();
+  const row=document.createElement("div"); row.className="ev";
+  row.innerHTML=
+    `<span class="ts">${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}</span>`+
+    `<span class="ag">${ag.name}</span>`+
+    `<span class="tool ${T.cls}">${T.tool}</span>`+
+    `<span class="sum">${pick(T.sums)}</span>`+
+    `<span class="st ${T.cls}">${T.st}</span>`;
+  TICKER_FEED.prepend(row);            // column-reverse → newest at bottom
+  while(TICKER_FEED.children.length>9) TICKER_FEED.lastChild.remove();
+}
+function pushEvent(){                    // one timer chain only
+  if(!focused) return;
+  addRow();
+  const base = focused.state==="active"? 700 : 1600;
+  tickerTimer=setTimeout(pushEvent, base + rnd()*700);
+}
+function startTicker(s){
+  tickerAgents=flatten(s.agents);
+  document.getElementById("ticker-title").textContent=`events · ${s.slug}`;
+  TICKER_FEED.innerHTML="";
+  TICKER.classList.add("show");
+  for(let i=0;i<5;i++) addRow();         // seed backlog, no scheduling
+  clearTimeout(tickerTimer); pushEvent(); // single live chain
+}
+function stopTicker(){
+  clearTimeout(tickerTimer); tickerTimer=null;
+  TICKER.classList.remove("show"); TICKER_FEED.innerHTML="";
+}
+
+// ---- tooltip ---------------------------------------------------------
+function showTip(e,s){
+  tip.style.opacity=1; tip.style.left=e.clientX+"px"; tip.style.top=(e.clientY+16)+"px";
+  const proj=DATA.projects.find(p=>p.id===s.project)?.name||s.project;
+  const total=(function cnt(arr){return arr.reduce((a,k)=>a+1+cnt(k.children||[]),0);})(s.agents);
+  tip.innerHTML=`<div class="t-slug">${s.slug}</div>`+
+    `<div class="t-row"><span>project</span><b>${proj}</b></div>`+
+    `<div class="t-row"><span>status</span><b>${s.state}</b></div>`+
+    `<div class="t-row"><span>events</span><b>${s.events.toLocaleString()}</b></div>`+
+    `<div class="t-row"><span>agents</span><b>${total}</b></div>`+
+    (s.attention?`<div class="t-attn">● needs attention</div>`:"");
+}
+function hideTip(){ tip.style.opacity=0; }
+
+// ---- controls --------------------------------------------------------
+document.querySelectorAll("[data-theme-btn]").forEach(b=>b.addEventListener("click",()=>{
+  document.documentElement.dataset.theme=b.dataset.themeBtn;
+  document.querySelectorAll("[data-theme-btn]").forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));
+  build(); if(focused){ const f=focused; focused=null; focus(DATA.sessions.find(s=>s.slug===f.slug)); }
+}));
+document.querySelectorAll("[data-data-btn]").forEach(b=>b.addEventListener("click",()=>{
+  unfocus(); DATA=buildData(b.dataset.dataBtn);
+  document.querySelectorAll("[data-data-btn]").forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));
+  stage.setAttribute("viewBox",`0 0 ${W} ${H}`); build();
+}));
+document.getElementById("motion").addEventListener("click",function(){
+  const on=document.body.classList.toggle("reduced"); this.setAttribute("aria-pressed",on?"true":"false");
+});
+document.getElementById("ping").addEventListener("click",()=>{
+  // revive the coldest session — watch it flare hot then decay again
+  const s=[...DATA.sessions].sort((a,b)=>heat(a)-heat(b))[0];
+  if(s) s.lastActivity=clock();
+});
+const tauEl=document.getElementById("tau");
+tauEl.addEventListener("input",()=>{ TAU=+tauEl.value; document.getElementById("tau-val").textContent=TAU+"s"; });
+document.getElementById("back").addEventListener("click",unfocus);
+stage.addEventListener("click",()=>{ if(focused) unfocus(); });
+
+const qTheme=new URLSearchParams(location.search).get("theme");
+const qData=new URLSearchParams(location.search).get("data");
+if(qTheme){ document.documentElement.dataset.theme=qTheme;
+  document.querySelectorAll("[data-theme-btn]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.themeBtn===qTheme?"true":"false")); }
+if(qData){ DATA=buildData(qData);
+  document.querySelectorAll("[data-data-btn]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.dataBtn===qData?"true":"false")); }
+
+build();
+requestAnimationFrame(loop);
+
+// deep-link to a drilled-in session for previews/sharing
+const qFocus=new URLSearchParams(location.search).get("focus");
+if(qFocus){ setTimeout(()=>{ const s=DATA.sessions.find(x=>x.slug===qFocus)||DATA.sessions[0]; if(s) focus(s); }, 1500); }
+</script>
+</body>
+</html>

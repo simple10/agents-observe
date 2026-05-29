@@ -35,6 +35,10 @@ credentials/
 # Misc
 .superpowers/
 
+# Mockup screenshots — the HTML prototypes are tracked, but rendered PNGs
+# just bloat the repo every clone (users clone this on plugin install).
+docs/mockups/*.png
+
 # Backup & temp
 bak/
 

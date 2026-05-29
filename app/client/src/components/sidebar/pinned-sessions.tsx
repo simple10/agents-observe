@@ -25,8 +25,9 @@ export function PinnedSessions({ collapsed }: { collapsed: boolean }) {
   const sessions = queries.map((q) => q.data).filter(Boolean) as Session[]
 
   function selectSession(session: Session) {
-    useUIStore.getState().setSelectedProject(session.projectId, session.projectSlug || null)
-    useUIStore.getState().setSelectedSessionId(session.id)
+    // Single history entry (see ui-store openSession) so Back doesn't strand
+    // on an intermediate project page.
+    useUIStore.getState().openSession(session.projectId, session.projectSlug || null, session.id)
   }
 
   const handleRename = useCallback(

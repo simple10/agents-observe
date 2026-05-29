@@ -1,0 +1,419 @@
+/* Constellation dashboard theme — scoped under .constellation. Palette colors
+   are CSS custom properties keyed by [data-palette]; the render loop reads
+   --c-cool/--c-warm/--c-hot to interpolate star temperature. */
+
+.constellation {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+
+  /* native palette (default) — matches the app's neutral-dark + amber accent */
+  --c-bg: oklch(0.16 0 0);
+  --c-bg2: oklch(0.2 0.005 250);
+  --c-fg: oklch(0.985 0 0);
+  --c-muted: oklch(0.708 0 0);
+  --c-border: oklch(0.3 0 0);
+  --c-panel: oklch(0.17 0 0 / 0.88);
+  --c-cool: #5b6b82;
+  --c-warm: #facc15;
+  --c-hot: #f97316;
+  --c-active-ring: #4ade80;
+  --c-attn: #fbbf24;
+  --c-edge: oklch(0.45 0 0 / 0.55);
+  --c-dots: oklch(0.35 0 0 / 0.5);
+  --c-ok: #4ade80;
+  --c-stopped: #6b7280;
+}
+
+.constellation[data-palette='space'] {
+  --c-bg: #06070f;
+  --c-bg2: #0d1230;
+  --c-cool: #3b4a7a;
+  --c-warm: #7aa2ff;
+  --c-hot: #c46bff;
+  --c-active-ring: #6ee7ff;
+  --c-attn: #ff5c7a;
+  --c-edge: rgba(120, 150, 255, 0.4);
+  --c-dots: rgba(150, 180, 255, 0.45);
+  --c-ok: #6ee7ff;
+  --c-stopped: #4a5578;
+}
+
+.constellation[data-palette='biolum'] {
+  --c-bg: #03110f;
+  --c-bg2: #04201c;
+  --c-cool: #2f5d54;
+  --c-warm: #34d399;
+  --c-hot: #a3e635;
+  --c-active-ring: #5eead4;
+  --c-attn: #fde047;
+  --c-edge: rgba(94, 234, 212, 0.35);
+  --c-dots: rgba(94, 234, 212, 0.45);
+  --c-ok: #5eead4;
+  --c-stopped: #2f5d54;
+}
+
+.constellation {
+  background: radial-gradient(1200px 800px at 70% 20%, var(--c-bg2), var(--c-bg) 60%);
+  color: var(--c-fg);
+}
+
+.constellation__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: default;
+}
+
+/* ---- nodes ---- */
+.cst-well {
+  fill: var(--c-warm);
+  opacity: 0.035;
+}
+.cst-well-ring {
+  fill: none;
+  stroke: var(--c-border);
+  stroke-dasharray: 3 7;
+  opacity: 0.5;
+}
+.cst-well-label {
+  fill: var(--c-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-anchor: middle;
+}
+.cst-edge {
+  stroke: var(--c-edge);
+  stroke-width: 1;
+}
+.cst-orbit-path {
+  fill: none;
+  stroke: var(--c-edge);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 5;
+  opacity: 0.45;
+}
+.cst-sub {
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 0.5;
+}
+.cst-star {
+  cursor: pointer;
+}
+.cst-core {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.75;
+}
+.cst-label {
+  fill: var(--c-fg);
+  font-size: 11px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+@keyframes cst-pulse {
+  0% {
+    r: 12px;
+    opacity: 0.55;
+    stroke-width: 2.5;
+  }
+  100% {
+    r: 46px;
+    opacity: 0;
+    stroke-width: 0.5;
+  }
+}
+.cst-pulse {
+  fill: none;
+  stroke: var(--c-active-ring);
+  animation: cst-pulse 5s ease-out infinite;
+}
+
+@keyframes cst-flare {
+  0% {
+    r: 15px;
+    opacity: 0.75;
+    stroke-width: 3;
+  }
+  100% {
+    r: 50px;
+    opacity: 0;
+    stroke-width: 0.5;
+  }
+}
+.cst-flare {
+  fill: none;
+  stroke: var(--c-attn);
+  animation: cst-flare 1.6s ease-out infinite;
+}
+.cst-flare--b {
+  animation-delay: 0.8s;
+}
+
+.cst-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cst-spin linear infinite;
+}
+@keyframes cst-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* drill-in: dim the field, hide focused star's own label (tree shows the name) */
+.constellation--focused .cst-field .cst-star:not(.cst-star--focused) {
+  opacity: 0.06 !important;
+  transition: opacity 0.35s;
+}
+.constellation--focused .cst-field .cst-well,
+.constellation--focused .cst-field .cst-well-ring,
+.constellation--focused .cst-field .cst-well-label {
+  opacity: 0.02 !important;
+}
+.cst-star--focused .cst-label {
+  opacity: 0;
+}
+
+/* drill-in tree */
+.cst-drill {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.cst-drill--show {
+  opacity: 1;
+}
+.cst-tree-edge {
+  stroke: var(--c-edge);
+  stroke-width: 1.5;
+}
+.cst-tree-node {
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 1;
+}
+.cst-tree-label {
+  fill: var(--c-fg);
+  font-size: 9px;
+  text-anchor: middle;
+}
+/* Root node = the session; re-enable clicks (the .cst-drill layer is none). */
+.cst-tree-root {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.cst-tree-root:hover .cst-tree-node {
+  stroke: var(--c-fg);
+  stroke-width: 1.5;
+}
+.cst-tree-type {
+  fill: var(--c-muted);
+  font-size: 7.5px;
+  text-anchor: middle;
+}
+
+/* ---- floating panels (controls, tooltip, drill-in) ---- */
+.cst-panel {
+  position: absolute;
+  z-index: 6;
+  background: var(--c-panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 12px;
+}
+.cst-controls {
+  top: 12px;
+  right: 12px;
+  width: 224px;
+}
+.cst-panel-h {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--c-muted);
+  margin-bottom: 8px;
+}
+.cst-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.cst-row:last-child {
+  margin-bottom: 0;
+}
+.cst-row--center {
+  align-items: center;
+  gap: 9px;
+}
+.cst-row--center label {
+  font-size: 11px;
+  color: var(--c-muted);
+}
+.cst-btn {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  background: oklch(0.25 0 0);
+  color: var(--c-fg);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 5px 9px;
+}
+.cst-btn:hover {
+  background: oklch(0.32 0 0);
+}
+.cst-btn--on {
+  border-color: var(--c-warm);
+  color: var(--c-warm);
+}
+.cst-row--center input[type='range'] {
+  accent-color: var(--c-warm);
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+}
+.cst-tau-val {
+  min-width: 34px;
+  text-align: right;
+  color: var(--c-fg);
+}
+
+.cst-tooltip {
+  position: fixed;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  background: var(--c-panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 8px 11px;
+  min-width: 180px;
+  font-size: 12px;
+}
+.cst-tt-slug {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.cst-tt-row {
+  color: var(--c-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+.cst-tt-row b {
+  color: var(--c-fg);
+  font-weight: 500;
+}
+.cst-tt-attn {
+  color: var(--c-attn);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* drill-in HTML panels: back/open buttons + event ticker */
+.cst-drill-actions {
+  position: absolute;
+  z-index: 7;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+}
+.cst-ticker {
+  position: absolute;
+  z-index: 7;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 150px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cst-ticker-h {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 13px 7px;
+  border-bottom: 1px solid var(--c-border);
+}
+.cst-ticker-h b {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--c-muted);
+}
+.cst-ticker-live {
+  font-size: 10px;
+  color: var(--c-active-ring);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.cst-ticker-live::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-active-ring);
+}
+.cst-ticker-feed {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  padding: 6px 13px 9px;
+  font:
+    11.5px/1.55 ui-monospace,
+    'SF Mono',
+    Menlo,
+    monospace;
+}
+.cst-ev {
+  display: grid;
+  grid-template-columns: 60px 1fr 56px;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.cst-ev .cst-ev-ts {
+  color: var(--c-muted);
+}
+.cst-ev .cst-ev-sum {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cst-ev .cst-ev-tool {
+  font-weight: 600;
+  color: var(--c-warm);
+  text-align: right;
+}
+.cst-ticker-empty {
+  color: var(--c-muted);
+  padding: 10px 13px;
+  font-size: 11px;
+}
+
+/* reduced motion — manual toggle and OS preference both stop animation */
+.constellation--reduced .cst-pulse,
+.constellation--reduced .cst-flare,
+.constellation--reduced .cst-orbit {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cst-pulse,
+  .cst-flare,
+  .cst-orbit {
+    animation: none !important;
+  }
+}
