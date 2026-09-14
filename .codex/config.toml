@@ -2,4 +2,4 @@
 # Codex loads this only after the project is trusted.
 
 [features]
-codex_hooks = true
+hooks = true

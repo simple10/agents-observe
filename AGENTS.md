@@ -61,6 +61,7 @@ Key points:
 - Worktrees need a `.env` with unique ports (see DEVELOPMENT.md § Worktrees)
 - All env vars are centralized in `hooks/scripts/lib/config.mjs` — never read `process.env` elsewhere
 - TypeScript throughout, kebab-case file names
+- Collector supervision (locks, heartbeat, process identity) has its own contract and invariants — read [docs/collector-supervision.md](docs/collector-supervision.md) before touching `hooks/scripts/supervision/`
 
 ## Commit Convention
 
@@ -90,3 +91,10 @@ docs: document fresh install test harness usage
 ```
 
 Breaking changes: add `!` after the type (e.g., `feat!: rename config namespace`).
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

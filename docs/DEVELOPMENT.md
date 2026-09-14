@@ -48,7 +48,7 @@ hooks/scripts/     # Hook script, CLI, MCP server
 hooks/hooks.json   # Plugin hook definitions
 skills/            # /observe skill
 scripts/           # Release and test harness scripts
-test/              # Tests (mirrors hooks/scripts/lib structure)
+test/              # Tests (mirrors hooks/scripts structure)
 docs/              # Plans, specs, and this file
 .claude-plugin/    # Plugin + marketplace manifests
 .mcp.json          # MCP server configuration
@@ -61,8 +61,10 @@ start.mjs          # Local server entrypoint (non-Docker)
 ## Environment Variables
 
 All CLI env vars are read in `hooks/scripts/lib/config.mjs`; server env
-vars in `app/server/src/config.ts`. For the authoritative list of every
-env var the project reads, see [`ENVIRONMENT.md`](./ENVIRONMENT.md).
+vars in `app/server/src/config.ts`; collector supervision env vars (shell,
+unwired so far) in `hooks/scripts/supervision/lib/observe-env.sh`. For the
+authoritative list of every env var the project reads, see
+[`ENVIRONMENT.md`](./ENVIRONMENT.md).
 
 ## Worktrees
 

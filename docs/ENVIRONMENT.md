@@ -86,6 +86,16 @@ Controls where and how the server runs.
 
 ---
 
+## Collector supervision
+
+Read by the shell-side supervision primitives in
+`hooks/scripts/supervision/lib/observe-env.sh`, not by `config.mjs`. Not
+wired into the hook, CLI, or server yet — see
+[collector-supervision.md](./collector-supervision.md#configuration) for the
+full variable list, defaults, and the contract they support.
+
+---
+
 ## Test harness / external
 
 Rarely user-set.

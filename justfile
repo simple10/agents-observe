@@ -16,6 +16,7 @@ project_root := justfile_directory()
 server := project_root / "app" / "server"
 client := project_root / "app" / "client"
 cli_script := project_root / "hooks" / "scripts" / "observe_cli.mjs"
+codex_hooks_script := project_root / "scripts" / "codex-hooks.mjs"
 
 # List available recipes
 default:
@@ -81,6 +82,18 @@ health:
 # Run the CLI with a command (hook, health, start, stop, restart)
 cli *args:
     node {{ cli_script }} {{ args }}
+
+# Install user-level Codex hooks in ~/.codex/hooks.json
+codex-hooks-install *args:
+    node {{ codex_hooks_script }} install {{ args }}
+
+# Check the user-level Codex hook installation
+codex-hooks-status *args:
+    node {{ codex_hooks_script }} status {{ args }}
+
+# Remove only Agents Observe entries from the user-level Codex hooks file
+codex-hooks-uninstall *args:
+    node {{ codex_hooks_script }} uninstall {{ args }}
 
 # Open the dashboard in browser
 open port=port:
