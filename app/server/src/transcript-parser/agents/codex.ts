@@ -49,9 +49,13 @@ function isToolCall(payloadType: unknown): boolean {
 
 function usageFromCodex(last: any): TranscriptUsage {
   return {
-    // OpenAI's `input_tokens` already includes the cached subset, which
-    // matches the parser convention of "bundled input".
-    inputTokens: Number(last?.input_tokens ?? 0),
+    // Per-call inputTokens are the uncached part (Claude's raw input_tokens);
+    // the aggregators add cacheReadTokens back on top. OpenAI's input_tokens
+    // already include the cached subset, so take it out here or it counts twice.
+    inputTokens: Math.max(
+      Number(last?.input_tokens ?? 0) - Number(last?.cached_input_tokens ?? 0),
+      0,
+    ),
     // Reasoning output rolls into the output bucket: it's billed at the
     // output rate and surfacing it separately would change the schema.
     outputTokens: Number(last?.output_tokens ?? 0) + Number(last?.reasoning_output_tokens ?? 0),

@@ -177,9 +177,9 @@ describe('parseCodexSession', () => {
     expect(result.calls[0].usage.cacheReadTokens).toBe(50)
     expect(result.calls[0].usage.cacheCreate5mTokens).toBe(0)
     expect(result.calls[0].usage.cacheCreate1hTokens).toBe(0)
-    // OpenAI's input_tokens already includes the cached subset →
-    // matches the parser's "bundled input" convention.
-    expect(result.calls[0].usage.inputTokens).toBe(100)
+    // OpenAI's input_tokens (100) include the cached subset (50); per-call
+    // inputTokens carry only the uncached part, like Claude's raw usage.
+    expect(result.calls[0].usage.inputTokens).toBe(50)
   })
 
   test('model from turn_context attaches to the call', async () => {
