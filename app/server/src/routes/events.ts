@@ -22,6 +22,7 @@ import type { EventEnvelope, ParsedEvent } from '../types'
 import { validateEnvelope, EnvelopeValidationError } from '../parser'
 import { resolveProject } from '../services/project-resolver'
 import { computeEventSignature } from '../utils/event-signature'
+import { slimEnabled, slimToolOutput } from '../utils/slim-tool-output'
 import {
   isBackgroundTick,
   backgroundAgentId,
@@ -107,6 +108,12 @@ router.post('/events', async (c) => {
   } catch (err) {
     // A failed lookup must never drop the event; fall through un-rerouted.
     console.error('[background-tick] classification failed, storing as-is:', err)
+  }
+
+  // ---- Step 1.7: slim tool output (opt-in) -------------------------------
+  // After the signature hash, so dedup still sees the full payload.
+  if (slimEnabled()) {
+    envelope = { ...envelope, payload: slimToolOutput(envelope.hookName, envelope.payload) as any }
   }
 
   try {

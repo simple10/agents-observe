@@ -525,3 +525,36 @@ describe('POST /api/events — background poll ticks', () => {
     expect(broadcast!.msg.data.agentId).toBe('sess-1:background')
   })
 })
+
+describe('POST /api/events — AGENTS_OBSERVE_SLIM_TOOL_OUTPUT', () => {
+  const envelope = (sessionId: string) => ({
+    agentClass: 'claude-code',
+    sessionId,
+    agentId: sessionId,
+    hookName: 'PostToolUse',
+    timestamp: 1000,
+    payload: { tool_name: 'Bash', tool_response: { stdout: 'y'.repeat(1000), interrupted: false } },
+  })
+
+  test('stores tool output as a placeholder when the flag is on', async () => {
+    process.env.AGENTS_OBSERVE_SLIM_TOOL_OUTPUT = '1'
+    try {
+      expect((await postEvent(envelope('slim-1'))).status).toBe(201)
+    } finally {
+      delete process.env.AGENTS_OBSERVE_SLIM_TOOL_OUTPUT
+    }
+    const [event] = await store.getEventsForSession('slim-1')
+    const payload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload
+    expect(payload.tool_response).toEqual({
+      stdout: '[omitted: 1000 bytes, 1 lines]',
+      interrupted: false,
+    })
+  })
+
+  test('stores tool output verbatim when the flag is off', async () => {
+    expect((await postEvent(envelope('slim-2'))).status).toBe(201)
+    const [event] = await store.getEventsForSession('slim-2')
+    const payload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload
+    expect(payload.tool_response.stdout).toHaveLength(1000)
+  })
+})
