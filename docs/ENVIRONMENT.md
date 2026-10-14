@@ -48,6 +48,7 @@ server directly.
 | `AGENTS_OBSERVE_ALLOW_DB_RESET` | `backup` | Admin reset policy: `allow` (wipe without backup), `backup` (snapshot the DB then wipe), `deny` (refuse). |
 | `AGENTS_OBSERVE_SHUTDOWN_DELAY_MS` | `30000` | Ms with no connected clients before the server auto-shuts down. Set to `0` or negative to disable auto-shutdown. |
 | `AGENTS_OBSERVE_LOG_LEVEL` | `debug` | Server log level. Same values as the CLI variable. |
+| `AGENTS_OBSERVE_OFFLINE` | *(unset)* | Set to `1` to make no outbound requests: the server skips the models.dev pricing fetch (serving a stale disk cache if any) and the client build drops the GitHub release check. Local runtime only; the Docker image is prebuilt. |
 
 ---
 

@@ -49,6 +49,12 @@ export async function getModelsPricing(): Promise<Record<string, ModelPricing>> 
       return fromDisk.byModel
     }
 
+    // Offline: never fetch; serve whatever is on disk, even if stale.
+    if (process.env.AGENTS_OBSERVE_OFFLINE === '1') {
+      memCache = fromDisk ?? { byModel: {}, fetchedAt: now }
+      return memCache.byModel
+    }
+
     // Stale or missing — refetch.
     try {
       const res = await fetch(MODELS_DEV_URL)
